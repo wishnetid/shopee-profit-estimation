@@ -1,0 +1,43 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Logs
+*.log
+import_log.txt
+import_report.txt
+
+# Database
+*.db
+*.sqlite
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Next.js
+webapp/.next/
+webapp/out/
+webapp/build/
+webapp/dist/
+webapp/node_modules/
+webapp/.env*.local
+webapp/.vercel
+
+# Test files
+test-db.js
