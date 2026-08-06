@@ -103,7 +103,6 @@ export async function POST(request: NextRequest) {
     
     // Detect headers
     const orderHeaderRow = detectHeaderRow(orderSheet);
-    const incomeHeaderRow = detectHeaderRow(incomeSheet);
     const masterHeaderRow = detectHeaderRow(masterSheet);
     
     // Parse to JSON
@@ -113,9 +112,10 @@ export async function POST(request: NextRequest) {
       defval: ''
     });
     
+    // Income header is ALWAYS at row 2 (0-indexed), skip rows 0-1
     const incomeData = XLSX.utils.sheet_to_json(incomeSheet, { 
       header: 1,
-      range: incomeHeaderRow,
+      range: 2,  // Start from row 2 (header row)
       defval: ''
     });
     
@@ -221,11 +221,11 @@ export async function POST(request: NextRequest) {
       const tanggalDanaDilepaskan = row['Tanggal Dana Dilepaskan'] || null;
       const hargaProduk = parseCurrency(row['Harga Produk']);
       const gratisOngkirShopee = parseCurrency(row['Gratis Ongkir dari Shopee']);
-      const ongkirKeJasaKirim = parseCurrency(row['Ongkos Kirim Dibayarkan ke Jasa Kirim']);
+      const ongkirKeJasaKirim = parseCurrency(row['Ongkos Kirim yang Dibayarkan ke Jasa Kirim']);
       const biayaAdministrasi = parseCurrency(row['Biaya Administrasi']);
-      const biayaProsesPesanan = parseCurrency(row['Biaya Proses']);
-      const biayaGratisOngkirXtra = parseCurrency(row['Biaya Gratis Ongkir Xtra Ukuran Biasa-F']) + parseCurrency(row['Biaya Gratis Ongkir Xtra Ukuran Biasa-F-2']);
-      const biayaLayananPromoXtra = parseCurrency(row['Biaya Layanan Promo Xtra']);
+      const biayaProsesPesanan = parseCurrency(row['Biaya Proses Pesanan']);
+      const biayaGratisOngkirXtra = parseCurrency(row['Biaya Gratis Ongkir XTRA - Ukuran Biasa (Kategori F)']) + parseCurrency(row['Biaya Gratis Ongkir XTRA - Ukuran Biasa (Kategori F).1']);
+      const biayaLayananPromoXtra = parseCurrency(row['Biaya Layanan Promo XTRA']);
       const biayaLainnya = parseCurrency(row['Biaya Lainnya']);
       
       // Calculate net payout
