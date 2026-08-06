@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
     );
     
     // Clear existing data
-    await query('DELETE FROM income');
+    await query('DELETE FROM income_penghasilan');
     await query('DELETE FROM orders');
     await query('DELETE FROM master_products');
     
@@ -220,7 +220,7 @@ export async function POST(request: NextRequest) {
       if (!noPesanan) continue;
       
       await query(
-        `INSERT INTO income (no_pesanan, jumlah, created_at) 
+        `INSERT INTO income_penghasilan (no_pesanan, jumlah, created_at) 
          VALUES (?, ?, NOW())`,
         [noPesanan, jumlah]
       );
