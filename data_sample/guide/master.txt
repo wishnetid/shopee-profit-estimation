@@ -1,0 +1,81 @@
+REPORT: master
+==================
+
+TOTAL SHEETS: 1
+
+---
+
+SHEET: Sheet1
+TOTAL COLUMNS: 4
+HEADER ROW: 0
+
+COLUMNS:
+1. SKU1
+2. SKU2
+3. Harga
+4. IDPRODUK
+
+TOTAL ROWS: 32
+
+---
+
+DATA ANALYSIS:
+- Total unique SKU1: 11 produk
+- Total unique SKU2: 29 variasi nama
+- Total unique IDPRODUK: 11 produk
+- Total unique Harga: 6 price points
+
+PRICE RANGE:
+- Min: Rp50,000
+- Max: Rp80,000
+- Mean: Rp62,188
+
+---
+
+PATTERN FINDINGS:
+
+1. SKU1 = Primary SKU (11 unique values)
+   - Duplicate: 21 rows (multiple entries for same SKU1)
+   
+2. SKU2 = Variant/Alias SKU (29 unique values)
+   - Contains case variations, typos, abbreviations
+   - Examples:
+     * "M-TAC Pendek" vs "MTAC PENDEK" vs "MTAC_PENDEK"
+     * "BLACKHAWK Panjang" vs "BLACKHAWK PANJANG" vs "BL4CKH4WK PANJANG"
+     * "511 Panjang" vs "511" vs "Kemeja 511 Panjang"
+
+3. IDPRODUK = Product Group ID (11 unique values)
+   - Same as SKU1 (mostly)
+   - Used for grouping variants
+
+4. Harga = HPP (Harga Pokok Penjualan)
+   - Sudah termasuk packaging (confirmed by user di memory)
+   - Format: INTEGER (no decimal)
+
+---
+
+MAPPING LOGIC FOR DB:
+
+Purpose: Map SKU dari Order.all → HPP dari master
+
+Priority:
+1. Try match: Order.Nomor Referensi SKU = master.SKU1
+2. If not found, try: Order.Nomor Referensi SKU = master.SKU2
+3. If not found, try: Order.SKU Induk = master.SKU1
+4. If not found, try: Order.SKU Induk = master.SKU2
+
+Result: Get Harga (HPP) + IDPRODUK
+
+Note: 
+- SKU2 has many aliases/variations for flexibility
+- Case-insensitive matching recommended
+- Multiple rows with same SKU1 = same product, same price
+
+---
+
+NOTES:
+- Header row: 0 (first row)
+- No primary key (multiple rows can have same SKU1)
+- SKU1 + SKU2 combination for flexible matching
+- Harga = HPP already includes packaging cost
+- IDPRODUK for product grouping/analytics

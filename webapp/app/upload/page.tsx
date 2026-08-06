@@ -1,100 +1,72 @@
 'use client';
 
 import { useState } from 'react';
-import { Upload, FileText, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 
-interface FileStatus {
-  file: File | null;
-  status: 'idle' | 'uploading' | 'success' | 'error';
-  progress?: number;
+type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
+
+interface FileUpload {
+  file: File;
+  status: UploadStatus;
   message?: string;
-}
-
-interface UploadProgress {
-  status: 'processing' | 'completed' | 'error';
-  progress: number;
-  message: string;
-  stage?: string;
-  error?: string;
-  stats?: {
-    ordersProcessed?: number;
-    ordersTotal?: number;
-    incomeProcessed?: number;
-    incomeTotal?: number;
-    masterProcessed?: number;
-    masterTotal?: number;
-  };
+  detectedType?: string;
 }
 
 export default function UploadPage() {
-  const [orderFile, setOrderFile] = useState<FileStatus>({ file: null, status: 'idle' });
-  const [incomeFile, setIncomeFile] = useState<FileStatus>({ file: null, status: 'idle' });
-  const [masterFile, setMasterFile] = useState<FileStatus>({ file: null, status: 'idle' });
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+  const [files, setFiles] = useState<FileUpload[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
 
-  const handleFileSelect = (type: 'order' | 'income' | 'master', file: File) => {
-    const status: FileStatus = { file, status: 'idle' };
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
     
-    switch(type) {
-      case 'order':
-        setOrderFile(status);
-        break;
-      case 'income':
-        setIncomeFile(status);
-        break;
-      case 'master':
-        setMasterFile(status);
-        break;
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    addFiles(droppedFiles);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const selectedFiles = Array.from(e.target.files);
+      addFiles(selectedFiles);
     }
   };
 
-  const pollProgress = async (jobId: string) => {
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/upload/status?jobId=${jobId}`);
-        const data = await res.json();
-        
-        if (data.success) {
-          setUploadProgress(data);
-          
-          if (data.status === 'completed') {
-            clearInterval(interval);
-            setOrderFile(prev => ({ ...prev, status: 'success' }));
-            setIncomeFile(prev => ({ ...prev, status: 'success' }));
-            setMasterFile(prev => ({ ...prev, status: 'success' }));
-          } else if (data.status === 'error') {
-            clearInterval(interval);
-            setOrderFile(prev => ({ ...prev, status: 'error', message: data.error }));
-            setIncomeFile(prev => ({ ...prev, status: 'error' }));
-            setMasterFile(prev => ({ ...prev, status: 'error' }));
-          }
-        }
-      } catch (err) {
-        console.error('Poll error:', err);
-      }
-    }, 1000); // Poll setiap 1 detik
+  const addFiles = (newFiles: File[]) => {
+    const validFiles = newFiles.filter(file => {
+      const ext = file.name.toLowerCase().split('.').pop();
+      return ['xlsx', 'xls', 'csv'].includes(ext || '');
+    });
 
-    // Timeout setelah 5 menit
-    setTimeout(() => clearInterval(interval), 300000);
+    const fileUploads: FileUpload[] = validFiles.map(file => ({
+      file,
+      status: 'idle',
+    }));
+
+    setFiles(prev => [...prev, ...fileUploads]);
   };
 
-  const handleUpload = async () => {
-    if (!orderFile.file || !incomeFile.file || !masterFile.file) {
-      alert('Please select all 3 files');
-      return;
-    }
-
-    setOrderFile(prev => ({ ...prev, status: 'uploading' }));
-    setIncomeFile(prev => ({ ...prev, status: 'uploading' }));
-    setMasterFile(prev => ({ ...prev, status: 'uploading' }));
-    setUploadProgress({ status: 'processing', progress: 0, message: 'Starting upload...' });
+  const uploadFile = async (index: number) => {
+    const fileUpload = files[index];
+    
+    // Update status to uploading
+    setFiles(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], status: 'uploading' };
+      return updated;
+    });
 
     try {
       const formData = new FormData();
-      formData.append('orderFile', orderFile.file);
-      formData.append('incomeFile', incomeFile.file);
-      formData.append('masterFile', masterFile.file);
+      formData.append('file', fileUpload.file);
 
       const response = await fetch('/api/upload', {
         method: 'POST',
@@ -103,187 +75,184 @@ export default function UploadPage() {
 
       const result = await response.json();
 
-      if (result.success && result.jobId) {
-        setJobId(result.jobId);
-        pollProgress(result.jobId);
+      if (response.ok) {
+        setFiles(prev => {
+          const updated = [...prev];
+          updated[index] = {
+            ...updated[index],
+            status: 'success',
+            message: result.message,
+            detectedType: result.reportType,
+          };
+          return updated;
+        });
       } else {
         throw new Error(result.error || 'Upload failed');
       }
     } catch (error: any) {
-      setOrderFile(prev => ({ ...prev, status: 'error', message: error.message }));
-      setIncomeFile(prev => ({ ...prev, status: 'error' }));
-      setMasterFile(prev => ({ ...prev, status: 'error' }));
-      setUploadProgress({ status: 'error', progress: 0, message: error.message, error: error.message });
+      setFiles(prev => {
+        const updated = [...prev];
+        updated[index] = {
+          ...updated[index],
+          status: 'error',
+          message: error.message,
+        };
+        return updated;
+      });
     }
   };
 
-  const FileUploadBox = ({ 
-    title, 
-    description, 
-    fileStatus, 
-    onFileSelect 
-  }: { 
-    title: string; 
-    description: string; 
-    fileStatus: FileStatus; 
-    onFileSelect: (file: File) => void;
-  }) => {
-    const getStatusBadge = () => {
-      switch(fileStatus.status) {
-        case 'uploading':
-          return <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm">Uploading...</span>;
-        case 'success':
-          return <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm flex items-center gap-1"><CheckCircle size={16} /> Success</span>;
-        case 'error':
-          return <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm flex items-center gap-1"><XCircle size={16} /> Error</span>;
-        default:
-          return null;
+  const uploadAll = async () => {
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].status === 'idle') {
+        await uploadFile(i);
       }
-    };
-
-    return (
-      <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-        <div className="flex justify-between items-start mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
-            <p className="text-sm text-gray-500 mt-1">{description}</p>
-          </div>
-          {getStatusBadge()}
-        </div>
-
-        <div 
-          className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 hover:bg-blue-50 transition-colors cursor-pointer"
-          onClick={() => document.getElementById(`file-${title}`)?.click()}
-        >
-          {fileStatus.file ? (
-            <div className="flex flex-col items-center gap-2">
-              <FileText size={48} className="text-blue-500" />
-              <p className="text-sm font-medium text-gray-700">{fileStatus.file.name}</p>
-              <p className="text-xs text-gray-500">{(fileStatus.file.size / 1024).toFixed(2)} KB</p>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-2">
-              <Upload size={48} className="text-gray-400" />
-              <p className="text-sm text-gray-600">Click to select file</p>
-            </div>
-          )}
-          <input
-            id={`file-${title}`}
-            type="file"
-            accept=".xlsx,.xls"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) onFileSelect(file);
-            }}
-          />
-        </div>
-
-        {fileStatus.message && (
-          <p className="mt-3 text-sm text-red-600">{fileStatus.message}</p>
-        )}
-      </div>
-    );
+    }
   };
 
-  const canUpload = orderFile.file && incomeFile.file && masterFile.file && 
-                     orderFile.status !== 'uploading';
+  const removeFile = (index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const clearAll = () => {
+    setFiles([]);
+  };
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-3xl font-bold text-gray-800 mb-2">Upload Reports</h1>
-      <p className="text-gray-600 mb-8">Upload 3 file Excel: Order.all, Income (Penghasilan), dan Master HPP</p>
+    <div className="p-8">
+      <div className="max-w-4xl mx-auto">
+        <h1 className="text-3xl font-bold text-slate-900 mb-2">
+          Upload Manager
+        </h1>
+        <p className="text-slate-600 mb-8">
+          Upload file Order.all, Income, atau Master SKU. Format support: .xlsx, .xls, .csv
+        </p>
 
-      <FileUploadBox
-        title="1. Order.all"
-        description="File Order.all dari Shopee Seller Center"
-        fileStatus={orderFile}
-        onFileSelect={(file) => handleFileSelect('order', file)}
-      />
+        {/* Drop Zone */}
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`
+            border-2 border-dashed rounded-lg p-12 text-center transition-colors
+            ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-white'}
+          `}
+        >
+          <Upload className="w-12 h-12 text-slate-400 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-slate-900 mb-2">
+            Drag & Drop File di sini
+          </h3>
+          <p className="text-slate-600 mb-4">
+            atau klik tombol di bawah untuk pilih file
+          </p>
+          <label className="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors">
+            <input
+              type="file"
+              multiple
+              accept=".xlsx,.xls,.csv"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            Pilih File
+          </label>
+          <p className="text-sm text-slate-500 mt-4">
+            Support: .xlsx, .xls, .csv • Multiple file upload
+          </p>
+        </div>
 
-      <FileUploadBox
-        title="2. Income (Penghasilan)"
-        description="File Income 'sudah dilepas' - Sheet: Penghasilan"
-        fileStatus={incomeFile}
-        onFileSelect={(file) => handleFileSelect('income', file)}
-      />
-
-      <FileUploadBox
-        title="3. Master HPP"
-        description="File master.xlsx berisi SKU1, SKU2, Harga, IDPRODUK"
-        fileStatus={masterFile}
-        onFileSelect={(file) => handleFileSelect('master', file)}
-      />
-
-      {uploadProgress && (
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Upload Progress</h3>
-          
-          <div className="mb-4">
-            <div className="flex justify-between text-sm text-gray-600 mb-2">
-              <span>{uploadProgress.message}</span>
-              <span>{uploadProgress.progress}%</span>
+        {/* File List */}
+        {files.length > 0 && (
+          <div className="mt-8 bg-white rounded-lg border border-slate-200">
+            <div className="p-4 border-b border-slate-200 flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-slate-900">
+                File Queue ({files.length})
+              </h2>
+              <div className="flex gap-2">
+                <button
+                  onClick={uploadAll}
+                  disabled={files.every(f => f.status !== 'idle')}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
+                >
+                  Upload All
+                </button>
+                <button
+                  onClick={clearAll}
+                  className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  Clear All
+                </button>
+              </div>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-3">
-              <div 
-                className="bg-blue-500 h-3 rounded-full transition-all duration-300"
-                style={{ width: `${uploadProgress.progress}%` }}
-              />
+
+            <div className="divide-y divide-slate-200">
+              {files.map((fileUpload, index) => (
+                <div key={index} className="p-4 flex items-center gap-4">
+                  <FileSpreadsheet className="w-8 h-8 text-blue-500 flex-shrink-0" />
+                  
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-slate-900 truncate">
+                      {fileUpload.file.name}
+                    </div>
+                    <div className="text-sm text-slate-500">
+                      {(fileUpload.file.size / 1024).toFixed(1)} KB
+                      {fileUpload.detectedType && (
+                        <span className="ml-2 text-blue-600">
+                          • Detected: {fileUpload.detectedType}
+                        </span>
+                      )}
+                    </div>
+                    {fileUpload.message && (
+                      <div className={`text-sm mt-1 ${
+                        fileUpload.status === 'error' ? 'text-red-600' : 'text-green-600'
+                      }`}>
+                        {fileUpload.message}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {fileUpload.status === 'idle' && (
+                      <button
+                        onClick={() => uploadFile(index)}
+                        className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        Upload
+                      </button>
+                    )}
+                    {fileUpload.status === 'uploading' && (
+                      <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                    )}
+                    {fileUpload.status === 'success' && (
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                    )}
+                    {fileUpload.status === 'error' && (
+                      <XCircle className="w-5 h-5 text-red-600" />
+                    )}
+                    <button
+                      onClick={() => removeFile(index)}
+                      className="px-3 py-2 text-sm text-slate-600 hover:text-slate-900 transition-colors"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-
-          {uploadProgress.stats && (
-            <div className="grid grid-cols-3 gap-4 text-sm">
-              {uploadProgress.stats.ordersTotal && (
-                <div>
-                  <p className="text-gray-500">Orders</p>
-                  <p className="font-semibold">{uploadProgress.stats.ordersProcessed || 0} / {uploadProgress.stats.ordersTotal}</p>
-                </div>
-              )}
-              {uploadProgress.stats.incomeTotal && (
-                <div>
-                  <p className="text-gray-500">Income</p>
-                  <p className="font-semibold">{uploadProgress.stats.incomeProcessed || 0} / {uploadProgress.stats.incomeTotal}</p>
-                </div>
-              )}
-              {uploadProgress.stats.masterTotal && (
-                <div>
-                  <p className="text-gray-500">Master</p>
-                  <p className="font-semibold">{uploadProgress.stats.masterProcessed || 0} / {uploadProgress.stats.masterTotal}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {uploadProgress.status === 'error' && uploadProgress.error && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm text-red-800">{uploadProgress.error}</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      <button
-        onClick={handleUpload}
-        disabled={!canUpload}
-        className={`w-full py-3 px-6 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 ${
-          canUpload
-            ? 'bg-blue-500 text-white hover:bg-blue-600'
-            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-        }`}
-      >
-        {orderFile.status === 'uploading' ? (
-          <>
-            <Loader2 size={20} className="animate-spin" />
-            Processing...
-          </>
-        ) : (
-          <>
-            <Upload size={20} />
-            Upload & Process
-          </>
         )}
-      </button>
+
+        {/* Info */}
+        <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h3 className="font-semibold text-blue-900 mb-2">
+            Auto-Detection Report Type
+          </h3>
+          <ul className="text-sm text-blue-800 space-y-1">
+            <li>• <strong>Order.all:</strong> Sheet name = "orders", 50 columns</li>
+            <li>• <strong>Income:</strong> Sheet name = "Penghasilan", 52 columns</li>
+            <li>• <strong>Master SKU:</strong> Sheet name = "Sheet1", 4 columns (SKU1, SKU2, Harga, IDPRODUK)</li>
+          </ul>
+        </div>
+      </div>
     </div>
   );
 }

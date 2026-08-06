@@ -1,0 +1,68 @@
+REPORT: Order.all
+==================
+
+TOTAL SHEETS: 1
+
+---
+
+SHEET 1: orders
+TOTAL COLUMNS: 50
+
+COLUMNS:
+1. No. Pesanan
+2. Status Pesanan
+3. Alasan Pembatalan
+4. Status Pembatalan/ Pengembalian
+5. No. Resi
+6. Opsi Pengiriman
+7. Antar ke counter/ pick-up
+8. Pesanan Harus Dikirimkan Sebelum (Menghindari keterlambatan)
+9. Waktu Pengiriman Diatur
+10. Waktu Pesanan Dibuat
+11. Waktu Pembayaran Dilakukan
+12. Tipe Pesanan
+13. Metode Pembayaran
+14. SKU Induk
+15. Nama Produk
+16. Nomor Referensi SKU
+17. Nama Variasi
+18. Harga Awal
+19. Harga Setelah Diskon
+20. Jumlah
+21. Returned quantity
+22. Subtotal Pesanan
+23. Total Diskon
+24. Diskon Dari Penjual
+25. Diskon Dari Shopee
+26. Berat Produk
+27. Jumlah Produk di Pesan
+28. Total Berat
+29. Voucher Ditanggung Penjual
+30. Cashback Koin
+31. Voucher Ditanggung Shopee
+32. Paket Diskon
+33. Paket Diskon (Diskon dari Shopee)
+34. Paket Diskon (Diskon dari Penjual)
+35. Potongan Koin Shopee
+36. Diskon Kartu Kredit
+37. Ongkos Kirim Dibayar oleh Pembeli
+38. Estimasi Potongan Biaya Pengiriman
+39. Ongkos Kirim Pengembalian Barang
+40. Total Pembayaran
+41. Perkiraan Ongkos Kirim
+42. Catatan dari Pembeli
+43. Catatan
+44. Username (Pembeli)
+45. Nama Penerima
+46. No. Telepon
+47. Alamat Pengiriman
+48. Kota/Kabupaten
+49. Provinsi
+50. Waktu Pesanan Selesai
+
+---
+
+NOTES:
+- Header row: 0 (first row)
+- Primary key: No. Pesanan (dapat duplicate untuk multi-item orders)
+- SKU Induk: selalu NULL di report ini (gunakan Nomor Referensi SKU)

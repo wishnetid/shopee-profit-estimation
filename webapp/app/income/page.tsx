@@ -3,18 +3,18 @@
 import { useState, useEffect } from 'react';
 import DataTable from '@/components/DataTable';
 
-const ORDER_COLUMNS = [
+const INCOME_COLUMNS = [
   { key: 'no_pesanan', label: 'No. Pesanan' },
-  { key: 'status_pesanan', label: 'Status' },
-  { key: 'nama_produk', label: 'Produk' },
-  { key: 'nomor_referensi_sku', label: 'SKU' },
-  { key: 'jumlah', label: 'Qty' },
-  { key: 'total_pembayaran', label: 'Total' },
-  { key: 'waktu_pesanan_dibuat', label: 'Waktu Dibuat' },
+  { key: 'tanggal_dana_dilepaskan', label: 'Tgl Dana Dilepas' },
+  { key: 'harga_produk', label: 'Harga Produk' },
+  { key: 'biaya_administrasi', label: 'Biaya Admin' },
+  { key: 'biaya_proses_pesanan', label: 'Biaya Proses' },
+  { key: 'biaya_gratis_ongkir_xtra', label: 'Biaya XTRA' },
+  { key: 'biaya_layanan_promo_xtra', label: 'Biaya Promo' },
   { key: 'username_pembeli', label: 'Pembeli' },
 ];
 
-export default function OrdersPage() {
+export default function IncomePage() {
   const [data, setData] = useState([]);
   const [totalRows, setTotalRows] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -42,7 +42,7 @@ export default function OrdersPage() {
         params.append('direction', sortDirection);
       }
 
-      const response = await fetch(`/api/orders?${params}`);
+      const response = await fetch(`/api/income?${params}`);
       const result = await response.json();
 
       if (result.success) {
@@ -50,7 +50,7 @@ export default function OrdersPage() {
         setTotalRows(result.total);
       }
     } catch (error) {
-      console.error('Failed to fetch orders:', error);
+      console.error('Failed to fetch income:', error);
     } finally {
       setLoading(false);
     }
@@ -63,9 +63,9 @@ export default function OrdersPage() {
   return (
     <div className="p-8">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">Order All</h1>
+        <h1 className="text-3xl font-bold text-slate-900 mb-2">Income Penghasilan</h1>
         <p className="text-slate-600">
-          Data Order.all dengan filter, search, dan sort
+          Data Income dengan breakdown fee dan net payout
         </p>
       </div>
 
@@ -75,7 +75,7 @@ export default function OrdersPage() {
         </div>
       ) : (
         <DataTable
-          columns={ORDER_COLUMNS}
+          columns={INCOME_COLUMNS}
           data={data}
           totalRows={totalRows}
           onPageChange={(page, limit) => fetchData(page, limit)}

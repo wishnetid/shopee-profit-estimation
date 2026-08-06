@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '50');
     const search = searchParams.get('search') || '';
-    const sort = searchParams.get('sort') || 'waktu_pesanan_dibuat';
+    const sort = searchParams.get('sort') || 'tanggal_dana_dilepaskan';
     const direction = searchParams.get('direction') || 'desc';
     
     const offset = (page - 1) * limit;
@@ -34,11 +34,8 @@ export async function GET(request: NextRequest) {
         const conditions = queries.map(() => {
           return `(
             no_pesanan LIKE ? OR
-            nama_produk LIKE ? OR
-            nomor_referensi_sku LIKE ? OR
-            sku_induk LIKE ? OR
             username_pembeli LIKE ? OR
-            status_pesanan LIKE ?
+            metode_pembayaran_pembeli LIKE ?
           )`;
         }).join(' OR ');
         
@@ -46,20 +43,20 @@ export async function GET(request: NextRequest) {
         
         queries.forEach(q => {
           const searchTerm = `%${q}%`;
-          params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+          params.push(searchTerm, searchTerm, searchTerm);
         });
       }
     }
     
     // Get data
     const [rows] = await conn.execute(
-      `SELECT * FROM order_all ${whereClause} ORDER BY ${sort} ${direction} LIMIT ? OFFSET ?`,
+      `SELECT * FROM income_penghasilan ${whereClause} ORDER BY ${sort} ${direction} LIMIT ? OFFSET ?`,
       [...params, limit, offset]
     );
     
     // Get total count
     const [countResult] = await conn.execute(
-      `SELECT COUNT(*) as total FROM order_all ${whereClause}`,
+      `SELECT COUNT(*) as total FROM income_penghasilan ${whereClause}`,
       params
     );
     
@@ -74,7 +71,7 @@ export async function GET(request: NextRequest) {
     });
     
   } catch (error: any) {
-    console.error('Orders API error:', error);
+    console.error('Income API error:', error);
     return NextResponse.json(
       { error: error.message },
       { status: 500 }

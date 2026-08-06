@@ -1,0 +1,64 @@
+HPP MAPPING LOGIC
+==================
+
+Source: /home/yogaimawan/Dokumentasi/shopee_profit_estimation/README.md
+Validated: 2026-08-06
+
+---
+
+PRIORITY ORDER (4 steps):
+
+STEP 1: Get SKU from Order.all
+  Priority 1: Nomor Referensi SKU (check first)
+  Priority 2: SKU Induk (fallback if empty)
+
+STEP 2: Match to master.xlsx
+  Priority 1: SKU1 (check first)
+  Priority 2: SKU2 (fallback if not found)
+
+STEP 3: Get Result
+  - Harga = HPP (already includes packaging cost)
+  - IDPRODUK = Universal product identifier
+
+---
+
+SQL LOGIC:
+
+COALESCE(orders.nomor_referensi_sku, orders.sku_induk) 
+  = master.sku1 
+  OR 
+COALESCE(orders.nomor_referensi_sku, orders.sku_induk) 
+  = master.sku2
+
+---
+
+EXAMPLE (No. Pesanan: 2607072CRRDA37):
+
+Order.all:
+  Nomor Referensi SKU: "M-TAC Pendek" ✓
+  SKU Induk: (kosong)
+  → Use: "M-TAC Pendek"
+
+master.xlsx:
+  SKU1: "M-TAC Pendek" ← MATCH!
+  SKU2: "MTAC PENDEK"
+  Harga: 52,500
+  IDPRODUK: "M-TAC Pendek"
+
+Result:
+  HPP = Rp52,500 ✓
+
+Profit Calculation:
+  Net Payout (from Income): Rp66,193
+  HPP (from master): Rp52,500
+  ───────────────────────────────────
+  Profit = Rp13,693 ✓
+
+---
+
+NOTES:
+- HPP di master.xlsx sudah FINAL (includes packaging)
+- IDPRODUK = universal identifier across all stores
+- SKU1/SKU2 = variants/aliases for flexible matching
+- Case-insensitive matching recommended
+- Multiple rows in master can have same SKU1 (same price)

@@ -1,0 +1,85 @@
+REPORT: Income
+==================
+
+TOTAL SHEETS: 5
+
+SHEETS:
+1. Summary
+2. Adjustment
+3. Shipping Fee Discrepancy
+4. Seller Fee
+5. Penghasilan
+
+---
+
+SHEET SELECTED FOR DB: Penghasilan
+(Validated with screenshot: 2607072CRRDA37 = Rp66,193 ✓)
+
+TOTAL COLUMNS: 52
+HEADER ROW: 2 (0-indexed)
+
+COLUMNS:
+1. No.
+2. Lihat berdasarkan
+3. No. Pesanan
+4. No. Pengajuan
+5. ID Produk
+6. Nama Produk
+7. Waktu Pesanan Dibuat
+8. Tanggal Dana Dilepaskan
+9. Metode Pelepasan Dana
+10. Tipe Pesanan
+11. Harga Produk
+12. Jumlah Pengembalian Dana ke Pembeli
+13. Ongkir Dibayar Pembeli
+14. Ongkos Kirim yang Dibayarkan ke Jasa Kirim
+15. Potongan Ongkos Kirim dari Jasa Kirim
+16. Gratis Ongkir dari Shopee
+17. Ongkos Kirim Pengembalian Barang
+18. Return to Seller Fee
+19. Pengembalian Biaya Kirim
+20. Penyesuaian Penjual - 1
+21. Cashback Koin disponsori Penjual
+22. Diskon Produk dari Shopee
+23. Penyesuaian Penjual - 2
+24. Cashback Koin Co-fund disponsori Penjual
+25. Biaya Administrasi
+26. Biaya Proses Pesanan
+27. Biaya Gratis Ongkir XTRA - Ukuran Biasa (Kategori F)
+28. Biaya Gratis Ongkir XTRA - Ukuran Biasa (Kategori F).1
+29. Biaya Layanan Promo XTRA
+30. AMS Service Fee
+31. Biaya Kampanye
+32. Biaya Komisi AMS
+33. Biaya Isi Saldo Otomatis (dari Penghasilan)
+34. Biaya Lainnya
+35. Biaya Transaksi
+36. FBS Fee
+37. PPh 22
+38. Username (Pembeli)
+39. Jumlah Dibayar Pembeli
+40. Metode pembayaran pembeli
+41. Rincian Metode Pembayaran
+42. Rencana Cicilan (jika berlaku)
+43. Promo Gratis Ongkir dari Penjual
+44. Jasa Kirim
+45. Nama Kurir
+46. Kode Voucher
+47. Kompensasi
+48. Pengembalian Dana ke Pembeli
+49. Pro-rata Koin yang Ditukarkan untuk Pengembalian Barang
+50. Pro-rata Voucher Shopee untuk Pengembalian Barang
+51. Pro-rated Bank Payment Channel Promotion for return refund Items
+52. Pro-rated Shopee Payment Channel Promotion  for return refund Items
+
+---
+
+NOTES:
+- Header row: 2 (0-indexed)
+- Total data rows: 1,525
+- Primary key: No. Pesanan (kolom 3)
+- PENTING: Kolom "Lihat berdasarkan" (kolom 2) punya 2 nilai:
+  * "Order" = row per order (gunakan ini untuk profit calculation)
+  * "Sku" = row per SKU/item detail (skip untuk profit, ini detail breakdown)
+- Filter: WHERE Lihat berdasarkan = 'Order'
+- Validation: No. Pesanan 2607072CRRDA37 = Total Penghasilan Rp66,193 (MATCH ✓)
