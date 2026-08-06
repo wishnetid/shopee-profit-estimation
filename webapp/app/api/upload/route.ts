@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { query } from '../../../lib/db';
-import { writeFile } from 'fs/promises';
-import path from 'path';
 import crypto from 'crypto';
 
 interface UploadResponse {
@@ -28,10 +26,22 @@ interface ProgressStatus {
   };
 }
 
-// Helper: Update progress
+// Helper: Update progress in database
 async function updateProgress(jobId: string, progress: ProgressStatus) {
-  const progressFile = path.join('/tmp', `upload_${jobId}.json`);
-  await writeFile(progressFile, JSON.stringify(progress, null, 2));
+  const statsJson = progress.stats ? JSON.stringify(progress.stats) : null;
+  
+  await query(
+    `INSERT INTO upload_jobs (job_id, status, progress, message, stage, error, stats)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       status = VALUES(status),
+       progress = VALUES(progress),
+       message = VALUES(message),
+       stage = VALUES(stage),
+       error = VALUES(error),
+       stats = VALUES(stats)`,
+    [jobId, progress.status, progress.progress, progress.message, progress.stage || null, progress.error || null, statsJson]
+  );
 }
 
 // Helper: Detect header row

@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFile, access } from 'fs/promises';
-import { constants } from 'fs';
-import path from 'path';
+import { query } from '../../../../lib/db';
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,25 +13,41 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    // Read progress file
-    const progressFile = path.join('/tmp', `upload_${jobId}.json`);
+    // Read from database
+    const results = await query(
+      'SELECT * FROM upload_jobs WHERE job_id = ? LIMIT 1',
+      [jobId]
+    );
     
-    try {
-      await access(progressFile, constants.F_OK);
-      const data = await readFile(progressFile, 'utf-8');
-      const progress = JSON.parse(data);
-      
-      return NextResponse.json({
-        success: true,
-        ...progress
-      });
-    } catch (err) {
+    if (!results || (results as any[]).length === 0) {
       return NextResponse.json({
         success: false,
         error: 'Job not found',
         status: 'error'
       }, { status: 404 });
     }
+    
+    const job = (results as any[])[0];
+    
+    // Parse JSON stats
+    let stats = null;
+    if (job.stats) {
+      try {
+        stats = typeof job.stats === 'string' ? JSON.parse(job.stats) : job.stats;
+      } catch (e) {
+        stats = null;
+      }
+    }
+    
+    return NextResponse.json({
+      success: true,
+      status: job.status,
+      progress: job.progress,
+      message: job.message,
+      stage: job.stage,
+      error: job.error,
+      stats: stats
+    });
     
   } catch (error: any) {
     return NextResponse.json(
