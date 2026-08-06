@@ -215,14 +215,38 @@ export async function POST(request: NextRequest) {
     let incomeCount = 0;
     for (const row of filteredIncomes) {
       const noPesanan = cleanString(row['No. Pesanan']);
-      const jumlah = parseCurrency(row['Jumlah']);
+      const lihatBerdasarkan = cleanString(row['Lihat berdasarkan']);
+      const idProduk = cleanString(row['ID Produk']);
+      const namaProduk = cleanString(row['Nama Produk']);
+      const waktuPesananDibuat = row['Waktu Pesanan Dibuat'] || null;
+      const tanggalDanaDilepaskan = row['Tanggal Dana Dilepaskan'] || null;
+      const hargaProduk = parseCurrency(row['Harga Produk']);
+      const gratisOngkirShopee = parseCurrency(row['Gratis Ongkir dari Shopee']);
+      const ongkirKeJasaKirim = parseCurrency(row['Ongkos Kirim Dibayarkan ke Jasa Kirim']);
+      const biayaAdministrasi = parseCurrency(row['Biaya Administrasi']);
+      const biayaProsesPesanan = parseCurrency(row['Biaya Proses']);
+      const biayaGratisOngkirXtra = parseCurrency(row['Biaya Gratis Ongkir Xtra Ukuran Biasa-F']) + parseCurrency(row['Biaya Gratis Ongkir Xtra Ukuran Biasa-F-2']);
+      const biayaLayananPromoXtra = parseCurrency(row['Biaya Layanan Promo Xtra']);
+      const biayaLainnya = parseCurrency(row['Biaya Lainnya']);
+      
+      // Calculate net payout
+      const netPayout = hargaProduk + gratisOngkirShopee - ongkirKeJasaKirim - biayaAdministrasi - biayaProsesPesanan - biayaGratisOngkirXtra - biayaLayananPromoXtra - biayaLainnya;
       
       if (!noPesanan) continue;
       
       await query(
-        `INSERT INTO income_penghasilan (no_pesanan, jumlah, created_at) 
-         VALUES (?, ?, NOW())`,
-        [noPesanan, jumlah]
+        `INSERT INTO income_penghasilan (
+          no_pesanan, lihat_berdasarkan, id_produk, nama_produk,
+          waktu_pesanan_dibuat, tanggal_dana_dilepaskan,
+          harga_produk, gratis_ongkir_shopee, ongkir_ke_jasa_kirim,
+          biaya_administrasi, biaya_proses_pesanan, biaya_gratis_ongkir_xtra,
+          biaya_layanan_promo_xtra, biaya_lainnya, net_payout, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [noPesanan, lihatBerdasarkan, idProduk, namaProduk,
+         waktuPesananDibuat, tanggalDanaDilepaskan,
+         hargaProduk, gratisOngkirShopee, ongkirKeJasaKirim,
+         biayaAdministrasi, biayaProsesPesanan, biayaGratisOngkirXtra,
+         biayaLayananPromoXtra, biayaLainnya, netPayout]
       );
       incomeCount++;
     }
