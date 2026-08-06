@@ -1,0 +1,329 @@
+# NEXTAGENTS.md - Panduan untuk Agent Sesi Berikutnya
+
+**Project:** Shopee Profit Estimation Dashboard  
+**Date:** 2026-08-06  
+**Session:** Data Analysis Phase  
+**Next Phase:** Complete Report Analysis → Database Design → Development
+
+---
+
+## 🎯 Mission untuk Agent Berikutnya
+
+**JANGAN LANGSUNG CODING DASHBOARD!**
+
+User ingin **BENAR-BENAR FAHAM FONDASI REPORT** sebelum mulai bikin aplikasi. Kita masih di fase **ANALISA DATA**, bukan fase development.
+
+---
+
+## ✅ Apa yang Sudah Selesai (Sesi 2026-08-06)
+
+### 1. File Inventory Complete ✓
+- 12 files Excel Shopee sudah diidentifikasi
+- Structure & schema setiap file sudah dipetakan
+- Header row position sudah dikonfirmasi (warning: tidak selalu row 1!)
+
+### 2. Cross-Validation 100% ✓
+```
+Balance Report (679) = Income Seller Fee (679) = Order.all (679)
+PERFECT MATCH ✓✓✓
+```
+
+### 3. Primary Key Validated ✓
+- **No. Pesanan** adalah primary key yang reliable (100% consistency)
+- Format: `YYMMDD[A-Z0-9]{8-10}`
+- Ada di semua report sebagai penghubung data
+
+### 4. Business Logic Discovered ✓
+- Pesanan Selesai: Dana dilepas → masuk Balance + Income
+- Failed Delivery: Dana TIDAK dilepas → refund premi saja (27/27 validated)
+- Return/Refund: 11/12 ada di Balance → dana pernah dilepas (91.7% validated)
+
+### 5. Formula Profit Verified ✓
+```
+Net Payout = Subtotal - Biaya Platform - Biaya Lainnya - Ongkir + Potongan Ongkir
+Profit = Net Payout - HPP - Biaya Packaging
+```
+Sample pesanan `2607072CRRDA37` verified 100% match dengan screenshot.
+
+### 6. Documentation Complete ✓
+- `README.md` - overview + key insights
+- `FINDINGS_CROSS_REFERENCE.md` - 16KB comprehensive analysis
+- `ANALYSIS_PESANAN_2607072CRRDA37.md` - sample case study
+
+---
+
+## 🔴 Apa yang BELUM Selesai (Priority Tasks)
+
+### Priority 1: Analisa Income Sheet "Penghasilan" ⚠️ HIGH
+**File:** `Income.sudah dilepas.id.20260707_20260806.xlsx`  
+**Sheet:** `Penghasilan`  
+**Size:** 1528 rows x **1000 columns** (!!)  
+**Status:** ❌ BELUM DIANALISA
+
+**WHY CRITICAL:**
+- File ini HUGE (1000 kolom = paling banyak dari semua report)
+- Kemungkinan ada **detail breakdown** yang tidak ada di Seller Fee
+- Mungkin ada **data tambahan** yang kita butuhkan untuk profit calculation
+- Harus dipastikan tidak ada **duplikasi** dengan data yang sudah kita punya
+
+**TODO:**
+1. Baca struktur 1000 kolom → identifikasi field apa saja
+2. Cek apakah ada **overlap** dengan Seller Fee (679 pesanan)
+3. Cek apakah ada **data unique** yang tidak ada di report lain
+4. Tentukan apakah perlu **diimport** ke database atau cukup Seller Fee
+
+**Command untuk mulai:**
+```python
+import openpyxl
+wb = openpyxl.load_workbook('Income.sudah dilepas.id.20260707_20260806.xlsx')
+sheet = wb['Penghasilan']
+# Explore 1000 columns...
+```
+
+---
+
+### Priority 2: Analisa AdWords Billing ⚠️ MEDIUM
+**File:** `tacticalized_adwords_bill_2026-08-06.csv`  
+**Status:** ❌ BELUM DIANALISA
+
+**WHY IMPORTANT:**
+- Biaya iklan adalah **komponen profit** yang missing
+- Perlu tau **struktur data** dan **allocation logic** per order
+- Apakah biaya iklan bisa di-map per order atau hanya agregat?
+
+**TODO:**
+1. Baca CSV structure
+2. Identifikasi field: tanggal, campaign, biaya, impression, click, dll
+3. Tentukan **allocation strategy**: per order atau per periode?
+4. Design logic untuk **distribusi biaya iklan** ke profit calculation
+
+---
+
+### Priority 3: Finalize HPP & Biaya Packaging Source ⚠️ HIGH
+**File:** `master.xlsx` (33 SKU)  
+**Status:** ⚠️ PARTIALLY KNOWN
+
+**WHY CRITICAL:**
+- HPP & Biaya Packaging adalah **INPUT WAJIB** untuk profit calculation
+- Tanpa ini, profit calculation tidak bisa jalan
+
+**TODO:**
+1. Baca `master.xlsx` → konfirmasi struktur (SKU, Harga, HPP?)
+2. Cek apakah **33 SKU** cukup cover semua produk di Order.all (1947 orders)
+3. Tanya user: **HPP dari mana?** (master.xlsx atau manual input?)
+4. Tanya user: **Biaya packaging** per order atau per SKU?
+5. Design **input mechanism** untuk HPP & packaging (manual form atau import Excel?)
+
+---
+
+### Priority 4: Analisa Order.cancellation Detail (LOW)
+**File:** `Order.cancellation.20260707_20260807.xlsx`  
+**Status:** ⚠️ STRUCTURE KNOWN, BELUM CROSS-CHECK
+
+**WHY NICE-TO-HAVE:**
+- 205 pesanan dibatalkan (lebih banyak dari failed delivery)
+- Perlu tau: berapa yang pernah masuk Balance? (seperti return/refund pattern)
+- Impact ke profit calculation: biaya premi refund?
+
+**TODO:**
+1. Cross-check 205 pesanan cancellation dengan Balance Report
+2. Identifikasi pattern: ada adjustment entry atau tidak?
+3. Document business logic untuk cancellation
+
+---
+
+## 📋 Workflow untuk Agent Berikutnya
+
+### Step 1: Baca Dokumentasi yang Sudah Ada
+```bash
+cd /home/yogaimawan/Dokumentasi/shopee_profit_estimation
+cat README.md
+cat FINDINGS_CROSS_REFERENCE.md
+cat ANALYSIS_PESANAN_2607072CRRDA37.md
+```
+
+### Step 2: Mulai dari Priority 1 (Income Penghasilan)
+**JANGAN skip ini!** File 1000 kolom ini kemungkinan punya **data penting**.
+
+### Step 3: Lanjut Priority 2 & 3 (AdWords & HPP)
+Kedua ini **critical** untuk profit calculation.
+
+### Step 4: Diskusi dengan User
+**WAJIB diskusi** sebelum finalize database schema:
+- Konfirmasi HPP source
+- Konfirmasi biaya packaging logic
+- Konfirmasi allocation strategy untuk biaya iklan
+- Tanya apakah ada **report lain** yang belum di-share
+
+### Step 5: Finalize Database Schema
+Setelah **semua report dianalisa**, baru design database schema final.
+
+### Step 6: Build Import Script
+Excel → MySQL import script dengan **data cleaning & validation**.
+
+### Step 7: Development Phase
+Baru mulai coding Next.js dashboard setelah **semua data clear**.
+
+---
+
+## 🚫 JANGAN Lakukan Ini
+
+### ❌ JANGAN Langsung Coding Dashboard
+User bilang: **"kita lakukan dulu temuan-temuan ini bro, supaya bener-bener faham fondasi report nya"**
+
+Analisa data harus **COMPLETE** dulu sebelum mulai development.
+
+### ❌ JANGAN Assume Data Structure
+Report Shopee **mentah & ambigu**. WAJIB:
+- Baca actual file, jangan assume
+- Cross-validate dengan report lain
+- Diskusi dengan user kalau ada ambigu
+
+### ❌ JANGAN Skip Priority Tasks
+Income Penghasilan (1000 cols) & HPP/Packaging source adalah **blocker** untuk development.
+
+### ❌ JANGAN Ignore User Preference
+User ingin:
+- **Diskusi dulu** sebelum action
+- **Analisa teliti** tiap report
+- **Cross-reference** multiple reports untuk pecahkan ambiguitas
+
+---
+
+## 💡 Tips untuk Agent Berikutnya
+
+### 1. User Communication Style
+- **Bahasa:** Indonesia informal (gw/lo/Bro)
+- **Style:** Casual tapi detail-oriented
+- **Workflow:** Diskusi → Analisa → Diskusi → Coding (NEVER skip diskusi)
+
+### 2. User Expectations
+- **Terse response** untuk simple questions
+- **Detailed analysis** untuk data exploration
+- **Always backup** sebelum edit files (timestamp format: YYYYMMDD-HHMMSS)
+- **Update documentation** after major findings
+
+### 3. Technical Environment
+- **VPS:** Ubuntu 24.04, Python 3.12
+- **Venv:** `/home/yogaimawan/Dokumentasi/shopee_profit_estimation/.venv`
+- **Installed:** pandas, openpyxl, python-calamine (xlrd 1.2.0 broken)
+- **Database:** MySQL di cPanel (supplie3_shopee_profit_estimation)
+
+### 4. File Reading Tips
+```python
+# .xlsx files → openpyxl
+wb = openpyxl.load_workbook(file, read_only=False, data_only=True)
+
+# .xls files → python-calamine via pandas
+df = pd.read_excel(file, engine='calamine')
+
+# ALWAYS check header row position (bisa row 1, 2, 18, dll!)
+# ALWAYS check multiple sheets (file bisa punya 5+ sheets)
+```
+
+### 5. Data Analysis Pattern
+```
+1. File structure check (rows, cols, sheets)
+2. Header position detection
+3. Sample data extraction (5-10 rows)
+4. Cross-validation dengan report lain
+5. Document findings
+6. Diskusi dengan user sebelum next step
+```
+
+---
+
+## 📂 Project Structure
+
+```
+/home/yogaimawan/Dokumentasi/shopee_profit_estimation/
+├── README.md                           ← Overview + Key Insights
+├── FINDINGS_CROSS_REFERENCE.md         ← Comprehensive analysis (16KB)
+├── ANALYSIS_PESANAN_2607072CRRDA37.md  ← Sample case study
+├── NEXTAGENTS.md                       ← This file (untuk agent berikutnya)
+├── .venv/                              ← Python virtual environment
+└── data_sample/                        ← 12 Excel files Shopee
+    ├── Order.all.20260601_20260630.xlsx      (1,108 rows)
+    ├── Order.all.20260701_20260731.xlsx      (1,093 rows)
+    ├── Order.all.20260801_20260806.xlsx      (174 rows)
+    ├── Order.all.20260707_20260806.xlsx      (1,023 rows - overlap)
+    ├── my_balance_transaction_report.shopee.20260707_20260806.xlsx
+    ├── Income.sudah dilepas.id.20260707_20260806.xlsx  ← 5 sheets
+    │   ├── Summary
+    │   ├── Adjustment
+    │   ├── Shipping Fee Discrepancy
+    │   ├── Seller Fee                   (679 rows - ANALYZED ✓)
+    │   └── Penghasilan                  (1528 rows x 1000 cols - ❌ BELUM!)
+    ├── Order.failed_delivery.20260707_20260807.xlsx     (27 rows - VALIDATED ✓)
+    ├── Order.cancellation.20260707_20260807.xlsx        (205 rows)
+    ├── Order.return_refund.20260707_20260807.xls        (12 orders - VALIDATED ✓)
+    ├── master.xlsx                                      (33 SKU)
+    ├── tacticalized_adwords_bill_2026-08-06.csv         (❌ BELUM!)
+    └── 2607072CRRDA37 - Data Sample Pesanan Selesai.jpg
+```
+
+---
+
+## 🎬 Opening Script untuk Agent Berikutnya
+
+```markdown
+Hi Bro, gw agent yang handle sesi berikutnya.
+
+Gw udah baca NEXTAGENTS.md dan dokumentasi yang udah ada.
+
+Sekarang gw mau lanjutin analisa report yang belum selesai:
+1. Income sheet "Penghasilan" (1528 rows x 1000 cols)
+2. AdWords billing CSV
+3. HPP & Biaya Packaging source confirmation
+
+Mau mulai dari mana? Income Penghasilan dulu atau lo mau diskusi yang lain?
+```
+
+---
+
+## ⚠️ Known Issues & Warnings
+
+### 1. Header Row Position NOT Always Row 1
+- Balance Report: header di **Row 18** (!!)
+- Income Seller Fee: header di Row 2
+- Order files: header di Row 1
+- **ALWAYS scan first 30 rows** untuk cari header
+
+### 2. Multiple Sheets per File
+- Income punya **5 sheets** (jangan cuma baca 1!)
+- Order files biasanya cuma 1 sheet (`orders`)
+
+### 3. File Format Issues
+- `Order.return_refund.20260707_20260807.xls` adalah **hybrid format**
+  - Ekstensi: `.xls`
+  - Actual format: modern Excel yang butuh python-calamine
+  - xlrd 1.2.0 **BROKEN** di Python 3.12
+
+### 4. No. Pesanan Extraction
+- **Col 4** di Balance Report untuk "Penghasilan dari Pesanan"
+- **Col 3 (Deskripsi)** di Balance Report untuk Failed/Return (pakai regex!)
+- Pattern: `Pesanan #(\w+)`, `Gagal Terkirim: (\w+)`, `pesanan (\w+) karena`
+
+### 5. Data Consistency
+- 679 pesanan = **golden dataset** (Balance = Income = Order.all)
+- Failed Delivery 27 = **isolated** (tidak masuk Balance sebagai penghasilan)
+- Return/Refund 12 = **91.7% ada di Balance** (11/12)
+
+---
+
+## 📞 Contact & Handoff
+
+**User:** yogaimawan (Bro)  
+**Communication:** Telegram (casual Indonesian)  
+**Timezone:** WIB (UTC+7)  
+**Working Style:** Diskusi → Analisa → Diskusi → Action
+
+**Session End:** 2026-08-06 14:09 WIB  
+**Duration:** ~2 jam  
+**Achievement:** Fondasi data analysis complete, ready untuk deep dive report lainnya
+
+---
+
+**Good luck, agent berikutnya! 🚀**
+
+User sudah **sangat detail-oriented** dan **appreciate thoroughness**. Jangan rush ke development, **finish analysis first**!
