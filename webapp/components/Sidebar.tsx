@@ -76,9 +76,6 @@ export default function Sidebar() {
           })}
         </div>
       </nav>
-
-      {/* Mobile spacer to prevent content being hidden by bottom nav */}
-      <div className="lg:hidden h-20"></div>
     </>
   );
 }

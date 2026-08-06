@@ -1,10 +1,10 @@
 export default function ProfitPage() {
   return (
-    <div className="max-w-7xl">
-      <h1 className="text-3xl font-bold text-slate-900 mb-2">
+    <div className="max-w-7xl pb-24 lg:pb-0">
+      <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-2">
         Profit Analysis
       </h1>
-      <p className="text-slate-600 mb-8">
+      <p className="text-sm sm:text-base text-slate-600 mb-6 sm:mb-8">
         Analisa profit bersih per order dengan formula: Net Payout - HPP
       </p>
 
@@ -65,7 +65,8 @@ export default function ProfitPage() {
             Profit per Order
           </h2>
         </div>
-        <table className="w-full">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[800px]">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-slate-700 uppercase tracking-wider">
@@ -98,6 +99,7 @@ export default function ProfitPage() {
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Formula Info */}

@@ -1,10 +1,10 @@
 export default function UploadPage() {
   return (
-    <div className="max-w-4xl">
-      <h1 className="text-3xl font-bold text-slate-900 mb-2">
+    <div className="max-w-4xl mx-auto pb-24 lg:pb-0">
+      <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-2">
         Upload Reports
       </h1>
-      <p className="text-slate-600 mb-8">
+      <p className="text-sm sm:text-base text-slate-600 mb-6 sm:mb-8">
         Upload 3 file Excel: Order.all, Income (Penghasilan), dan Master HPP
       </p>
 
