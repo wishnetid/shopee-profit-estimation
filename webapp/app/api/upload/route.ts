@@ -176,7 +176,7 @@ export async function POST(request: NextRequest) {
       if (!sku1 && !sku2) continue;
       
       await query(
-        `INSERT INTO master_products (sku1, sku2, hpp, idproduk, created_at) 
+        `INSERT INTO master_products (sku1, sku2, harga, idproduk, created_at) 
          VALUES (?, ?, ?, ?, NOW())`,
         [sku1, sku2, harga, idproduk]
       );
@@ -198,15 +198,14 @@ export async function POST(request: NextRequest) {
       const namaProduk = cleanString(row['Nama Produk']);
       const nomorReferensiSku = cleanString(row['Nomor Referensi SKU']);
       const skuInduk = cleanString(row['SKU Induk']);
-      const jumlah = parseInt(row['Jumlah']) || 0;
       
       await query(
         `INSERT INTO orders (
           no_pesanan, waktu_pesanan_dibuat, status_pesanan, nama_produk,
-          nomor_referensi_sku, sku_induk, jumlah, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+          nomor_referensi_sku, sku_induk, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, NOW())`,
         [noPesanan, waktuPesananDibuat, statusPesanan, namaProduk, 
-         nomorReferensiSku, skuInduk, jumlah]
+         nomorReferensiSku, skuInduk]
       );
       ordersCount++;
     }
