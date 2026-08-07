@@ -123,6 +123,9 @@ test('buildIncomePreview keeps a different overlapping report importable as an i
 
   assert.equal(preview.duplicateHash, false);
   assert.equal(preview.canImport, true);
+  assert.equal(preview.newRows, preview.sections.penghasilanOrder.rows + preview.sections.penghasilanSku.rows + preview.sections.adjustment.rows + preview.sections.shippingFeeDiscrepancy.rows);
+  assert.equal(preview.existingRows, 0);
+  assert.equal(preview.unchangedRows, 0);
   assert.equal(preview.sections.penghasilanOrder.rows > 0, true);
   assert.equal(preview.sections.penghasilanSku.rows > 0, true);
 });

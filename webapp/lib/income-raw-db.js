@@ -21,11 +21,21 @@ function buildIncomePreview(parsed, existingImport) {
     adjustment: { status: parsed.sections.adjustment.status, rows: parsed.sections.adjustment.rows.length },
     shippingFeeDiscrepancy: { status: parsed.sections.shippingFeeDiscrepancy.status, rows: parsed.sections.shippingFeeDiscrepancy.rows.length },
   };
+  const totalRows = Object.values(sections).reduce((sum, section) => sum + section.rows, 0);
   return {
     valid: parsed.valid,
     canImport: parsed.valid && !duplicateHash,
     duplicateHash,
     existingImportId: existingImport?.id ?? null,
+    totalRows,
+    newRows: duplicateHash ? 0 : totalRows,
+    existingRows: 0,
+    unchangedRows: duplicateHash ? totalRows : 0,
+    safeUpdateRows: 0,
+    protectedFieldCount: 0,
+    staleSnapshotCount: 0,
+    regressionCount: 0,
+    updatedRows: [],
     sourceFile: parsed.sourceFile,
     sha256: parsed.sha256,
     reportPeriod: parsed.reportPeriod,
