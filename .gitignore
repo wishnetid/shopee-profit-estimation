@@ -41,3 +41,6 @@ webapp/.vercel
 
 # Test files
 test-db.js
+
+# Local recovery backups contain database and customer data
+Archive/

@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createConnection, Connection } from 'mysql2/promise';
 import * as XLSX from 'xlsx';
 
+// Shared with node:test regression tests. The raw Shopee export uses IDR dot-thousands strings.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { parseIdr, validateOrderAllHeaders } = require('../../../lib/order-all-import.js') as {
+  parseIdr: (value: unknown) => number | null;
+  validateOrderAllHeaders: (headers: unknown[]) => { valid: boolean; missing: string[]; unexpected: string[] };
+};
+
 const BATCH_SIZE = 100;
 
 async function getConnection() {
@@ -11,6 +18,7 @@ async function getConnection() {
     user: process.env.DB_USER || 'supplie3_shopee_profit_estimation',
     password: process.env.DB_PASSWORD || 'Persib1933',
     database: process.env.DB_NAME || 'supplie3_shopee_profit_estimation',
+    dateStrings: true,
   });
 }
 
@@ -33,21 +41,32 @@ function sanitizeDatetime(val: any): any {
   return null;
 }
 
-function sanitizeDecimal(val: any): any {
-  if (val === undefined || val === null) return null;
-  const s = String(val).trim();
-  if (s === '' || s === '-' || s === 'N/A') return null;
-  const cleaned = s.replace(/[a-zA-Z\s]/g, '').replace(/,/g, '');
-  const num = parseFloat(cleaned);
-  return isNaN(num) ? null : num;
+function sanitizeDecimal(val: unknown): number | null {
+  return parseIdr(val);
+}
+
+function sameImportValue(incoming: unknown, stored: unknown): boolean {
+  const normalizeEmpty = (value: unknown): string | null => {
+    if (value === undefined || value === null) return null;
+    const text = String(value).trim();
+    return text === '' || text === '-' || text.toLowerCase() === 'n/a' || text.toLowerCase() === 'null' ? null : text;
+  };
+
+  const incomingText = normalizeEmpty(incoming);
+  const storedText = normalizeEmpty(stored);
+  if (incomingText === null || storedText === null) return incomingText === storedText;
+
+  if (typeof incoming === 'number') return Number(stored) === incoming;
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(incomingText)) return storedText.slice(0, 16) === incomingText;
+  return incomingText === storedText;
 }
 
 function detectReportType(workbook: XLSX.WorkBook): string | null {
   for (const name of workbook.SheetNames) {
     if (name.toLowerCase() === 'orders') {
       const sheet = workbook.Sheets[name];
-      const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-      if (data.length > 0 && data[0].length >= 40) return 'order_all';
+      const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as unknown[][];
+      if (data.length > 0 && validateOrderAllHeaders(data[0] || []).valid) return 'order_all';
     }
   }
   for (const name of workbook.SheetNames) {
@@ -158,16 +177,15 @@ async function previewOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
 
   // Check against DB — fetch full rows for diff comparison
   const allKeys = extractOrderKeys(workbook);
-  const highlightCols = ['no_resi', 'status_pesanan', 'alasan_pembatalan', 'status_pembatalan_pengembalian'];
-  const dbRows = await fetchExistingRows(conn, allKeys, 'order_all', ['no_pesanan', 'nomor_referensi_sku', 'nama_variasi'], ['no_pesanan', 'nomor_referensi_sku', 'nama_variasi', ...highlightCols]);
-
-  // Excel column → DB column mapping for highlight fields
-  const excelToDb: Record<string, string> = {
-    'No. Resi': 'no_resi',
-    'Status Pesanan': 'status_pesanan',
-    'Alasan Pembatalan': 'alasan_pembatalan',
-    'Status Pembatalan/ Pengembalian': 'status_pembatalan_pengembalian',
-  };
+  // Compare the full imported row, not only status/resi. A Shopee snapshot may update
+  // return data, address, schedule, shipping cost, or total payment without changing status.
+  const dbRows = await fetchExistingRows(
+    conn,
+    allKeys,
+    'order_all',
+    ['no_pesanan', 'nomor_referensi_sku', 'nama_variasi'],
+    ORDER_COLS,
+  );
 
   let newCount = 0;
   let existingCount = 0;
@@ -232,24 +250,22 @@ async function previewOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
           });
         }
 
-        // Collect all changes (for display)
-        for (const excelCol of Object.keys(excelToDb)) {
-          const dbCol = excelToDb[excelCol];
-          const idx = headerMap[excelCol];
-          if (idx === undefined) continue;
-          const newVal = rawDataRow[idx];
-          const oldVal = dbRow[dbCol];
-          const newStr = norm(newVal);
-          const oldStr = norm(oldVal);
-          if (newStr !== oldStr) {
-            changes.push({
-              column: excelCol,
-              dbColumn: dbCol,
-              from: oldStr || '(kosong)',
-              to: newStr || '(kosong)',
-            });
-          }
-        }
+        // Collect all imported-field changes. This prevents a silent overwrite outside
+        // the old four-field status/resi-focused preview.
+        const excelRow: Record<string, unknown> = {};
+        headers.forEach((header, index) => {
+          if (header) excelRow[String(header).trim()] = rawDataRow[index];
+        });
+        const importedValues = extractOrderRow(excelRow);
+        ORDER_COLS.forEach((dbCol, index) => {
+          if (sameImportValue(importedValues[index], dbRow[dbCol])) return;
+          changes.push({
+            column: dbCol,
+            dbColumn: dbCol,
+            from: norm(dbRow[dbCol]) || '(kosong)',
+            to: norm(importedValues[index]) || '(kosong)',
+          });
+        });
 
         if (changes.length > 0) {
           updatedRows.push({
@@ -496,13 +512,22 @@ async function importOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
   const resiIdx = ORDER_COLS.indexOf('no_resi');
   const keyIdx = [ORDER_COLS.indexOf('no_pesanan'), ORDER_COLS.indexOf('nomor_referensi_sku'), ORDER_COLS.indexOf('nama_variasi')];
 
-  for (let i = 0; i < data.length; i += BATCH_SIZE) {
+  // An import is one snapshot. Never leave the DB half-updated when a later batch fails.
+  await conn.beginTransaction();
+  try {
+    for (let i = 0; i < data.length; i += BATCH_SIZE) {
     const batch = data.slice(i, i + BATCH_SIZE);
     const values: any[][] = [];
-    for (const row of batch) {
+    for (const [rowOffset, row] of batch.entries()) {
       try {
-        values.push(extractOrderRow(row));
-      } catch { errors++; }
+        const extracted = extractOrderRow(row);
+        if (extracted[keyIdx[0]] == null || extracted[keyIdx[1]] == null || extracted[keyIdx[2]] == null) {
+          throw new Error('No. Pesanan, Nomor Referensi SKU, dan Nama Variasi wajib terisi');
+        }
+        values.push(extracted);
+      } catch (error: any) {
+        throw new Error(`Order.all row ${i + rowOffset + 2} tidak valid: ${error.message}`);
+      }
     }
     if (values.length === 0) continue;
 
@@ -537,6 +562,10 @@ async function importOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
     try {
       const valuePlaceholders = values.map(() => `(${placeholders})`).join(',');
       const flatParams = values.flat();
+      const insertedInBatch = values.filter((row) => {
+        const key = [row[keyIdx[0]], row[keyIdx[1]], row[keyIdx[2]]].join('||');
+        return !existingRows.has(key);
+      }).length;
       const [result] = await conn.query(
         `INSERT INTO order_all (${cols}) VALUES ${valuePlaceholders}
          ON DUPLICATE KEY UPDATE
@@ -588,19 +617,21 @@ async function importOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
            waktu_pesanan_selesai=VALUES(waktu_pesanan_selesai)`,
         flatParams
       ) as any;
-      const newRows = result.affectedRows - (result.changedRows || 0);
       const updatedRows = result.changedRows || 0;
-      newInserted += newRows;
+      newInserted += insertedInBatch;
       updatedCount += updatedRows;
-      console.log(`Batch ${i}: affectedRows=${result.affectedRows}, new=${newRows}, updated=${updatedRows}`);
-    } catch (err: any) {
-      errors++;
-      console.error(`Order batch error at row ${i}:`, err.message);
+      console.log(`Batch ${i}: affectedRows=${result.affectedRows}, new=${insertedInBatch}, updated=${updatedRows}`);
+      } catch (err: any) {
+        throw new Error(`Order.all batch starting at row ${i + 2} failed: ${err.message}`);
+      }
     }
-  }
 
-  await conn.commit();
-  return { inserted: newInserted, updated: updatedCount, guarded: guardedCount, errors };
+    await conn.commit();
+    return { inserted: newInserted, updated: updatedCount, guarded: guardedCount, errors };
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  }
 }
 
 const INCOME_COLS = [

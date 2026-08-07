@@ -2,6 +2,7 @@
 
 **Last Updated:** 2026-08-07  
 **Production URL:** https://webappumber-five.vercel.app  
+**Order.all Import State:** raw snapshot import repaired and verified; profit processing remains a later phase.
 **GitHub:** https://github.com/wishnetid/shopee-profit-estimation
 
 ---
@@ -132,18 +133,23 @@ API parses Excel → queries DB → returns:
 - **Total:** all rows in file
 
 Plus:
-- **Diff table:** shows exactly which 4 columns changed per row:
-  - No. Resi
-  - Status Pesanan
-  - Alasan Pembatalan
-  - Status Pembatalan/Pengembalian
-- **Regression detection:** flags rows where status would go backward or resi would be deleted
+- **Diff table:** compares every mapped `order_all` field before import, so a newer snapshot cannot silently overwrite nominal, return state, address, schedule, or shipping data.
+- **Regression detection:** flags rows where a ranked status would go backward or an existing resi would be deleted.
+- **Schema guard:** accepts only one `orders` sheet with the exact 50 Order.all headers.
 
 ### Step 3: Import
-User clicks "Import" → API applies guards → inserts/updates DB.
+User clicks "Import" when there is a new row **or an update-only snapshot**. The handler applies guards and writes the full file in one database transaction: any failing batch rolls back the entire snapshot.
 
 ### Step 4: Result
 Shows: new rows, updated rows, blocked regressions, errors.
+
+### Order.all Raw Import Contract
+- **Grain:** one item row, identified by `(no_pesanan, nomor_referensi_sku, nama_variasi)`.
+- **Duplicate:** identical snapshot item is skipped.
+- **Update:** same composite key with a changed mapped value is updated; this works even when there are zero new rows.
+- **Currency:** Shopee values such as `82.500` are parsed as integer IDR `82500`, never decimal `82.5`.
+- **Snapshots:** overlapping exports must be merged by composite key, never appended as independent transactions.
+- **Scope:** `order_all` is raw operational source data. Profit calculation, Income, Balance, HPP allocation, and final return accounting are a separate next phase.
 
 ---
 

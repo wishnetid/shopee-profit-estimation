@@ -123,8 +123,11 @@ export default function UploadPage() {
     setChecking(false);
   };
 
+  const changeCount = preview?.updatedRows.length || 0;
+  const canImport = !!preview && (preview.newRows > 0 || changeCount > 0);
+
   const handleImport = async () => {
-    if (!selectedFile || !preview || preview.newRows === 0) return;
+    if (!selectedFile || !preview || !canImport) return;
     setImporting(true);
     setError(null);
 
@@ -424,9 +427,9 @@ export default function UploadPage() {
                 </button>
                 <button
                   onClick={handleImport}
-                  disabled={importing || preview.newRows === 0}
+                  disabled={importing || !canImport}
                   className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
-                    preview.newRows === 0
+                    !canImport
                       ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
                       : 'bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed'
                   }`}
@@ -436,12 +439,12 @@ export default function UploadPage() {
                       <Loader2 className="w-4 h-4 animate-spin" />
                       Importing...
                     </>
-                  ) : preview.newRows === 0 ? (
-                    'Tidak ada data baru'
+                  ) : !canImport ? (
+                    'Tidak ada perubahan'
                   ) : (
                     <>
-                      Import {preview.newRows.toLocaleString()} baris baru
-                      {preview.existingRows > 0 && ` (+ ${preview.existingRows} update)`}
+                      {preview.newRows > 0 ? `Import ${preview.newRows.toLocaleString()} baris baru` : 'Update snapshot'}
+                      {changeCount > 0 && ` (+ ${changeCount.toLocaleString()} update)`}
                     </>
                   )}
                 </button>
