@@ -1,6 +1,6 @@
 # NEXTAGENTS — Shopee Profit Estimation
 
-> Baca file ini lalu `README.md` penuh. `Order.all` sudah live sebagai RAW current-state. RAW Income sudah diimplementasikan, migration database telah diterapkan, dan preview production memakai report Income asli telah lulus. Import paket Income pertama masih menunggu persetujuan eksplisit user. Jangan melanjutkan ke Balance, HPP, return/refund, atau profit sebelum import RAW Income dan verifikasi pasca-import selesai.
+> Baca file ini lalu `README.md` penuh. `Order.all` dan RAW Income sudah live serta tervalidasi di production. Jangan melanjutkan ke Balance, HPP, return/refund, atau profit sebelum user secara eksplisit memilih report berikutnya.
 
 ## Status handoff — 2026-08-08
 
@@ -31,7 +31,7 @@ Deployment: Ready
 - Timestamp snapshot memakai validasi kalender strict dan disimpan sortable sebagai `YYYY-MM-DD HH:mm:ss`.
 - Import memakai DB transaction.
 
-## Income RAW — Implementasi dan Preview Production Selesai, Import Pertama Menunggu Persetujuan
+## Income RAW — Live dan Tervalidasi di Production
 
 ### Batas scope dan urutan kerja
 

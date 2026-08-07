@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import dashboardAuth from '../lib/dashboard-auth.js';
 
 const {
+  isDashboardAuthEnabled,
   isSameOriginMutation,
   isValidBasicAuthorization,
   validateUploadFile,
@@ -12,6 +13,12 @@ const {
 function basic(username, password) {
   return `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
 }
+
+test('isDashboardAuthEnabled defaults to protected and supports an explicit temporary disable switch', () => {
+  assert.equal(isDashboardAuthEnabled({}), true);
+  assert.equal(isDashboardAuthEnabled({ DASHBOARD_AUTH_ENABLED: 'true' }), true);
+  assert.equal(isDashboardAuthEnabled({ DASHBOARD_AUTH_ENABLED: 'false' }), false);
+});
 
 test('isValidBasicAuthorization accepts matching username and password', () => {
   assert.equal(

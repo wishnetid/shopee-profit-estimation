@@ -3,9 +3,11 @@ import { getConnection } from '@/lib/db';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const {
+  isDashboardAuthEnabled,
   isSameOriginMutation,
   isValidBasicAuthorization,
 } = require('../../../../lib/dashboard-auth.js') as {
+  isDashboardAuthEnabled: (env?: NodeJS.ProcessEnv) => boolean;
   isSameOriginMutation: (origin: string | null, expectedOrigin: string) => boolean;
   isValidBasicAuthorization: (authorization: string | null, username: string | undefined, password: string | undefined) => boolean;
 };
@@ -23,6 +25,7 @@ function unauthorizedResponse() {
 }
 
 function isAuthorized(request: NextRequest) {
+  if (!isDashboardAuthEnabled()) return true;
   return isValidBasicAuthorization(
     request.headers.get('authorization'),
     process.env.DASHBOARD_BASIC_AUTH_USER,

@@ -37,10 +37,12 @@ const {
 };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const {
+  isDashboardAuthEnabled,
   isSameOriginMutation,
   isValidBasicAuthorization,
   validateUploadFile,
 } = require('../../../lib/dashboard-auth.js') as {
+  isDashboardAuthEnabled: (env?: NodeJS.ProcessEnv) => boolean;
   isSameOriginMutation: (origin: string | null, expectedOrigin: string) => boolean;
   isValidBasicAuthorization: (authorization: string | null, username: string | undefined, password: string | undefined) => boolean;
   validateUploadFile: (file: { name: string; size: number; type: string } | null) => { valid: boolean; error: string | null };
@@ -866,14 +868,16 @@ export async function POST(request: NextRequest) {
   let conn: Connection | null = null;
   try {
     const { DASHBOARD_BASIC_AUTH_USER, DASHBOARD_BASIC_AUTH_PASSWORD } = process.env;
-    if (!DASHBOARD_BASIC_AUTH_USER || !DASHBOARD_BASIC_AUTH_PASSWORD) {
-      return NextResponse.json({ error: 'Dashboard authentication is not configured.' }, { status: 503 });
+    if (isDashboardAuthEnabled()) {
+      if (!DASHBOARD_BASIC_AUTH_USER || !DASHBOARD_BASIC_AUTH_PASSWORD) {
+        return NextResponse.json({ error: 'Dashboard authentication is not configured.' }, { status: 503 });
+      }
+      if (!isValidBasicAuthorization(
+        request.headers.get('authorization'),
+        DASHBOARD_BASIC_AUTH_USER,
+        DASHBOARD_BASIC_AUTH_PASSWORD,
+      )) return unauthorizedResponse();
     }
-    if (!isValidBasicAuthorization(
-      request.headers.get('authorization'),
-      DASHBOARD_BASIC_AUTH_USER,
-      DASHBOARD_BASIC_AUTH_PASSWORD,
-    )) return unauthorizedResponse();
     if (!isSameOriginMutation(request.headers.get('origin'), request.nextUrl.origin)) {
       return NextResponse.json({ error: 'Cross-origin request rejected.' }, { status: 403 });
     }
