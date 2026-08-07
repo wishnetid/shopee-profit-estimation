@@ -315,6 +315,30 @@ export default function UploadPage() {
                     <div className="text-xs text-slate-500">Total</div>
                   </div>
                 </div>
+
+                {preview.sections && (
+                  <div className="mt-4 border-t border-slate-100 pt-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                      <h3 className="text-sm font-semibold text-slate-800">Income RAW package</h3>
+                      <span className={`text-xs font-semibold ${preview.reconciliation?.status === 'matched' ? 'text-emerald-600' : 'text-red-600'}`}>
+                        Rekonsiliasi {preview.reconciliation?.status === 'matched' ? 'cocok' : 'bermasalah'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
+                      {Object.entries(preview.sections).map(([name, value]) => (
+                        <div key={name} className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                          <div className="text-slate-500">{name}</div>
+                          <div className="font-semibold text-slate-800">{value.rows.toLocaleString()} row · {value.status}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2 text-xs text-slate-600">
+                      Periode: <b>{preview.reportPeriod?.from || '—'} s/d {preview.reportPeriod?.to || '—'}</b>
+                      {preview.reconciliation && <> · Total yang dilepas: <b>{preview.reconciliation.summaryTotal?.toLocaleString('id-ID') || '—'}</b></>}
+                    </div>
+                    {preview.sha256 && <div className="mt-1 font-mono text-[10px] text-slate-400 break-all">SHA-256: {preview.sha256}</div>}
+                  </div>
+                )}
               </div>
 
               {/* Info banner */}
