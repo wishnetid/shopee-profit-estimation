@@ -72,6 +72,18 @@ test('parseIncomePackage reconciles Summary Total Pendapatan against Penghasilan
   assert.equal(parsed.reconciliation.summaryTotal, parsed.reconciliation.orderSignedTotal);
 });
 
+test('parseIncomePackage reconciles the legacy June layout without double-counting XTRA breakdowns', () => {
+  const parsed = parseIncomePackage(
+    readWorkbook('Income.sudah dilepas.id.20260601_20260630.xlsx'),
+    'Income.sudah dilepas.id.20260601_20260630.xlsx',
+    'sha-june',
+  );
+
+  assert.equal(parsed.valid, true);
+  assert.equal(parsed.reconciliation.status, 'matched');
+  assert.equal(parsed.reconciliation.summaryTotal, parsed.reconciliation.orderSignedTotal);
+});
+
 test('parseIncomePackage marks optional Adjustment and Shipping Fee Discrepancy as absent instead of silently dropping them', () => {
   const parsed = parseIncomePackage(
     readWorkbook('Income.sudah dilepas.id.20260801_20260808.xlsx'),

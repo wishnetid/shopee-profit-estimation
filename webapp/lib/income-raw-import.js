@@ -124,9 +124,18 @@ function parsePenghasilan(rows, errors) {
     }
     const payload = rowPayload(headers, row);
     let signedTotal = 0;
-    // Seller settlement components run from Harga Produk through PPh 22.
-    // Buyer info starts after that and must never inflate Summary reconciliation.
-    for (let index = 10; index <= 36 && index < row.length; index += 1) {
+    const start = headers.findIndex((field) => field.label === 'Harga Produk');
+    const end = headers.findIndex((field) => field.label === 'PPh 22');
+    const usesAggregateServiceFee = headers.some((field) => field.label === 'Biaya Layanan');
+    // Seller settlement components are the semantic range Harga Produk through PPh 22.
+    // Older exports expose Biaya Layanan as an aggregate while also displaying its
+    // XTRA/Premium breakdowns; adding both would double-count the same fee.
+    for (let index = Math.max(0, start); index <= end && index < row.length; index += 1) {
+      const label = headers[index].label;
+      if (usesAggregateServiceFee && (
+        label === 'Biaya Layanan Promo XTRA'
+        || label === 'Biaya Gratis Ongkir XTRA - Ukuran Biasa (Kategori F)'
+      )) continue;
       const amount = parseSignedNumber(row[index]);
       if (amount !== null) signedTotal += amount;
     }
