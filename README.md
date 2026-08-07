@@ -1,6 +1,6 @@
 # Shopee Profit Estimation
 
-**Last updated:** 2026-08-07
+**Last updated:** 2026-08-08
 **Production:** https://webapp-umber-five.vercel.app
 **Repository:** https://github.com/wishnetid/shopee-profit-estimation
 **Current branch:** `master`
@@ -41,8 +41,14 @@
 - Import `Order.all` dilakukan dalam satu database transaction. Jika ada batch gagal, seluruh import rollback; tidak boleh ada snapshot setengah masuk.
 - Preview membandingkan seluruh field import yang dipetakan, bukan hanya status dan resi.
 - Schema guard menolak `Order.all` yang tidak memiliki satu sheet `orders` dengan exact 50 header yang diharapkan.
-- Unit test parser IDR, schema guard, dan update-only import sudah ada dan lulus.
-- Production health check dan preview `Order.all` asli sudah diverifikasi setelah deploy.
+- Workbook juga ditolak sebelum preview/import jika ada composite key duplicate atau bagian key kosong.
+- Waktu snapshot memakai validasi kalender strict dan dinormalisasi menjadi `YYYY-MM-DD HH:mm:ss`.
+- Dashboard dan seluruh `/api/*` memakai Basic Auth dari environment; `POST /api/upload` dan `POST /api/settings/database` juga memvalidasi auth di route serta same-origin.
+- Upload server-side hanya menerima `.xlsx`/`.xls` hingga batas ukuran yang ditentukan.
+- Seluruh koneksi DB runtime memakai environment-only; tidak ada credential/fallback DB hardcoded pada source runtime.
+- Unit test parser, schema, duplicate key, strict timestamp, auth, origin, dan file validation lulus.
+- Production health, auth, preview raw asli, reject duplicate key, reject timestamp invalid, dan reject cross-origin sudah diverifikasi setelah deploy.
+- Preview kelima raw `Order.all` di `data_sample/` juga lulus terhadap endpoint production tanpa mutasi DB; evidence lokal di `Archive/order_all-preview-rotation-production-20260808-001300.json`.
 
 ### Belum dikerjakan — jangan diasumsikan selesai
 
@@ -50,8 +56,8 @@
 - Desain final profit. `Order.all` sendiri **belum cukup** untuk menentukan net payout atau profit final.
 - Mapping HPP final dan alokasi pendapatan order-level ke item-level.
 - Rekonsiliasi return/refund dengan laporan finansial.
-- Hardening autentikasi/otorisasi endpoint aplikasi dan manajemen destructive action.
-- Konsolidasi schema/reproducible migration. `webapp/database/schema.sql` dan `webapp/scripts/setup-db.js` adalah artefak lama dan **bukan source of truth** untuk table live `order_all` saat ini.
+- Rotasi password DB di cPanel dan Vercel. Password lama pernah ada di riwayat source; source aktif sudah environment-only, tetapi credential tetap perlu dirotasi terpisah.
+- Audit dan desain ulang endpoint/table legacy di luar scope RAW `Order.all`; `webapp/database/schema.sql` dan `webapp/scripts/setup-db.js` bukan source of truth untuk table live `order_all` saat ini.
 
 ---
 
@@ -104,6 +110,8 @@ DB_PORT
 DB_USER
 DB_PASSWORD
 DB_NAME
+DASHBOARD_BASIC_AUTH_USER
+DASHBOARD_BASIC_AUTH_PASSWORD
 ```
 
 - Local development: `webapp/.env.local`.
@@ -240,8 +248,29 @@ webapp/lib/order-all-import.js
 Memuat:
 
 - `parseIdr()`;
+- `parseSnapshotAt()`;
 - `validateOrderAllHeaders()`;
+- `validateOrderAllCompositeKeys()`;
 - `shouldAllowImport()`.
+
+### Dashboard protection
+
+```text
+webapp/proxy.ts
+webapp/lib/dashboard-auth.js
+```
+
+- `proxy.ts` memakai Basic Auth environment-only untuk page dan `/api/*`.
+- Mutating route tetap melakukan validasi auth dan same-origin sendiri.
+- Tidak ada credential Basic Auth di Git, README, atau source.
+
+### Snapshot metadata migration
+
+```text
+webapp/scripts/migrate-order-all-snapshot-metadata.js
+```
+
+Default dry-run membaca DDL live tanpa mutasi. `--apply` hanya menambah kolom metadata yang belum ada.
 
 ### Currency repair utility
 
@@ -318,10 +347,17 @@ Hasil yang sehat:
 - `unexpected_db_rows: 0`;
 - `rows_requiring_currency_repair: 0`.
 
-Untuk production health:
+Untuk production health, gunakan Basic Auth dari environment lokal dan jangan paste credential ke command history:
 
 ```bash
-curl -sS https://webapp-umber-five.vercel.app/api/health
+cd /home/yogaimawan/Dokumentasi/shopee_profit_estimation/webapp
+```
+
+```bash
+set -a
+. ./.env.local
+set +a
+curl -sS -u "$DASHBOARD_BASIC_AUTH_USER:$DASHBOARD_BASIC_AUTH_PASSWORD" https://webapp-umber-five.vercel.app/api/health
 ```
 
 ---
