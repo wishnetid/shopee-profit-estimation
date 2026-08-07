@@ -154,7 +154,11 @@ export default function UploadPage() {
                       )}
                     </div>
                     {fileUpload.message && (
-                      <div className={`text-xs mt-0.5 ${fileUpload.status === 'error' ? 'text-red-600' : 'text-green-600'}`}>
+                      <div className={`text-xs mt-0.5 ${
+                        fileUpload.status === 'error' ? 'text-red-600' :
+                        fileUpload.message.includes('di-update') && !fileUpload.message.includes('baru') ? 'text-amber-600' :
+                        'text-green-600'
+                      }`}>
                         {fileUpload.message}
                       </div>
                     )}

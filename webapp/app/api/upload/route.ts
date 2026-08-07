@@ -155,7 +155,8 @@ async function importOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
 
   const placeholders = ORDER_COLS.map(() => '?').join(',');
   const cols = ORDER_COLS.join(',');
-  let inserted = 0;
+  let newInserted = 0;
+  let updatedCount = 0;
   let errors = 0;
 
   for (let i = 0; i < data.length; i += BATCH_SIZE) {
@@ -222,8 +223,12 @@ async function importOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
            waktu_pesanan_selesai=VALUES(waktu_pesanan_selesai)`,
         flatParams
       ) as any;
-      console.log(`Batch ${i}: affectedRows=${result.affectedRows}, inserted=${values.length}`);
-      inserted += result.affectedRows || 0;
+      // affectedRows: 1 = new insert, 2 = updated (ON DUPLICATE KEY UPDATE)
+      const newRows = result.affectedRows - (result.changedRows || 0);
+      const updatedRows = result.changedRows || 0;
+      newInserted += newRows;
+      updatedCount += updatedRows;
+      console.log(`Batch ${i}: affectedRows=${result.affectedRows}, new=${newRows}, updated=${updatedRows}`);
     } catch (err: any) {
       errors++;
       console.error(`Order batch error at row ${i}:`, err.message);
@@ -231,7 +236,7 @@ async function importOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
   }
 
   await conn.commit();
-  return { inserted, errors };
+  return { inserted: newInserted, updated: updatedCount, errors };
 }
 
 const INCOME_COLS = [
@@ -397,11 +402,24 @@ export async function POST(request: NextRequest) {
         break;
     }
 
+    let message = '';
+    if (result.inserted > 0 && result.updated > 0) {
+      message = `${result.inserted} baru, ${result.updated} di-update ke ${reportName}`;
+    } else if (result.inserted > 0) {
+      message = `${result.inserted} rows imported to ${reportName}`;
+    } else if (result.updated > 0) {
+      message = `${result.updated} rows di-update di ${reportName} (tidak ada data baru)`;
+    } else {
+      message = `0 rows imported to ${reportName}`;
+    }
+    if (result.errors) message += ` (${result.errors} errors)`;
+
     return NextResponse.json({
       success: true,
       reportType: reportName,
-      message: `${result.inserted} rows imported to ${reportName}${result.errors ? ` (${result.errors} errors)` : ''}`,
+      message,
       rowsImported: result.inserted,
+      rowsUpdated: result.updated || 0,
       errors: result.errors || 0,
     });
   } catch (error: any) {
