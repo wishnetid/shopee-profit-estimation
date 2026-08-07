@@ -17,6 +17,7 @@ interface UpdatedRow {
   sku: string;
   variasi: string;
   changes: DiffChange[];
+  regressions: { type: string; column: string; from: string; to: string; message: string }[];
 }
 
 interface PreviewData {
@@ -27,6 +28,7 @@ interface PreviewData {
   newRows: number;
   existingRows: number;
   unchangedRows: number;
+  regressionCount: number;
   updatedRows: UpdatedRow[];
   headers: string[];
   previewColumns: string[];
@@ -38,6 +40,7 @@ interface ImportResult {
   message: string;
   rowsImported: number;
   rowsUpdated: number;
+  rowsGuarded: number;
   errors: number;
 }
 
@@ -106,6 +109,7 @@ export default function UploadPage() {
         newRows: data.newRows,
         existingRows: data.existingRows,
         unchangedRows: data.unchangedRows,
+        regressionCount: data.regressionCount || 0,
         updatedRows: data.updatedRows || [],
         headers: data.headers,
         previewColumns: data.previewColumns,
@@ -140,6 +144,7 @@ export default function UploadPage() {
         message: data.message,
         rowsImported: data.rowsImported,
         rowsUpdated: data.rowsUpdated,
+        rowsGuarded: data.rowsGuarded || 0,
         errors: data.errors,
       });
       setStep('done');
@@ -290,6 +295,24 @@ export default function UploadPage() {
                 </div>
               )}
 
+              {/* Regression warning */}
+              {preview.regressionCount > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                  <div className="text-xs text-red-700">
+                    <span className="font-semibold">{preview.regressionCount} baris terdeteksi regressi</span> — status/resi akan di-BLOCK (tetap pakai data lama):
+                    <ul className="mt-1 list-disc list-inside space-y-0.5">
+                      {preview.updatedRows.filter(r => r.regressions.length > 0).slice(0, 5).map((r, i) => (
+                        <li key={i}>
+                          <span className="font-mono">{r.no_pesanan}</span> — {r.regressions.map(reg => reg.message).join(', ')}
+                        </li>
+                      ))}
+                      {preview.regressionCount > 5 && <li>... dan {preview.regressionCount - 5} lainnya</li>}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
               {/* ── DIFF TABLE: Rows yang berubah ── */}
               {preview.updatedRows.length > 0 && (
                 <div className="bg-white border border-slate-200 rounded-lg overflow-hidden mb-4">
@@ -316,20 +339,24 @@ export default function UploadPage() {
                         </thead>
                         <tbody>
                           {preview.updatedRows.map((row, i) => (
-                            <tr key={i} className="border-b border-slate-100 hover:bg-amber-50/30">
+                            <tr key={i} className={`border-b border-slate-100 ${row.regressions.length > 0 ? 'bg-red-50/50' : 'hover:bg-amber-50/30'}`}>
                               <td className="px-3 py-2 font-mono text-slate-900 whitespace-nowrap">{row.no_pesanan}</td>
                               <td className="px-3 py-2 text-slate-700 whitespace-nowrap">{row.sku}</td>
                               <td className="px-3 py-2 text-slate-700 whitespace-nowrap">{row.variasi}</td>
                               <td className="px-3 py-2">
                                 <div className="flex flex-wrap gap-1.5">
-                                  {row.changes.map((ch, j) => (
-                                    <span key={j} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100">
-                                      <span className="font-medium text-slate-600">{ch.column}:</span>
-                                      <span className="text-red-500 line-through">{ch.from}</span>
-                                      <span className="text-slate-400">→</span>
-                                      <span className="text-green-600 font-medium">{ch.to}</span>
-                                    </span>
-                                  ))}
+                                  {row.changes.map((ch, j) => {
+                                    const isBlocked = row.regressions.some(r => r.column === ch.column);
+                                    return (
+                                      <span key={j} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded ${isBlocked ? 'bg-red-100 border border-red-200' : 'bg-slate-100'}`}>
+                                        <span className="font-medium text-slate-600">{ch.column}:</span>
+                                        <span className="text-red-500 line-through">{ch.from}</span>
+                                        <span className="text-slate-400">→</span>
+                                        <span className={`font-medium ${isBlocked ? 'text-red-400 line-through' : 'text-green-600'}`}>{ch.to}</span>
+                                        {isBlocked && <span className="text-[10px] font-bold text-red-500 ml-0.5">BLOCKED</span>}
+                                      </span>
+                                    );
+                                  })}
                                 </div>
                               </td>
                             </tr>
@@ -442,7 +469,7 @@ export default function UploadPage() {
           <p className="text-sm text-slate-600 mb-6">{result.message}</p>
 
           <div className="bg-white border border-slate-200 rounded-lg p-4 mb-6">
-            <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="grid grid-cols-4 gap-3 text-center">
               <div>
                 <div className="text-2xl font-bold text-green-600">{result.rowsImported.toLocaleString()}</div>
                 <div className="text-xs text-slate-500">Baru</div>
@@ -450,6 +477,10 @@ export default function UploadPage() {
               <div>
                 <div className="text-2xl font-bold text-blue-600">{result.rowsUpdated.toLocaleString()}</div>
                 <div className="text-xs text-slate-500">Di-update</div>
+              </div>
+              <div>
+                <div className={`text-2xl font-bold ${result.rowsGuarded > 0 ? 'text-red-500' : 'text-slate-300'}`}>{result.rowsGuarded.toLocaleString()}</div>
+                <div className="text-xs text-slate-500">Blocked</div>
               </div>
               <div>
                 <div className={`text-2xl font-bold ${result.errors > 0 ? 'text-red-600' : 'text-slate-300'}`}>{result.errors}</div>

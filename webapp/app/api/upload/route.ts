@@ -75,6 +75,31 @@ function getReportName(type: string): string {
 
 // ─── PREVIEW ───────────────────────────────────────────
 
+// Status progression order — higher = more advanced
+const STATUS_ORDER: Record<string, number> = {
+  'Belum Bayar': 0,
+  'Perlu Dikirim': 1,
+  'Sedang Dikirim': 2,
+  'Telah Dikirim': 3,
+  'Selesai': 4,
+  'Batal': 4, // terminal state
+};
+
+function isRegression(oldStatus: string | null, newStatus: string | null): boolean {
+  if (!oldStatus || !newStatus) return false;
+  const oldRank = STATUS_ORDER[oldStatus];
+  const newRank = STATUS_ORDER[newStatus];
+  if (oldRank === undefined || newRank === undefined) return false;
+  return oldRank > newRank;
+}
+
+function isResiRegression(oldResi: any, newResi: any): boolean {
+  const oldStr = oldResi != null ? String(oldResi).trim() : '';
+  const newStr = newResi != null ? String(newResi).trim() : '';
+  // Regression: had resi but now null/empty
+  return oldStr !== '' && newStr === '';
+}
+
 // Extract composite keys from Excel for order_all
 function extractOrderKeys(workbook: XLSX.WorkBook): string[][] {
   let sheetName = workbook.SheetNames.find(n => n.toLowerCase() === 'orders');
@@ -165,18 +190,55 @@ async function previewOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
 
       if (rawDataRow) {
         const changes: any[] = [];
+        const regressions: any[] = [];
+
+        // Get raw values
+        const norm = (v: any) => {
+          if (v == null) return '';
+          const s = String(v).trim();
+          return s === '-' || s === 'N/A' ? '' : s;
+        };
+
+        const getStatus = (col: string) => {
+          const idx = headerMap[col];
+          return idx !== undefined ? norm(rawDataRow[idx]) : '';
+        };
+        const getDbStatus = (dbCol: string) => norm(dbRow[dbCol]);
+
+        const newStatus = getStatus('Status Pesanan');
+        const oldStatus = getDbStatus('status_pesanan');
+        const newResi = getStatus('No. Resi');
+        const oldResi = getDbStatus('no_resi');
+
+        // Check status regression
+        if (isRegression(oldStatus, newStatus)) {
+          regressions.push({
+            type: 'status',
+            column: 'Status Pesanan',
+            from: oldStatus || '(kosong)',
+            to: newStatus || '(kosong)',
+            message: `Status mundur: ${oldStatus} → ${newStatus}`,
+          });
+        }
+
+        // Check resi regression
+        if (isResiRegression(dbRow['no_resi'], rawDataRow[headerMap['No. Resi']])) {
+          regressions.push({
+            type: 'resi',
+            column: 'No. Resi',
+            from: oldResi || '(kosong)',
+            to: newResi || '(kosong)',
+            message: `Resi hilang: ${oldResi} → kosong`,
+          });
+        }
+
+        // Collect all changes (for display)
         for (const excelCol of Object.keys(excelToDb)) {
           const dbCol = excelToDb[excelCol];
           const idx = headerMap[excelCol];
           if (idx === undefined) continue;
           const newVal = rawDataRow[idx];
           const oldVal = dbRow[dbCol];
-          // Normalize: null, undefined, empty string → all treated as "(kosong)"
-          const norm = (v: any) => {
-            if (v == null) return '';
-            const s = String(v).trim();
-            return s === '-' || s === 'N/A' ? '' : s;
-          };
           const newStr = norm(newVal);
           const oldStr = norm(oldVal);
           if (newStr !== oldStr) {
@@ -188,12 +250,14 @@ async function previewOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
             });
           }
         }
+
         if (changes.length > 0) {
           updatedRows.push({
             no_pesanan: k[0],
             sku: k[1],
             variasi: k[2],
             changes,
+            regressions,
           });
         }
       }
@@ -202,12 +266,16 @@ async function previewOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
     }
   }
 
+  // Count regressions
+  const regressionCount = updatedRows.filter(r => r.regressions.length > 0).length;
+
   return {
     headers: headers.filter(Boolean).map(String),
     totalRows: rows.length,
     newRows: newCount,
     existingRows: existingCount,
     updatedRows,
+    regressionCount,
     unchangedRows: existingCount - updatedRows.length,
     previewColumns: previewHeaders,
     previewRows,
@@ -420,7 +488,13 @@ async function importOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
   const cols = ORDER_COLS.join(',');
   let newInserted = 0;
   let updatedCount = 0;
+  let guardedCount = 0;
   let errors = 0;
+
+  // Status & resi column indices in ORDER_COLS
+  const statusIdx = ORDER_COLS.indexOf('status_pesanan');
+  const resiIdx = ORDER_COLS.indexOf('no_resi');
+  const keyIdx = [ORDER_COLS.indexOf('no_pesanan'), ORDER_COLS.indexOf('nomor_referensi_sku'), ORDER_COLS.indexOf('nama_variasi')];
 
   for (let i = 0; i < data.length; i += BATCH_SIZE) {
     const batch = data.slice(i, i + BATCH_SIZE);
@@ -431,6 +505,34 @@ async function importOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
       } catch { errors++; }
     }
     if (values.length === 0) continue;
+
+    // Fetch existing rows for guard check
+    const batchKeys = values.map(v => [v[keyIdx[0]], v[keyIdx[1]], v[keyIdx[2]]]);
+    const existingRows = await fetchExistingRows(conn, batchKeys, 'order_all', ['no_pesanan', 'nomor_referensi_sku', 'nama_variasi'], ['no_pesanan', 'nomor_referensi_sku', 'nama_variasi', 'status_pesanan', 'no_resi']);
+
+    // Apply guards: prevent status regression & resi deletion
+    for (const row of values) {
+      const key = [row[keyIdx[0]], row[keyIdx[1]], row[keyIdx[2]]].join('||');
+      const existing = existingRows.get(key);
+      if (existing) {
+        const oldStatus = existing.status_pesanan;
+        const newStatus = row[statusIdx];
+        const oldResi = existing.no_resi;
+        const newResi = row[resiIdx];
+
+        // Guard: status regression
+        if (isRegression(oldStatus, newStatus)) {
+          row[statusIdx] = oldStatus; // keep old status
+          guardedCount++;
+        }
+
+        // Guard: resi deletion
+        if (isResiRegression(oldResi, newResi)) {
+          row[resiIdx] = oldResi; // keep old resi
+          guardedCount++;
+        }
+      }
+    }
 
     try {
       const valuePlaceholders = values.map(() => `(${placeholders})`).join(',');
@@ -498,7 +600,7 @@ async function importOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
   }
 
   await conn.commit();
-  return { inserted: newInserted, updated: updatedCount, errors };
+  return { inserted: newInserted, updated: updatedCount, guarded: guardedCount, errors };
 }
 
 const INCOME_COLS = [
@@ -690,6 +792,7 @@ export async function POST(request: NextRequest) {
     } else {
       message = `0 rows imported to ${reportName}`;
     }
+    if (result.guarded) message += ` (${result.guarded} regressions di-block)`;
     if (result.errors) message += ` (${result.errors} errors)`;
 
     return NextResponse.json({
@@ -699,6 +802,7 @@ export async function POST(request: NextRequest) {
       message,
       rowsImported: result.inserted,
       rowsUpdated: result.updated || 0,
+      rowsGuarded: result.guarded || 0,
       errors: result.errors || 0,
     });
   } catch (error: any) {
