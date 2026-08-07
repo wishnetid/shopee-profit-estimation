@@ -208,6 +208,7 @@ async function previewOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
     newRows: newCount,
     existingRows: existingCount,
     updatedRows,
+    unchangedRows: existingCount - updatedRows.length,
     previewColumns: previewHeaders,
     previewRows,
     sheetName,

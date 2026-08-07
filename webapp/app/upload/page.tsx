@@ -26,6 +26,7 @@ interface PreviewData {
   totalRows: number;
   newRows: number;
   existingRows: number;
+  unchangedRows: number;
   updatedRows: UpdatedRow[];
   headers: string[];
   previewColumns: string[];
@@ -104,6 +105,7 @@ export default function UploadPage() {
         totalRows: data.totalRows,
         newRows: data.newRows,
         existingRows: data.existingRows,
+        unchangedRows: data.unchangedRows,
         updatedRows: data.updatedRows || [],
         headers: data.headers,
         previewColumns: data.previewColumns,
@@ -242,38 +244,49 @@ export default function UploadPage() {
                   </div>
                 </div>
 
-                {/* DB Comparison Stats */}
-                <div className="mt-3 grid grid-cols-3 gap-3">
+                {/* DB Comparison Stats — 4 categories */}
+                <div className="mt-3 grid grid-cols-4 gap-2">
                   <div className={`p-2 rounded-lg text-center ${preview.newRows > 0 ? 'bg-green-50 border border-green-200' : 'bg-slate-50 border border-slate-200'}`}>
                     <div className={`text-xl font-bold ${preview.newRows > 0 ? 'text-green-600' : 'text-slate-400'}`}>{preview.newRows.toLocaleString()}</div>
                     <div className="text-xs text-slate-500">Baru</div>
                   </div>
-                  <div className={`p-2 rounded-lg text-center ${preview.existingRows > 0 ? 'bg-amber-50 border border-amber-200' : 'bg-slate-50 border border-slate-200'}`}>
-                    <div className={`text-xl font-bold ${preview.existingRows > 0 ? 'text-amber-600' : 'text-slate-400'}`}>{preview.existingRows.toLocaleString()}</div>
-                    <div className="text-xs text-slate-500">Sudah ada</div>
+                  <div className={`p-2 rounded-lg text-center ${preview.updatedRows.length > 0 ? 'bg-amber-50 border border-amber-200' : 'bg-slate-50 border border-slate-200'}`}>
+                    <div className={`text-xl font-bold ${preview.updatedRows.length > 0 ? 'text-amber-600' : 'text-slate-400'}`}>{preview.updatedRows.length.toLocaleString()}</div>
+                    <div className="text-xs text-slate-500">Update</div>
                   </div>
-                  <div className="p-2 rounded-lg text-center bg-slate-50 border border-slate-200">
-                    <div className="text-xl font-bold text-slate-600">{preview.totalRows.toLocaleString()}</div>
+                  <div className={`p-2 rounded-lg text-center ${preview.unchangedRows > 0 ? 'bg-slate-100 border border-slate-200' : 'bg-slate-50 border border-slate-200'}`}>
+                    <div className={`text-xl font-bold ${preview.unchangedRows > 0 ? 'text-slate-500' : 'text-slate-400'}`}>{preview.unchangedRows.toLocaleString()}</div>
+                    <div className="text-xs text-slate-500">Duplikat</div>
+                  </div>
+                  <div className="p-2 rounded-lg text-center bg-blue-50 border border-blue-200">
+                    <div className="text-xl font-bold text-blue-600">{preview.totalRows.toLocaleString()}</div>
                     <div className="text-xs text-slate-500">Total</div>
                   </div>
                 </div>
               </div>
 
-              {/* All duplicates warning */}
-              {preview.newRows === 0 && preview.existingRows > 0 && (
+              {/* Info banner */}
+              {preview.newRows === 0 && preview.updatedRows.length === 0 && (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 flex items-start gap-3">
                   <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
                   <div>
                     <div className="text-sm font-semibold text-amber-800">Semua data sudah ada di database</div>
-                    <div className="text-xs text-amber-700 mt-0.5">Tidak ada data baru untuk di-import. File ini sudah pernah di-upload sebelumnya.</div>
+                    <div className="text-xs text-amber-700 mt-0.5">Tidak ada data baru atau perubahan. File ini sudah pernah di-upload sebelumnya.</div>
                   </div>
                 </div>
               )}
 
-              {/* Partial duplicates info */}
-              {preview.newRows > 0 && preview.existingRows > 0 && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-xs text-blue-700">
-                  {preview.existingRows} baris sudah ada dan akan di-update, {preview.newRows} baris baru akan di-insert.
+              {preview.newRows > 0 && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 text-xs text-green-700">
+                  {preview.newRows} baris baru akan di-insert.
+                  {preview.updatedRows.length > 0 && ` ${preview.updatedRows.length} baris akan di-update.`}
+                  {preview.unchangedRows > 0 && ` ${preview.unchangedRows} baris duplikat (identik).`}
+                </div>
+              )}
+
+              {preview.newRows === 0 && preview.updatedRows.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-xs text-amber-700">
+                  {preview.updatedRows.length} baris akan di-update. {preview.unchangedRows} baris duplikat (identik).
                 </div>
               )}
 
