@@ -75,7 +75,41 @@ function getReportName(type: string): string {
 
 // ─── PREVIEW ───────────────────────────────────────────
 
-function previewOrderAll(workbook: XLSX.WorkBook) {
+// Extract composite keys from Excel for order_all
+function extractOrderKeys(workbook: XLSX.WorkBook): string[][] {
+  let sheetName = workbook.SheetNames.find(n => n.toLowerCase() === 'orders');
+  if (!sheetName) sheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  const data = XLSX.utils.sheet_to_json(sheet) as any[];
+  return data.map(r => [
+    sanitize(r['No. Pesanan']),
+    sanitize(r['Nomor Referensi SKU']),
+    sanitize(r['Nama Variasi']),
+  ]).filter(k => k[0] && k[1] && k[2]);
+}
+
+// Check which keys exist in DB
+async function checkExistingKeys(conn: Connection, keys: string[][], table: string, keyCols: string[]): Promise<Set<string>> {
+  const existing = new Set<string>();
+  if (keys.length === 0) return existing;
+
+  // Batch query: max 500 per query
+  for (let i = 0; i < keys.length; i += 500) {
+    const batch = keys.slice(i, i + 500);
+    const placeholders = batch.map(() => `(${keyCols.map(() => '?').join(',')})`).join(',');
+    const flatParams = batch.flat();
+    const [rows] = await conn.query(
+      `SELECT ${keyCols.join(',')} FROM ${table} WHERE (${keyCols.join(',')}) IN (${placeholders})`,
+      flatParams
+    ) as any[];
+    for (const row of rows) {
+      existing.add(keyCols.map(c => row[c]).join('||'));
+    }
+  }
+  return existing;
+}
+
+async function previewOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
   let sheetName = workbook.SheetNames.find(n => n.toLowerCase() === 'orders');
   if (!sheetName) sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
@@ -97,22 +131,35 @@ function previewOrderAll(workbook: XLSX.WorkBook) {
     return mapped;
   });
 
+  // Check against DB
+  const allKeys = extractOrderKeys(workbook);
+  const existing = await checkExistingKeys(conn, allKeys, 'order_all', ['no_pesanan', 'nomor_referensi_sku', 'nama_variasi']);
+
+  let newCount = 0;
+  let existingCount = 0;
+  for (const k of allKeys) {
+    const key = k.join('||');
+    if (existing.has(key)) existingCount++;
+    else newCount++;
+  }
+
   return {
     headers: headers.filter(Boolean).map(String),
     totalRows: rows.length,
+    newRows: newCount,
+    existingRows: existingCount,
     previewColumns: previewHeaders,
     previewRows,
     sheetName,
   };
 }
 
-function previewIncome(workbook: XLSX.WorkBook) {
+async function previewIncome(workbook: XLSX.WorkBook, conn: Connection) {
   let sheetName = workbook.SheetNames.find(n => n.toLowerCase().includes('penghasilan'));
   if (!sheetName) sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
   const rawData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
 
-  // Find header row
   let headerIdx = -1;
   for (let i = 0; i < Math.min(rawData.length, 10); i++) {
     if (rawData[i] && String(rawData[i][0] || '').includes('No. Pesanan')) {
@@ -135,16 +182,33 @@ function previewIncome(workbook: XLSX.WorkBook) {
     return mapped;
   });
 
+  // Check income by no_pesanan (single key)
+  const allKeys = rows.map(r => {
+    const obj: any = {};
+    headers.forEach((h, i) => { if (h) obj[h] = r[i]; });
+    return [sanitize(obj['No. Pesanan'])];
+  }).filter(k => k[0]);
+
+  const existing = await checkExistingKeys(conn, allKeys, 'income_penghasilan', ['no_pesanan']);
+  let newCount = 0;
+  let existingCount = 0;
+  for (const k of allKeys) {
+    if (existing.has(k[0])) existingCount++;
+    else newCount++;
+  }
+
   return {
     headers,
     totalRows: rows.length,
+    newRows: newCount,
+    existingRows: existingCount,
     previewColumns: previewHeaders,
     previewRows,
     sheetName,
   };
 }
 
-function previewMaster(workbook: XLSX.WorkBook) {
+async function previewMaster(workbook: XLSX.WorkBook, conn: Connection) {
   let sheetName = workbook.SheetNames[0];
   for (const name of workbook.SheetNames) {
     const sheet = workbook.Sheets[name];
@@ -161,10 +225,27 @@ function previewMaster(workbook: XLSX.WorkBook) {
   const headers = rawData[0].filter(Boolean).map(String);
   const rows = rawData.slice(1);
 
+  // Check master by sku1
+  const allKeys = rows.map(r => {
+    const obj: any = {};
+    headers.forEach((h, i) => { obj[h] = r[i]; });
+    return [sanitize(obj['SKU1'])];
+  }).filter(k => k[0]);
+
+  const existing = await checkExistingKeys(conn, allKeys, 'master_products', ['sku1']);
+  let newCount = 0;
+  let existingCount = 0;
+  for (const k of allKeys) {
+    if (existing.has(k[0])) existingCount++;
+    else newCount++;
+  }
+
   return {
     headers,
     totalRows: rows.length,
-    previewColumns: headers,
+    newRows: newCount,
+    existingRows: existingCount,
+    previewColumns: headers.slice(0, 8),
     previewRows: rows.slice(0, 10).map(row => {
       const obj: Record<string, any> = {};
       headers.forEach((h, i) => { obj[h] = row[i]; });
@@ -174,11 +255,11 @@ function previewMaster(workbook: XLSX.WorkBook) {
   };
 }
 
-function handlePreview(workbook: XLSX.WorkBook, reportType: string) {
+async function handlePreview(workbook: XLSX.WorkBook, reportType: string, conn: Connection) {
   switch (reportType) {
-    case 'order_all': return previewOrderAll(workbook);
-    case 'income': return previewIncome(workbook);
-    case 'master': return previewMaster(workbook);
+    case 'order_all': return previewOrderAll(workbook, conn);
+    case 'income': return previewIncome(workbook, conn);
+    case 'master': return previewMaster(workbook, conn);
     default: return null;
   }
 }
@@ -511,7 +592,8 @@ export async function POST(request: NextRequest) {
 
     // ── PREVIEW ──
     if (action === 'preview') {
-      const preview = handlePreview(workbook, reportType);
+      conn = await getConnection();
+      const preview = await handlePreview(workbook, reportType, conn);
       if (!preview) return NextResponse.json({ error: 'Cannot parse file for preview.' }, { status: 400 });
       return NextResponse.json({
         success: true,

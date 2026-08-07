@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Eye, ArrowLeft } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Eye, ArrowLeft, AlertTriangle } from 'lucide-react';
 
 type Step = 'select' | 'preview' | 'done';
 
@@ -10,6 +10,8 @@ interface PreviewData {
   fileSize: number;
   reportType: string;
   totalRows: number;
+  newRows: number;
+  existingRows: number;
   headers: string[];
   previewColumns: string[];
   previewRows: Record<string, any>[];
@@ -31,6 +33,7 @@ export default function UploadPage() {
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [checking, setChecking] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -63,8 +66,8 @@ export default function UploadPage() {
     setSelectedFile(file);
     setError(null);
     setStep('preview');
+    setChecking(true);
 
-    // Send preview request
     const formData = new FormData();
     formData.append('file', file);
     formData.append('action', 'preview');
@@ -75,6 +78,7 @@ export default function UploadPage() {
       if (!res.ok) {
         setError(data.error || 'Gagal memproses file');
         setStep('select');
+        setChecking(false);
         return;
       }
       setPreview({
@@ -82,6 +86,8 @@ export default function UploadPage() {
         fileSize: file.size,
         reportType: data.reportType,
         totalRows: data.totalRows,
+        newRows: data.newRows,
+        existingRows: data.existingRows,
         headers: data.headers,
         previewColumns: data.previewColumns,
         previewRows: data.previewRows,
@@ -91,10 +97,11 @@ export default function UploadPage() {
       setError(err.message);
       setStep('select');
     }
+    setChecking(false);
   };
 
   const handleImport = async () => {
-    if (!selectedFile) return;
+    if (!selectedFile || !preview || preview.newRows === 0) return;
     setImporting(true);
     setError(null);
 
@@ -129,6 +136,7 @@ export default function UploadPage() {
     setResult(null);
     setError(null);
     setSelectedFile(null);
+    setChecking(false);
     if (fileRef.current) fileRef.current.value = '';
   };
 
@@ -178,7 +186,7 @@ export default function UploadPage() {
   }
 
   // ── PREVIEW STEP ──
-  if (step === 'preview' && preview) {
+  if (step === 'preview') {
     return (
       <div className="p-4 lg:p-8">
         <div className="max-w-5xl mx-auto">
@@ -193,105 +201,145 @@ export default function UploadPage() {
             </div>
           </div>
 
-          {/* File Info */}
-          <div className="bg-white border border-slate-200 rounded-lg p-4 mb-4">
-            <div className="flex items-center gap-3">
-              <FileSpreadsheet className="w-8 h-8 text-blue-500 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-slate-900 truncate">{preview.fileName}</div>
-                <div className="text-xs text-slate-500">{formatSize(preview.fileSize)} • Sheet: {preview.sheetName}</div>
-              </div>
-              <div className="text-right flex-shrink-0">
-                <div className="text-lg font-bold text-blue-600">{preview.totalRows.toLocaleString()}</div>
-                <div className="text-xs text-slate-500">rows</div>
-              </div>
+          {/* Loading state */}
+          {checking && (
+            <div className="bg-white border border-slate-200 rounded-lg p-8 text-center">
+              <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto mb-3" />
+              <p className="text-sm text-slate-600">Mengecek data di database...</p>
             </div>
-
-            {/* Quick Stats */}
-            <div className="mt-3 flex flex-wrap gap-2">
-              <span className="px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded-full font-medium">
-                {preview.reportType}
-              </span>
-              <span className="px-2 py-1 bg-slate-100 text-slate-600 text-xs rounded-full">
-                {preview.headers.length} kolom
-              </span>
-              <span className="px-2 py-1 bg-slate-100 text-slate-600 text-xs rounded-full">
-                {preview.previewRows.length} sample rows
-              </span>
-            </div>
-          </div>
-
-          {/* Preview Table */}
-          <div className="bg-white border border-slate-200 rounded-lg overflow-hidden mb-4">
-            <div className="p-3 border-b border-slate-200">
-              <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
-                <Eye className="w-4 h-4" /> Sample Data (10 baris pertama)
-              </h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-slate-50">
-                    {preview.previewColumns.map(col => (
-                      <th key={col} className="px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap border-b border-slate-200">
-                        {col}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.previewRows.map((row, i) => (
-                    <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
-                      {preview.previewColumns.map(col => (
-                        <td key={col} className="px-3 py-2 text-slate-700 whitespace-nowrap max-w-[200px] truncate">
-                          {row[col] != null ? String(row[col]) : <span className="text-slate-300">—</span>}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Column List */}
-          <details className="bg-white border border-slate-200 rounded-lg mb-4">
-            <summary className="p-3 cursor-pointer text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              Semua Kolom ({preview.headers.length})
-            </summary>
-            <div className="px-3 pb-3 flex flex-wrap gap-1.5">
-              {preview.headers.map(h => (
-                <span key={h} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded">{h}</span>
-              ))}
-            </div>
-          </details>
-
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>
           )}
 
-          {/* Action Buttons */}
-          <div className="flex gap-3">
-            <button onClick={reset} className="px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors text-sm font-medium">
-              Batal
-            </button>
-            <button
-              onClick={handleImport}
-              disabled={importing}
-              className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed transition-colors text-sm font-medium flex items-center justify-center gap-2"
-            >
-              {importing ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Importing...
-                </>
-              ) : (
-                <>
-                  Import {preview.totalRows.toLocaleString()} rows ke Database
-                </>
+          {/* File Info + DB Status */}
+          {preview && !checking && (
+            <>
+              <div className="bg-white border border-slate-200 rounded-lg p-4 mb-4">
+                <div className="flex items-center gap-3">
+                  <FileSpreadsheet className="w-8 h-8 text-blue-500 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-slate-900 truncate">{preview.fileName}</div>
+                    <div className="text-xs text-slate-500">{formatSize(preview.fileSize)} • Sheet: {preview.sheetName}</div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="text-lg font-bold text-blue-600">{preview.totalRows.toLocaleString()}</div>
+                    <div className="text-xs text-slate-500">rows di file</div>
+                  </div>
+                </div>
+
+                {/* DB Comparison Stats */}
+                <div className="mt-3 grid grid-cols-3 gap-3">
+                  <div className={`p-2 rounded-lg text-center ${preview.newRows > 0 ? 'bg-green-50 border border-green-200' : 'bg-slate-50 border border-slate-200'}`}>
+                    <div className={`text-xl font-bold ${preview.newRows > 0 ? 'text-green-600' : 'text-slate-400'}`}>{preview.newRows.toLocaleString()}</div>
+                    <div className="text-xs text-slate-500">Baru</div>
+                  </div>
+                  <div className={`p-2 rounded-lg text-center ${preview.existingRows > 0 ? 'bg-amber-50 border border-amber-200' : 'bg-slate-50 border border-slate-200'}`}>
+                    <div className={`text-xl font-bold ${preview.existingRows > 0 ? 'text-amber-600' : 'text-slate-400'}`}>{preview.existingRows.toLocaleString()}</div>
+                    <div className="text-xs text-slate-500">Sudah ada</div>
+                  </div>
+                  <div className="p-2 rounded-lg text-center bg-slate-50 border border-slate-200">
+                    <div className="text-xl font-bold text-slate-600">{preview.totalRows.toLocaleString()}</div>
+                    <div className="text-xs text-slate-500">Total</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* All duplicates warning */}
+              {preview.newRows === 0 && preview.existingRows > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-sm font-semibold text-amber-800">Semua data sudah ada di database</div>
+                    <div className="text-xs text-amber-700 mt-0.5">Tidak ada data baru untuk di-import. File ini sudah pernah di-upload sebelumnya.</div>
+                  </div>
+                </div>
               )}
-            </button>
-          </div>
+
+              {/* Partial duplicates info */}
+              {preview.newRows > 0 && preview.existingRows > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-xs text-blue-700">
+                  {preview.existingRows} baris sudah ada dan akan di-update, {preview.newRows} baris baru akan di-insert.
+                </div>
+              )}
+
+              {/* Preview Table */}
+              <div className="bg-white border border-slate-200 rounded-lg overflow-hidden mb-4">
+                <div className="p-3 border-b border-slate-200">
+                  <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                    <Eye className="w-4 h-4" /> Sample Data (10 baris pertama)
+                  </h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50">
+                        {preview.previewColumns.map(col => (
+                          <th key={col} className="px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap border-b border-slate-200">
+                            {col}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preview.previewRows.map((row, i) => (
+                        <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
+                          {preview.previewColumns.map(col => (
+                            <td key={col} className="px-3 py-2 text-slate-700 whitespace-nowrap max-w-[200px] truncate">
+                              {row[col] != null ? String(row[col]) : <span className="text-slate-300">—</span>}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Column List */}
+              <details className="bg-white border border-slate-200 rounded-lg mb-4">
+                <summary className="p-3 cursor-pointer text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                  Semua Kolom ({preview.headers.length})
+                </summary>
+                <div className="px-3 pb-3 flex flex-wrap gap-1.5">
+                  {preview.headers.map(h => (
+                    <span key={h} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded">{h}</span>
+                  ))}
+                </div>
+              </details>
+
+              {error && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button onClick={reset} className="px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors text-sm font-medium">
+                  Batal
+                </button>
+                <button
+                  onClick={handleImport}
+                  disabled={importing || preview.newRows === 0}
+                  className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+                    preview.newRows === 0
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                      : 'bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed'
+                  }`}
+                >
+                  {importing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Importing...
+                    </>
+                  ) : preview.newRows === 0 ? (
+                    'Tidak ada data baru'
+                  ) : (
+                    <>
+                      Import {preview.newRows.toLocaleString()} baris baru
+                      {preview.existingRows > 0 && ` (+ ${preview.existingRows} update)`}
+                    </>
+                  )}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
