@@ -510,10 +510,14 @@ export default function UploadPage() {
                   ) : !canImport ? (
                     'Tidak ada perubahan'
                   ) : (
-                    <>
-                      {preview.newRows > 0 ? `Import ${preview.newRows.toLocaleString()} baris baru` : 'Update snapshot'}
-                      {changeCount > 0 && ` (+ ${changeCount.toLocaleString()} update)`}
-                    </>
+                    preview.sections ? (
+                      'Import Paket Income RAW'
+                    ) : (
+                      <>
+                        {preview.newRows > 0 ? `Import ${preview.newRows.toLocaleString()} baris baru` : 'Update snapshot'}
+                        {changeCount > 0 && ` (+ ${changeCount.toLocaleString()} update)`}
+                      </>
+                    )
                   )}
                 </button>
               </div>
