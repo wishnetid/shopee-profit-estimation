@@ -171,8 +171,14 @@ async function previewOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
           if (idx === undefined) continue;
           const newVal = rawDataRow[idx];
           const oldVal = dbRow[dbCol];
-          const newStr = newVal != null ? String(newVal).trim() : null;
-          const oldStr = oldVal != null ? String(oldVal) : null;
+          // Normalize: null, undefined, empty string → all treated as "(kosong)"
+          const norm = (v: any) => {
+            if (v == null) return '';
+            const s = String(v).trim();
+            return s === '-' || s === 'N/A' ? '' : s;
+          };
+          const newStr = norm(newVal);
+          const oldStr = norm(oldVal);
           if (newStr !== oldStr) {
             changes.push({
               column: excelCol,
