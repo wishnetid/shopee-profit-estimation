@@ -1,145 +1,45 @@
 @import "tailwindcss";
 
 :root {
-  /* Light theme - Modern 2026 Cool Gray / Slate */
   --bg-primary: #f1f5f9;
   --bg-secondary: #ffffff;
-  --bg-card: rgba(255, 255, 255, 0.75);
-  
   --text-primary: #0f172a;
   --text-secondary: #475569;
-  --text-muted: #94a3b8;
-  
   --accent-primary: #3b82f6;
-  --accent-secondary: #60a5fa;
-  --accent-success: #10b981;
-  --accent-warning: #f59e0b;
-  --accent-danger: #ef4444;
-  
-  --border: rgba(0, 0, 0, 0.08);
-  --glass-border: rgba(255, 255, 255, 0.7);
-  
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
-  
-  --radius: 12px;
-  --radius-sm: 8px;
-  
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 body {
   background-color: var(--bg-primary);
-  background-image:
-    radial-gradient(ellipse 80% 60% at 50% -20%, rgba(59, 130, 246, 0.08) 0%, transparent 70%),
-    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(129, 140, 248, 0.05) 0%, transparent 60%),
-    radial-gradient(ellipse 40% 30% at 20% 80%, rgba(96, 165, 250, 0.03) 0%, transparent 50%);
-  background-attachment: fixed;
   color: var(--text-primary);
   font-family: var(--font-sans);
   min-height: 100vh;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* Glass card enhancement */
-.bg-white {
-  background: var(--bg-card) !important;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
+/* Safe area for mobile bottom nav */
+.safe-area-pb {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* Smooth transitions */
+/* Touch targets minimum 44px */
+@media (max-width: 1023px) {
+  nav a, button {
+    min-height: 44px;
+  }
+}
+
+/* Smooth scroll */
 * {
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* Mobile-first responsive typography */
-@media (max-width: 768px) {
-  body {
-    font-size: 14px;
+/* Hide scrollbar on mobile for cleaner look */
+@media (max-width: 1023px) {
+  ::-webkit-scrollbar {
+    display: none;
   }
-  
-  h1 {
-    font-size: 1.75rem !important;
-  }
-  
-  h2 {
-    font-size: 1.25rem !important;
-  }
-  
-  .text-3xl {
-    font-size: 1.75rem !important;
-  }
-  
-  .text-2xl {
-    font-size: 1.5rem !important;
-  }
-  
-  .text-xl {
-    font-size: 1.125rem !important;
-  }
-}
-
-@media (max-width: 480px) {
-  body {
-    font-size: 13px;
-  }
-  
-  h1 {
-    font-size: 1.5rem !important;
-  }
-  
-  h2 {
-    font-size: 1.125rem !important;
-  }
-  
-  .text-3xl {
-    font-size: 1.5rem !important;
-  }
-  
-  .text-2xl {
-    font-size: 1.25rem !important;
-  }
-}
-
-/* Touch-friendly buttons */
-button, a {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Responsive padding */
-@media (max-width: 768px) {
-  .p-6 {
-    padding: 1rem !important;
-  }
-  
-  .p-4 {
-    padding: 0.75rem !important;
-  }
-  
-  .gap-6 {
-    gap: 1rem !important;
-  }
-  
-  .gap-4 {
-    gap: 0.75rem !important;
-  }
-}
-
-@media (max-width: 480px) {
-  .p-6 {
-    padding: 0.875rem !important;
-  }
-  
-  .mb-8 {
-    margin-bottom: 1.5rem !important;
-  }
-  
-  .gap-6 {
-    gap: 0.75rem !important;
+  * {
+    scrollbar-width: none;
   }
 }

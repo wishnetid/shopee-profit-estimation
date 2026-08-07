@@ -4,12 +4,10 @@ import { useState, useEffect } from 'react';
 import DataTable from '@/components/DataTable';
 
 const SKU_COLUMNS = [
-  { key: 'id', label: 'ID' },
   { key: 'sku1', label: 'SKU1' },
   { key: 'sku2', label: 'SKU2' },
   { key: 'harga', label: 'HPP (Rp)' },
   { key: 'idproduk', label: 'ID Produk' },
-  { key: 'created_at', label: 'Created' },
 ];
 
 export default function SKUPage() {
@@ -26,23 +24,14 @@ export default function SKUPage() {
   ) => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: String(limit),
-      });
-
-      if (search.length > 0) {
-        params.append('search', search.join('||'));
-      }
-
+      const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+      if (search.length > 0) params.append('search', search.join('||'));
       if (sortColumn && sortDirection) {
         params.append('sort', sortColumn);
         params.append('direction', sortDirection);
       }
-
       const response = await fetch(`/api/sku?${params}`);
       const result = await response.json();
-
       if (result.success) {
         setData(result.data);
         setTotalRows(result.total);
@@ -54,22 +43,17 @@ export default function SKUPage() {
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
   return (
-    <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">SKU Master</h1>
-        <p className="text-slate-600">
-          Master SKU untuk mapping HPP pada profit calculation
-        </p>
+    <div className="p-4 lg:p-8">
+      <div className="mb-4 lg:mb-6">
+        <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 mb-1">SKU Master</h1>
+        <p className="text-sm text-slate-600">Master SKU untuk mapping HPP pada profit calculation</p>
       </div>
-
       {loading && data.length === 0 ? (
         <div className="bg-white rounded-lg border border-slate-200 p-12 text-center">
-          <div className="text-slate-500">Loading data...</div>
+          <div className="text-slate-400 text-sm">Loading...</div>
         </div>
       ) : (
         <DataTable

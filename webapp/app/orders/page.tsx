@@ -10,7 +10,7 @@ const ORDER_COLUMNS = [
   { key: 'nomor_referensi_sku', label: 'SKU' },
   { key: 'jumlah', label: 'Qty' },
   { key: 'total_pembayaran', label: 'Total' },
-  { key: 'waktu_pesanan_dibuat', label: 'Waktu Dibuat' },
+  { key: 'waktu_pesanan_dibuat', label: 'Waktu' },
   { key: 'username_pembeli', label: 'Pembeli' },
 ];
 
@@ -28,23 +28,14 @@ export default function OrdersPage() {
   ) => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: String(limit),
-      });
-
-      if (search.length > 0) {
-        params.append('search', search.join('||'));
-      }
-
+      const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+      if (search.length > 0) params.append('search', search.join('||'));
       if (sortColumn && sortDirection) {
         params.append('sort', sortColumn);
         params.append('direction', sortDirection);
       }
-
       const response = await fetch(`/api/orders?${params}`);
       const result = await response.json();
-
       if (result.success) {
         setData(result.data);
         setTotalRows(result.total);
@@ -56,22 +47,17 @@ export default function OrdersPage() {
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
   return (
-    <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">Order All</h1>
-        <p className="text-slate-600">
-          Data Order.all dengan filter, search, dan sort
-        </p>
+    <div className="p-4 lg:p-8">
+      <div className="mb-4 lg:mb-6">
+        <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 mb-1">Order All</h1>
+        <p className="text-sm text-slate-600">Data Order.all dengan filter, search, dan sort</p>
       </div>
-
       {loading && data.length === 0 ? (
         <div className="bg-white rounded-lg border border-slate-200 p-12 text-center">
-          <div className="text-slate-500">Loading data...</div>
+          <div className="text-slate-400 text-sm">Loading...</div>
         </div>
       ) : (
         <DataTable
