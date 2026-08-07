@@ -13,237 +13,353 @@ async function getConnection() {
   });
 }
 
+// Sanitize value: convert invalid datetime/empty to null
+function sanitize(val: any): any {
+  if (val === undefined || val === null) return null;
+  const s = String(val).trim();
+  if (s === '' || s === '-' || s === 'N/A' || s === 'n/a' || s === 'null') return null;
+  return val;
+}
+
+// Sanitize datetime specifically
+function sanitizeDatetime(val: any): any {
+  if (val === undefined || val === null) return null;
+  const s = String(val).trim();
+  if (s === '' || s === '-' || s === 'N/A' || s === 'n/a' || s === 'null') return null;
+  // If it's a valid date string, return it
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s;
+  // If it's an Excel serial number, convert
+  if (typeof val === 'number' && val > 40000 && val < 50000) {
+    const date = new Date((val - 25569) * 86400 * 1000);
+    return date.toISOString().slice(0, 19).replace('T', ' ');
+  }
+  return null;
+}
+
+// Sanitize decimal/number
+function sanitizeDecimal(val: any): any {
+  if (val === undefined || val === null) return null;
+  const s = String(val).trim();
+  if (s === '' || s === '-' || s === 'N/A') return null;
+  // Remove "gr", "kg", etc.
+  const cleaned = s.replace(/[a-zA-Z\s]/g, '').replace(/,/g, '');
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? null : num;
+}
+
 // Auto-detect report type
 function detectReportType(workbook: XLSX.WorkBook): string | null {
   const sheetNames = workbook.SheetNames;
-  
-  // Check for Order.all pattern
-  if (sheetNames.includes('orders')) {
-    const sheet = workbook.Sheets['orders'];
-    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-    if (data.length > 0 && data[0].length >= 50) {
-      return 'order_all';
+
+  // Check for Order.all pattern — sheet named 'orders' with 50 columns
+  for (const name of sheetNames) {
+    if (name.toLowerCase() === 'orders') {
+      const sheet = workbook.Sheets[name];
+      const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+      if (data.length > 0 && data[0].length >= 40) {
+        return 'order_all';
+      }
     }
   }
-  
-  // Check for Income pattern
-  if (sheetNames.includes('Penghasilan')) {
-    const sheet = workbook.Sheets['Penghasilan'];
-    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-    // Header at row 2 (0-indexed), so check row 2
-    if (data.length > 2 && data[2].length >= 50) {
+
+  // Check for Income pattern — sheet named 'Penghasilan'
+  for (const name of sheetNames) {
+    if (name.toLowerCase().includes('penghasilan')) {
       return 'income';
     }
   }
-  
-  // Check for Master SKU pattern
-  if (sheetNames.includes('Sheet1')) {
-    const sheet = workbook.Sheets['Sheet1'];
+
+  // Check for Master SKU pattern — has SKU1, SKU2, Harga, IDPRODUK
+  for (const name of sheetNames) {
+    const sheet = workbook.Sheets[name];
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-    if (data.length > 0 && data[0].length === 4) {
-      const headers = data[0];
-      if (headers.includes('SKU1') && headers.includes('SKU2') && headers.includes('Harga')) {
+    if (data.length > 0) {
+      const headers = data[0].map((h: any) => String(h || '').toLowerCase());
+      if (headers.includes('sku1') && headers.includes('harga')) {
         return 'master';
       }
     }
   }
-  
+
   return null;
 }
 
-// Import Order.all
+// Import Order.all — maps all 50 columns
 async function importOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
-  const sheet = workbook.Sheets['orders'];
+  // Find the sheet named 'orders' (case-insensitive)
+  let sheetName = workbook.SheetNames.find(n => n.toLowerCase() === 'orders');
+  if (!sheetName) sheetName = workbook.SheetNames[0];
+
+  const sheet = workbook.Sheets[sheetName];
   const data = XLSX.utils.sheet_to_json(sheet) as any[];
-  
+
   let inserted = 0;
-  
+  let errors = 0;
+
   for (const row of data) {
-    await conn.execute(
-      `INSERT INTO order_all (
-        no_pesanan, status_pesanan, alasan_pembatalan,
-        status_pembatalan_pengembalian, no_resi,
-        nama_produk, nomor_referensi_sku, sku_induk, nama_variasi,
-        harga_awal, harga_setelah_diskon, jumlah, subtotal_pesanan,
-        total_diskon, diskon_dari_penjual, diskon_dari_shopee,
-        opsi_pengiriman, ongkos_kirim_dibayar_pembeli,
-        perkiraan_ongkos_kirim, total_pembayaran,
-        waktu_pesanan_dibuat, waktu_pembayaran_dilakukan,
-        waktu_pesanan_selesai, username_pembeli, metode_pembayaran
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        row['No. Pesanan'] || null,
-        row['Status Pesanan'] || null,
-        row['Alasan Pembatalan'] || null,
-        row['Status Pembatalan/ Pengembalian'] || null,
-        row['No. Resi'] || null,
-        row['Nama Produk'] || null,
-        row['Nomor Referensi SKU'] || null,
-        row['SKU Induk'] || null,
-        row['Nama Variasi'] || null,
-        row['Harga Awal'] || null,
-        row['Harga Setelah Diskon'] || null,
-        row['Jumlah'] || null,
-        row['Subtotal Pesanan'] || null,
-        row['Total Diskon'] || null,
-        row['Diskon Dari Penjual'] || null,
-        row['Diskon Dari Shopee'] || null,
-        row['Opsi Pengiriman'] || null,
-        row['Ongkos Kirim Dibayar oleh Pembeli'] || null,
-        row['Perkiraan Ongkos Kirim'] || null,
-        row['Total Pembayaran'] || null,
-        row['Waktu Pesanan Dibuat'] || null,
-        row['Waktu Pembayaran Dilakukan'] || null,
-        row['Waktu Pesanan Selesai'] || null,
-        row['Username (Pembeli)'] || null,
-        row['Metode Pembayaran'] || null,
-      ]
-    );
-    inserted++;
+    try {
+      await conn.execute(
+        `INSERT INTO order_all (
+          no_pesanan, status_pesanan, alasan_pembatalan,
+          status_pembatalan_pengembalian, no_resi,
+          opsi_pengiriman, antar_ke_counter,
+          pesanan_harus_dikirim_sebelum, waktu_pengiriman_diatur,
+          waktu_pesanan_dibuat, waktu_pembayaran_dilakukan,
+          tipe_pesanan, metode_pembayaran,
+          sku_induk, nama_produk, nomor_referensi_sku, nama_variasi,
+          harga_awal, harga_setelah_diskon, jumlah, returned_quantity,
+          subtotal_pesanan, total_diskon,
+          diskon_dari_penjual, diskon_dari_shopee,
+          berat_produk, jumlah_produk_di_pesan, total_berat,
+          voucher_ditanggung_penjual, cashback_koin,
+          voucher_ditanggung_shopee, paket_diskon,
+          paket_diskon_shopee, paket_diskon_penjual,
+          potongan_koin_shopee, diskon_kartu_kredit,
+          ongkos_kirim_dibayar_pembeli,
+          estimasi_potongan_biaya_pengiriman,
+          ongkos_kirim_pengembalian_barang,
+          total_pembayaran, perkiraan_ongkos_kirim,
+          catatan_dari_pembeli, catatan,
+          username_pembeli, nama_penerima, no_telepon,
+          alamat_pengiriman, kota_kabupaten, provinsi,
+          waktu_pesanan_selesai
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          sanitize(row['No. Pesanan']),
+          sanitize(row['Status Pesanan']),
+          sanitize(row['Alasan Pembatalan']),
+          sanitize(row['Status Pembatalan/ Pengembalian']),
+          sanitize(row['No. Resi']),
+          sanitize(row['Opsi Pengiriman']),
+          sanitize(row['Antar ke counter/ pick-up']),
+          sanitizeDatetime(row['Pesanan Harus Dikirimkan Sebelum (Menghindari keterlambatan)']),
+          sanitizeDatetime(row['Waktu Pengiriman Diatur']),
+          sanitizeDatetime(row['Waktu Pesanan Dibuat']),
+          sanitizeDatetime(row['Waktu Pembayaran Dilakukan']),
+          sanitize(row['Tipe Pesanan']),
+          sanitize(row['Metode Pembayaran']),
+          sanitize(row['SKU Induk']),
+          sanitize(row['Nama Produk']),
+          sanitize(row['Nomor Referensi SKU']),
+          sanitize(row['Nama Variasi']),
+          sanitizeDecimal(row['Harga Awal']),
+          sanitizeDecimal(row['Harga Setelah Diskon']),
+          sanitize(row['Jumlah']),
+          sanitize(row['Returned quantity']),
+          sanitizeDecimal(row['Subtotal Pesanan']),
+          sanitizeDecimal(row['Total Diskon']),
+          sanitizeDecimal(row['Diskon Dari Penjual']),
+          sanitizeDecimal(row['Diskon Dari Shopee']),
+          sanitize(row['Berat Produk']),
+          sanitize(row['Jumlah Produk di Pesan']),
+          sanitize(row['Total Berat']),
+          sanitizeDecimal(row['Voucher Ditanggung Penjual']),
+          sanitizeDecimal(row['Cashback Koin']),
+          sanitizeDecimal(row['Voucher Ditanggung Shopee']),
+          sanitize(row['Paket Diskon']),
+          sanitizeDecimal(row['Paket Diskon (Diskon dari Shopee)']),
+          sanitizeDecimal(row['Paket Diskon (Diskon dari Penjual)']),
+          sanitizeDecimal(row['Potongan Koin Shopee']),
+          sanitizeDecimal(row['Diskon Kartu Kredit']),
+          sanitizeDecimal(row['Ongkos Kirim Dibayar oleh Pembeli']),
+          sanitizeDecimal(row['Estimasi Potongan Biaya Pengiriman']),
+          sanitizeDecimal(row['Ongkos Kirim Pengembalian Barang']),
+          sanitizeDecimal(row['Total Pembayaran']),
+          sanitizeDecimal(row['Perkiraan Ongkos Kirim']),
+          sanitize(row['Catatan dari Pembeli']),
+          sanitize(row['Catatan']),
+          sanitize(row['Username (Pembeli)']),
+          sanitize(row['Nama Penerima']),
+          sanitize(row['No. Telepon']),
+          sanitize(row['Alamat Pengiriman']),
+          sanitize(row['Kota/Kabupaten']),
+          sanitize(row['Provinsi']),
+          sanitizeDatetime(row['Waktu Pesanan Selesai']),
+        ]
+      );
+      inserted++;
+    } catch (err: any) {
+      errors++;
+      if (errors <= 3) console.error(`Order import error row ${inserted}:`, err.message);
+    }
   }
-  
-  return inserted;
+
+  return { inserted, errors };
 }
 
 // Import Income
 async function importIncome(workbook: XLSX.WorkBook, conn: Connection) {
-  const sheet = workbook.Sheets['Penghasilan'];
-  const data = XLSX.utils.sheet_to_json(sheet, { header: 1, range: 2 }) as any[][];
-  
-  // Get headers from row 2 (0-indexed)
-  const headers = data[0];
-  const rows = data.slice(1);
-  
+  // Find sheet containing 'penghasilan'
+  let sheetName = workbook.SheetNames.find(n => n.toLowerCase().includes('penghasilan'));
+  if (!sheetName) sheetName = workbook.SheetNames[0];
+
+  const sheet = workbook.Sheets[sheetName];
+  const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+
+  // Find header row (contains 'No. Pesanan')
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(data.length, 10); i++) {
+    if (data[i] && String(data[i][0] || '').includes('No. Pesanan')) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx === -1) return { inserted: 0, errors: 0, reason: 'Header row not found' };
+
+  const headers = data[headerIdx];
+  const rows = data.slice(headerIdx + 1);
+
   let inserted = 0;
-  
+  let errors = 0;
+
   for (const row of rows) {
     const rowData: any = {};
     headers.forEach((header: string, index: number) => {
-      rowData[header] = row[index];
+      if (header) rowData[String(header).trim()] = row[index];
     });
-    
+
     // Only import "Order" rows
-    if (rowData['Lihat berdasarkan'] !== 'Order') {
-      continue;
+    if (String(rowData['Lihat berdasarkan'] || '').trim() !== 'Order') continue;
+
+    try {
+      await conn.execute(
+        `INSERT INTO income_penghasilan (
+          no_pesanan, lihat_berdasarkan,
+          waktu_pesanan_dibuat, tanggal_dana_dilepaskan,
+          harga_produk, ongkir_dibayar_pembeli,
+          ongkos_kirim_ke_jasa_kirim, gratis_ongkir_dari_shopee,
+          biaya_administrasi, biaya_proses_pesanan,
+          biaya_gratis_ongkir_xtra, biaya_layanan_promo_xtra,
+          biaya_lainnya, jumlah_dibayar_pembeli,
+          metode_pembayaran_pembeli, username_pembeli
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          sanitize(rowData['No. Pesanan']),
+          sanitize(rowData['Lihat berdasarkan']),
+          sanitizeDatetime(rowData['Waktu Pesanan Dibuat']),
+          sanitizeDatetime(rowData['Tanggal Dana Dilepaskan']),
+          sanitizeDecimal(rowData['Harga Produk']),
+          sanitizeDecimal(rowData['Ongkir Dibayar Pembeli']),
+          sanitizeDecimal(rowData['Ongkos Kirim yang Dibayarkan ke Jasa Kirim']),
+          sanitizeDecimal(rowData['Gratis Ongkir dari Shopee']),
+          sanitizeDecimal(rowData['Biaya Administrasi']),
+          sanitizeDecimal(rowData['Biaya Proses Pesanan']),
+          sanitizeDecimal(rowData['Biaya Gratis Ongkir XTRA - Ukuran Biasa (Kategori F)']),
+          sanitizeDecimal(rowData['Biaya Layanan Promo XTRA']),
+          sanitizeDecimal(rowData['Biaya Lainnya']),
+          sanitizeDecimal(rowData['Jumlah Dibayar Pembeli']),
+          sanitize(rowData['Metode pembayaran pembeli']),
+          sanitize(rowData['Username (Pembeli)']),
+        ]
+      );
+      inserted++;
+    } catch (err: any) {
+      errors++;
+      if (errors <= 3) console.error(`Income import error:`, err.message);
     }
-    
-    await conn.execute(
-      `INSERT INTO income_penghasilan (
-        no_pesanan, lihat_berdasarkan,
-        waktu_pesanan_dibuat, tanggal_dana_dilepaskan,
-        harga_produk, ongkir_dibayar_pembeli,
-        ongkos_kirim_ke_jasa_kirim, gratis_ongkir_dari_shopee,
-        biaya_administrasi, biaya_proses_pesanan,
-        biaya_gratis_ongkir_xtra, biaya_layanan_promo_xtra,
-        biaya_lainnya, jumlah_dibayar_pembeli,
-        metode_pembayaran_pembeli, username_pembeli
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        rowData['No. Pesanan'] || null,
-        rowData['Lihat berdasarkan'] || null,
-        rowData['Waktu Pesanan Dibuat'] || null,
-        rowData['Tanggal Dana Dilepaskan'] || null,
-        rowData['Harga Produk'] || 0,
-        rowData['Ongkir Dibayar Pembeli'] || 0,
-        rowData['Ongkos Kirim yang Dibayarkan ke Jasa Kirim'] || 0,
-        rowData['Gratis Ongkir dari Shopee'] || 0,
-        rowData['Biaya Administrasi'] || 0,
-        rowData['Biaya Proses Pesanan'] || 0,
-        rowData['Biaya Gratis Ongkir XTRA - Ukuran Biasa (Kategori F)'] || 0,
-        rowData['Biaya Layanan Promo XTRA'] || 0,
-        rowData['Biaya Lainnya'] || 0,
-        rowData['Jumlah Dibayar Pembeli'] || 0,
-        rowData['Metode pembayaran pembeli'] || null,
-        rowData['Username (Pembeli)'] || null,
-      ]
-    );
-    inserted++;
   }
-  
-  return inserted;
+
+  return { inserted, errors };
 }
 
 // Import Master
 async function importMaster(workbook: XLSX.WorkBook, conn: Connection) {
-  const sheet = workbook.Sheets['Sheet1'];
-  const data = XLSX.utils.sheet_to_json(sheet) as any[];
-  
-  let inserted = 0;
-  
-  for (const row of data) {
-    await conn.execute(
-      `INSERT INTO master_products (sku1, sku2, harga, idproduk)
-       VALUES (?, ?, ?, ?)`,
-      [
-        row['SKU1'] || null,
-        row['SKU2'] || null,
-        row['Harga'] || 0,
-        row['IDPRODUK'] || null,
-      ]
-    );
-    inserted++;
+  // Find first sheet with SKU1 column
+  let sheetName = workbook.SheetNames[0];
+  for (const name of workbook.SheetNames) {
+    const sheet = workbook.Sheets[name];
+    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+    if (data.length > 0) {
+      const headers = data[0].map((h: any) => String(h || '').toLowerCase());
+      if (headers.includes('sku1') || headers.includes('harga')) {
+        sheetName = name;
+        break;
+      }
+    }
   }
-  
+
+  const sheet = workbook.Sheets[sheetName];
+  const data = XLSX.utils.sheet_to_json(sheet) as any[];
+
+  let inserted = 0;
+
+  for (const row of data) {
+    try {
+      await conn.execute(
+        `INSERT INTO master_products (sku1, sku2, harga, idproduk)
+         VALUES (?, ?, ?, ?)`,
+        [
+          sanitize(row['SKU1']),
+          sanitize(row['SKU2']),
+          sanitizeDecimal(row['Harga']),
+          sanitize(row['IDPRODUK']),
+        ]
+      );
+      inserted++;
+    } catch (err: any) {
+      // Skip duplicates silently
+    }
+  }
+
   return inserted;
 }
 
 export async function POST(request: NextRequest) {
   let conn: Connection | null = null;
-  
+
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
-    
+
     if (!file) {
-      return NextResponse.json(
-        { error: 'No file uploaded' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
     }
-    
+
     // Read file
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'buffer' });
-    
+
     // Auto-detect report type
     const reportType = detectReportType(workbook);
-    
+
     if (!reportType) {
       return NextResponse.json(
         { error: 'Cannot detect report type. File format tidak sesuai.' },
         { status: 400 }
       );
     }
-    
+
     // Connect to database
     conn = await getConnection();
-    
+
     // Import based on type
-    let inserted = 0;
+    let result: any;
     let reportName = '';
-    
+
     switch (reportType) {
       case 'order_all':
-        inserted = await importOrderAll(workbook, conn);
+        result = await importOrderAll(workbook, conn);
         reportName = 'Order.all';
         break;
       case 'income':
-        inserted = await importIncome(workbook, conn);
+        result = await importIncome(workbook, conn);
         reportName = 'Income Penghasilan';
         break;
       case 'master':
-        inserted = await importMaster(workbook, conn);
+        const inserted = await importMaster(workbook, conn);
+        result = { inserted, errors: 0 };
         reportName = 'Master SKU';
         break;
     }
-    
+
     return NextResponse.json({
       success: true,
       reportType: reportName,
-      message: `${inserted} rows imported to ${reportName}`,
-      rowsImported: inserted,
+      message: `${result.inserted} rows imported to ${reportName}${result.errors ? ` (${result.errors} errors)` : ''}`,
+      rowsImported: result.inserted,
+      errors: result.errors || 0,
     });
-    
+
   } catch (error: any) {
     console.error('Upload error:', error);
     return NextResponse.json(
@@ -251,8 +367,6 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   } finally {
-    if (conn) {
-      await conn.end();
-    }
+    if (conn) await conn.end();
   }
 }
