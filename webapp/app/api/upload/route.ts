@@ -171,17 +171,19 @@ async function importOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
     try {
       const valuePlaceholders = values.map(() => `(${placeholders})`).join(',');
       const flatParams = values.flat();
-      await conn.execute(
+      const [result] = await conn.query(
         `INSERT IGNORE INTO order_all (${cols}) VALUES ${valuePlaceholders}`,
         flatParams
-      );
-      inserted += values.length;
+      ) as any;
+      console.log(`Batch ${i}: affectedRows=${result.affectedRows}, inserted=${values.length}`);
+      inserted += result.affectedRows || 0;
     } catch (err: any) {
       errors++;
       console.error(`Order batch error at row ${i}:`, err.message);
     }
   }
 
+  await conn.commit();
   return { inserted, errors };
 }
 
@@ -250,8 +252,8 @@ async function importIncome(workbook: XLSX.WorkBook, conn: Connection) {
     if (batch.length >= BATCH_SIZE) {
       try {
         const vp = batch.map(() => `(${placeholders})`).join(',');
-        await conn.execute(`INSERT INTO income_penghasilan (${cols}) VALUES ${vp}`, batch.flat());
-        inserted += batch.length;
+        const [res] = await conn.query(`INSERT INTO income_penghasilan (${cols}) VALUES ${vp}`, batch.flat()) as any;
+        inserted += res.affectedRows || 0;
       } catch { errors++; }
       batch = [];
     }
@@ -260,11 +262,12 @@ async function importIncome(workbook: XLSX.WorkBook, conn: Connection) {
   if (batch.length > 0) {
     try {
       const vp = batch.map(() => `(${placeholders})`).join(',');
-      await conn.execute(`INSERT INTO income_penghasilan (${cols}) VALUES ${vp}`, batch.flat());
-      inserted += batch.length;
+      const [res] = await conn.query(`INSERT INTO income_penghasilan (${cols}) VALUES ${vp}`, batch.flat()) as any;
+      inserted += res.affectedRows || 0;
     } catch { errors++; }
   }
 
+  await conn.commit();
   return { inserted, errors };
 }
 
@@ -293,25 +296,26 @@ async function importMaster(workbook: XLSX.WorkBook, conn: Connection) {
     ]);
     if (batch.length >= BATCH_SIZE) {
       try {
-        await conn.execute(
+        const [res] = await conn.query(
           `INSERT IGNORE INTO master_products (sku1,sku2,harga,idproduk) VALUES ${batch.map(() => '(?,?,?,?)').join(',')}`,
           batch.flat()
-        );
-        inserted += batch.length;
+        ) as any;
+        inserted += res.affectedRows || 0;
       } catch { /* skip */ }
       batch = [];
     }
   }
   if (batch.length > 0) {
     try {
-      await conn.execute(
+      const [res] = await conn.query(
         `INSERT IGNORE INTO master_products (sku1,sku2,harga,idproduk) VALUES ${batch.map(() => '(?,?,?,?)').join(',')}`,
         batch.flat()
-      );
-      inserted += batch.length;
+      ) as any;
+      inserted += res.affectedRows || 0;
     } catch { /* skip */ }
   }
 
+  await conn.commit();
   return inserted;
 }
 
