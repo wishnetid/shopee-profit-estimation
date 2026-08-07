@@ -1,104 +1,98 @@
-/**
- * Settings - Database Management API
- * POST /api/settings/database — clear/truncate tables
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { createConnection } from 'mysql2/promise';
+import { getConnection } from '@/lib/db';
 
-async function getConnection() {
-  return createConnection({
-    host: process.env.DB_HOST || '103.136.19.30',
-    port: parseInt(process.env.DB_PORT || '3306'),
-    user: process.env.DB_USER || 'supplie3_shopee_profit_estimation',
-    password: process.env.DB_PASSWORD || 'Persib1933',
-    database: process.env.DB_NAME || 'supplie3_shopee_profit_estimation',
-  });
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const {
+  isSameOriginMutation,
+  isValidBasicAuthorization,
+} = require('../../../../lib/dashboard-auth.js') as {
+  isSameOriginMutation: (origin: string | null, expectedOrigin: string) => boolean;
+  isValidBasicAuthorization: (authorization: string | null, username: string | undefined, password: string | undefined) => boolean;
+};
+
+async function listTables(conn: Awaited<ReturnType<typeof getConnection>>) {
+  const [tables] = await conn.execute('SHOW TABLES') as any[];
+  return tables.map((row: Record<string, unknown>) => String(Object.values(row)[0]));
 }
 
-// GET — list tables with row counts
+function unauthorizedResponse() {
+  return NextResponse.json(
+    { success: false, error: 'Authentication required.' },
+    { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="Shopee Profit Estimation"' } },
+  );
+}
+
+function isAuthorized(request: NextRequest) {
+  return isValidBasicAuthorization(
+    request.headers.get('authorization'),
+    process.env.DASHBOARD_BASIC_AUTH_USER,
+    process.env.DASHBOARD_BASIC_AUTH_PASSWORD,
+  );
+}
+
 export async function GET() {
-  let conn;
+  let conn: Awaited<ReturnType<typeof getConnection>> | null = null;
   try {
     conn = await getConnection();
-    const [tables] = await conn.execute('SHOW TABLES') as any[];
-
-    const result: any[] = [];
-    for (const row of tables) {
-      const tableName = String(Object.values(row)[0]);
+    const tableNames = await listTables(conn);
+    const result: Array<{ name: string; rows: number }> = [];
+    for (const tableName of tableNames) {
       const [countResult] = await conn.execute(`SELECT COUNT(*) as cnt FROM \`${tableName}\``) as any[];
-      result.push({
-        name: tableName,
-        rows: countResult[0].cnt,
-      });
+      result.push({ name: tableName, rows: countResult[0].cnt });
     }
-
     return NextResponse.json({ success: true, tables: result });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ success: false, error: 'Database request failed.' }, { status: 500 });
   } finally {
-    if (conn) await conn.end();
+    conn?.release();
   }
 }
 
-// POST — clear specific table or all tables
 export async function POST(request: NextRequest) {
-  let conn;
+  let conn: Awaited<ReturnType<typeof getConnection>> | null = null;
   try {
-    const body = await request.json();
-    const { action, table } = body;
+    if (!isAuthorized(request)) return unauthorizedResponse();
+    if (!isSameOriginMutation(request.headers.get('origin'), request.nextUrl.origin)) {
+      return NextResponse.json({ success: false, error: 'Cross-origin request rejected.' }, { status: 403 });
+    }
 
-    if (!action) {
-      return NextResponse.json({ success: false, error: 'Missing action' }, { status: 400 });
+    const { action, table } = await request.json() as { action?: string; table?: string };
+    if (action !== 'clear_table' && action !== 'clear_all') {
+      return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
     }
 
     conn = await getConnection();
-
-    if (action === 'clear_table' && table) {
-      // Get row count before
-      const [before] = await conn.execute(`SELECT COUNT(*) as cnt FROM \`${table}\``) as any[];
-      const countBefore = before[0].cnt;
-
-      // Truncate
-      await conn.execute('SET FOREIGN_KEY_CHECKS = 0');
-      await conn.execute(`TRUNCATE TABLE \`${table}\``);
-      await conn.execute('SET FOREIGN_KEY_CHECKS = 1');
-
-      return NextResponse.json({
-        success: true,
-        message: `Table "${table}" cleared (${countBefore} rows removed)`,
-        rowsRemoved: countBefore,
-      });
+    const tableNames: string[] = await listTables(conn);
+    const targets: string[] = action === 'clear_all' ? tableNames : [table || ''];
+    if (targets.some((target) => !tableNames.includes(target))) {
+      return NextResponse.json({ success: false, error: 'Invalid table' }, { status: 400 });
     }
 
-    if (action === 'clear_all') {
-      // Get all tables
-      const [tables] = await conn.execute('SHOW TABLES') as any[];
-
+    const results: Array<{ table: string; rowsRemoved: number }> = [];
+    await conn.beginTransaction();
+    try {
       await conn.execute('SET FOREIGN_KEY_CHECKS = 0');
-
-      const results: any[] = [];
-      for (const row of tables) {
-        const tableName = String(Object.values(row)[0]);
-        const [before] = await conn.execute(`SELECT COUNT(*) as cnt FROM \`${tableName}\``) as any[];
-        const countBefore = before[0].cnt;
-        await conn.execute(`TRUNCATE TABLE \`${tableName}\``);
-        results.push({ table: tableName, rowsRemoved: countBefore });
+      for (const target of targets) {
+        const [before] = await conn.execute(`SELECT COUNT(*) as cnt FROM \`${target}\``) as any[];
+        await conn.execute(`TRUNCATE TABLE \`${target}\``);
+        results.push({ table: target, rowsRemoved: before[0].cnt });
       }
-
       await conn.execute('SET FOREIGN_KEY_CHECKS = 1');
-
-      return NextResponse.json({
-        success: true,
-        message: `All tables cleared (${results.length} tables)`,
-        results,
-      });
+      await conn.commit();
+    } catch (error) {
+      await conn.rollback();
+      throw error;
     }
 
-    return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({
+      success: true,
+      message: action === 'clear_all' ? `All tables cleared (${results.length} tables)` : `Table "${results[0].table}" cleared (${results[0].rowsRemoved} rows removed)`,
+      results,
+      rowsRemoved: action === 'clear_table' ? results[0].rowsRemoved : undefined,
+    });
+  } catch {
+    return NextResponse.json({ success: false, error: 'Database request failed.' }, { status: 500 });
   } finally {
-    if (conn) await conn.end();
+    conn?.release();
   }
 }

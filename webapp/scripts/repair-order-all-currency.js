@@ -98,12 +98,16 @@ function differs(dbRow, expected) {
 
 async function main() {
   const { files, rows } = readLatestRawRows();
+  const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME } = process.env;
+  if (!DB_HOST || !DB_USER || !DB_PASSWORD || !DB_NAME) {
+    throw new Error('Database configuration is incomplete.');
+  }
   const db = await mysql.createConnection({
-    host: process.env.DB_HOST || '103.136.19.30',
-    port: Number(process.env.DB_PORT || 3306),
-    user: process.env.DB_USER || 'supplie3_shopee_profit_estimation',
-    password: process.env.DB_PASSWORD || 'Persib1933',
-    database: process.env.DB_NAME || 'supplie3_shopee_profit_estimation',
+    host: DB_HOST,
+    port: Number(DB_PORT || 3306),
+    user: DB_USER,
+    password: DB_PASSWORD,
+    database: DB_NAME,
     dateStrings: true,
   });
 

@@ -4,8 +4,15 @@ import * as XLSX from 'xlsx';
 
 // Shared with node:test regression tests. The raw Shopee export uses IDR dot-thousands strings.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { parseIdr, resolveOrderSnapshot, validateOrderAllHeaders } = require('../../../lib/order-all-import.js') as {
+const {
+  parseIdr,
+  parseSnapshotAt,
+  resolveOrderSnapshot,
+  validateOrderAllCompositeKeys,
+  validateOrderAllHeaders,
+} = require('../../../lib/order-all-import.js') as {
   parseIdr: (value: unknown) => number | null;
+  parseSnapshotAt: (value: unknown) => string | null;
   resolveOrderSnapshot: (
     existingRow: Record<string, unknown>,
     incomingRow: Record<string, unknown>,
@@ -19,7 +26,24 @@ const { parseIdr, resolveOrderSnapshot, validateOrderAllHeaders } = require('../
     staleByStatus: boolean;
     incomingProvenFresher: boolean;
   };
+  validateOrderAllCompositeKeys: (rows: Record<string, unknown>[]) => {
+    valid: boolean;
+    duplicateCount: number;
+    missingCount: number;
+    duplicateSamples: Array<{ row: number; key: string }>;
+    missingSamples: number[];
+  };
   validateOrderAllHeaders: (headers: unknown[]) => { valid: boolean; missing: string[]; unexpected: string[] };
+};
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const {
+  isSameOriginMutation,
+  isValidBasicAuthorization,
+  validateUploadFile,
+} = require('../../../lib/dashboard-auth.js') as {
+  isSameOriginMutation: (origin: string | null, expectedOrigin: string) => boolean;
+  isValidBasicAuthorization: (authorization: string | null, username: string | undefined, password: string | undefined) => boolean;
+  validateUploadFile: (file: { name: string; size: number; type: string } | null) => { valid: boolean; error: string | null };
 };
 
 const BATCH_SIZE = 100;
@@ -126,12 +150,41 @@ function detectReportType(workbook: XLSX.WorkBook): string | null {
 
 function normalizeSourceSnapshotAt(value: FormDataEntryValue | null): string | null {
   if (typeof value !== 'string') return null;
-  const timestamp = value.trim().replace('T', ' ');
-  // The UI enters the Shopee export/snapshot clock directly. Preserve that
-  // local clock; this value is used for ordering, not timezone conversion.
-  return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?$/.test(timestamp)
-    ? timestamp.length === 16 ? `${timestamp}:00` : timestamp
-    : null;
+  // Preserve the operator-entered Shopee export clock for ordering. The shared
+  // parser validates actual calendar values, not only a regex-shaped string.
+  return parseSnapshotAt(value.trim().replace('T', ' '));
+}
+
+function validateOrderAllWorkbook(workbook: XLSX.WorkBook) {
+  const sheetName = workbook.SheetNames.find((name) => name.toLowerCase() === 'orders');
+  if (!sheetName) return { valid: false, error: 'Sheet orders tidak ditemukan.' };
+
+  const sheet = workbook.Sheets[sheetName];
+  const rawData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null }) as unknown[][];
+  const headerValidation = validateOrderAllHeaders(rawData[0] || []);
+  if (!headerValidation.valid) {
+    return { valid: false, error: 'Header Order.all tidak sesuai kontrak export Shopee.' };
+  }
+
+  const headers = (rawData[0] || []).map((value) => String(value || '').trim());
+  const rows = rawData.slice(1)
+    .filter((row) => row.some((value) => value !== null && String(value).trim() !== ''))
+    .map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index]])));
+  const keyValidation = validateOrderAllCompositeKeys(rows);
+  if (!keyValidation.valid) {
+    if (keyValidation.duplicateCount > 0) {
+      return {
+        valid: false,
+        error: `Order.all ditolak: ditemukan duplicate composite key dalam workbook (contoh row Excel: ${keyValidation.duplicateSamples.map((sample) => sample.row).join(', ')}).`,
+      };
+    }
+    return {
+      valid: false,
+      error: `Order.all ditolak: composite key wajib lengkap (contoh row Excel: ${keyValidation.missingSamples.join(', ')}).`,
+    };
+  }
+
+  return { valid: true, error: null };
 }
 
 function getReportName(type: string): string {
@@ -784,19 +837,51 @@ async function importMaster(workbook: XLSX.WorkBook, conn: Connection) {
 
 // ─── HANDLER ───────────────────────────────────────────
 
+function unauthorizedResponse() {
+  return NextResponse.json(
+    { error: 'Authentication required.' },
+    { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="Shopee Profit Estimation"' } },
+  );
+}
+
 export async function POST(request: NextRequest) {
   let conn: Connection | null = null;
   try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const action = formData.get('action') as string || 'preview';
+    const { DASHBOARD_BASIC_AUTH_USER, DASHBOARD_BASIC_AUTH_PASSWORD } = process.env;
+    if (!DASHBOARD_BASIC_AUTH_USER || !DASHBOARD_BASIC_AUTH_PASSWORD) {
+      return NextResponse.json({ error: 'Dashboard authentication is not configured.' }, { status: 503 });
+    }
+    if (!isValidBasicAuthorization(
+      request.headers.get('authorization'),
+      DASHBOARD_BASIC_AUTH_USER,
+      DASHBOARD_BASIC_AUTH_PASSWORD,
+    )) return unauthorizedResponse();
+    if (!isSameOriginMutation(request.headers.get('origin'), request.nextUrl.origin)) {
+      return NextResponse.json({ error: 'Cross-origin request rejected.' }, { status: 403 });
+    }
 
-    if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+    const formData = await request.formData();
+    const fileEntry = formData.get('file');
+    const action = formData.get('action') as string || 'preview';
+    if (!(fileEntry instanceof File)) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+
+    const file = fileEntry;
+    const fileValidation = validateUploadFile(file);
+    if (!fileValidation.valid) return NextResponse.json({ error: fileValidation.error }, { status: 400 });
 
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const reportType = detectReportType(workbook);
     if (!reportType) return NextResponse.json({ error: 'Cannot detect report type.' }, { status: 400 });
+    if (action !== 'preview' && action !== 'import') {
+      return NextResponse.json({ error: 'Invalid upload action.' }, { status: 400 });
+    }
+    if (reportType === 'order_all') {
+      const workbookValidation = validateOrderAllWorkbook(workbook);
+      if (!workbookValidation.valid) {
+        return NextResponse.json({ error: workbookValidation.error }, { status: 400 });
+      }
+    }
 
     const reportName = getReportName(reportType);
     const sourceSnapshotAt = normalizeSourceSnapshotAt(formData.get('source_snapshot_at'));

@@ -118,8 +118,58 @@ function isStatusAdvance(existingStatus, incomingStatus) {
 function parseSnapshotAt(value) {
   const text = normalizeEmpty(value);
   if (!text) return null;
-  const normalized = text.replace('T', ' ');
-  return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?$/.test(normalized) ? normalized : null;
+  const match = text.replace('T', ' ').match(
+    /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})(?::(\d{2}))?$/,
+  );
+  if (!match) return null;
+
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText = '00'] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const timestamp = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+
+  if (timestamp.getUTCFullYear() !== year
+    || timestamp.getUTCMonth() !== month - 1
+    || timestamp.getUTCDate() !== day
+    || timestamp.getUTCHours() !== hour
+    || timestamp.getUTCMinutes() !== minute
+    || timestamp.getUTCSeconds() !== second) return null;
+
+  return `${yearText}-${monthText}-${dayText} ${hourText}:${minuteText}:${secondText}`;
+}
+
+function validateOrderAllCompositeKeys(rows) {
+  const seen = new Set();
+  const duplicates = [];
+  const missing = [];
+
+  rows.forEach((row, index) => {
+    const keyParts = [
+      normalizeEmpty(row['No. Pesanan']),
+      normalizeEmpty(row['Nomor Referensi SKU']),
+      normalizeEmpty(row['Nama Variasi']),
+    ];
+    if (keyParts.some((value) => value === null)) {
+      missing.push(index + 2);
+      return;
+    }
+
+    const key = keyParts.join('||');
+    if (seen.has(key)) duplicates.push({ row: index + 2, key });
+    else seen.add(key);
+  });
+
+  return {
+    valid: duplicates.length === 0 && missing.length === 0,
+    duplicateCount: duplicates.length,
+    missingCount: missing.length,
+    duplicateSamples: duplicates.slice(0, 5),
+    missingSamples: missing.slice(0, 5),
+  };
 }
 
 function isOlderOrEqualSnapshot(existingSnapshotAt, incomingSnapshotAt) {
@@ -237,5 +287,6 @@ module.exports = {
   parseSnapshotAt,
   resolveOrderSnapshot,
   shouldAllowImport,
+  validateOrderAllCompositeKeys,
   validateOrderAllHeaders,
 };

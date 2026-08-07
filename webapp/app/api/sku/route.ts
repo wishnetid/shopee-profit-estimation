@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createConnection } from 'mysql2/promise';
 
 async function getConnection() {
+  const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME } = process.env;
+  if (!DB_HOST || !DB_USER || !DB_PASSWORD || !DB_NAME) {
+    throw new Error('Database configuration is incomplete.');
+  }
   return createConnection({
-    host: process.env.DB_HOST || '103.136.19.30',
-    port: parseInt(process.env.DB_PORT || '3306'),
-    user: process.env.DB_USER || 'supplie3_shopee_profit_estimation',
-    password: process.env.DB_PASSWORD || 'Persib1933',
-    database: process.env.DB_NAME || 'supplie3_shopee_profit_estimation',
+    host: DB_HOST,
+    port: parseInt(DB_PORT || '3306'),
+    user: DB_USER,
+    password: DB_PASSWORD,
+    database: DB_NAME,
   });
 }
 

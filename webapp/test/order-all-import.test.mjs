@@ -5,7 +5,9 @@ import orderAllImport from '../lib/order-all-import.js';
 
 const {
   parseIdr,
+  parseSnapshotAt,
   resolveOrderSnapshot,
+  validateOrderAllCompositeKeys,
   validateOrderAllHeaders,
   shouldAllowImport,
 } = orderAllImport;
@@ -85,6 +87,22 @@ test('validateOrderAllHeaders rejects a changed export schema before import', ()
 
   assert.equal(result.valid, false);
   assert.ok(result.missing.includes('Status Pesanan'));
+});
+
+test('validateOrderAllCompositeKeys rejects duplicate rows within one upload', () => {
+  const result = validateOrderAllCompositeKeys([
+    { 'No. Pesanan': 'ORDER-1', 'Nomor Referensi SKU': 'SKU-1', 'Nama Variasi': 'Hitam,XL' },
+    { 'No. Pesanan': 'ORDER-1', 'Nomor Referensi SKU': 'SKU-1', 'Nama Variasi': 'Hitam,XL' },
+  ]);
+
+  assert.equal(result.valid, false);
+  assert.equal(result.duplicateCount, 1);
+});
+
+test('parseSnapshotAt rejects impossible calendar timestamps', () => {
+  assert.equal(parseSnapshotAt('2099-99-99 99:99:00'), null);
+  assert.equal(parseSnapshotAt('2026-02-30 10:00:00'), null);
+  assert.equal(parseSnapshotAt('2026-08-07 19:01:00'), '2026-08-07 19:01:00');
 });
 
 test('shouldAllowImport permits an update-only snapshot', () => {
