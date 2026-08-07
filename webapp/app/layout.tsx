@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import Link from 'next/link';
-import { Upload, ShoppingCart, DollarSign, Package, BarChart3 } from 'lucide-react';
+import { Upload, ShoppingCart, DollarSign, Package, BarChart3, Settings } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'Shopee Profit Estimation',
@@ -49,6 +49,9 @@ export default function RootLayout({
               <NavLink href="/profit" icon={BarChart3}>
                 Profit
               </NavLink>
+              <NavLink href="/settings" icon={Settings}>
+                Settings
+              </NavLink>
             </nav>
             <div className="p-4 border-t border-slate-200">
               <p className="text-xs text-slate-500">
@@ -70,6 +73,7 @@ export default function RootLayout({
               <MobileNavLink href="/income" icon={DollarSign} label="Income" />
               <MobileNavLink href="/sku" icon={Package} label="SKU" />
               <MobileNavLink href="/profit" icon={BarChart3} label="Profit" />
+              <MobileNavLink href="/settings" icon={Settings} label="Setting" />
             </div>
           </nav>
         </div>
