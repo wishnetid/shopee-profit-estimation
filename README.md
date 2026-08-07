@@ -25,7 +25,11 @@
 - Import mendukung tiga hasil:
   - **Baru**: insert.
   - **Identik**: skip.
-  - **Berubah**: update snapshot terbaru, termasuk bila file tidak punya row baru.
+  - **Berubah dan terbukti lebih baru**: update snapshot, termasuk bila file tidak punya row baru.
+  - **Lebih lama / ambigu / menurunkan kualitas data**: database dipertahankan.
+- Setiap upload `Order.all` wajib menyertakan **waktu snapshot/export** dari Shopee. Waktu ini disimpan sebagai provenance per item (`source_snapshot_at`, `source_snapshot_file`) dan menjadi urutan utama saat dua export overlap.
+- Jika provenance lama belum tersedia, aplikasi memakai mode konservatif: status yang maju boleh memperbarui data; status yang sama tetapi nilai terisi saling konflik ditahan sampai snapshot baru memiliki waktu yang lebih baru.
+- Snapshot lama tidak boleh menimpa field mana pun. Nilai terisi juga tidak boleh diturunkan menjadi kosong atau versi tersamarkan (`******`).
 - Parser nominal Shopee sudah benar untuk format IDR bertitik:
 
 ```text
@@ -161,16 +165,22 @@ Karena itu, import adalah **merge state terbaru per item**, bukan append ledger.
 
 | Kondisi | Aksi |
 |---|---|
-| Composite key belum ada | INSERT |
-| Composite key ada, seluruh field mapped sama | SKIP |
-| Composite key ada dan minimal satu field mapped berubah | UPDATE |
-| File hanya berisi update, tanpa row baru | UPDATE tetap diizinkan |
+| Composite key belum ada | INSERT + simpan provenance snapshot |
+| Composite key ada, seluruh field mapped sama | SKIP; provenance dapat disematkan sekali pada row legacy yang clean |
+| Snapshot punya waktu lebih baru dan tidak menurunkan kualitas field | UPDATE |
+| Snapshot lebih lama | BLOCK seluruh perbedaan; DB tetap dipakai |
+| Waktu sama atau provenance belum ada, tetapi nilai terisi konflik | HOLD/BLOCK; butuh snapshot yang terbukti lebih baru |
+| File hanya berisi update aman, tanpa row baru | UPDATE tetap diizinkan |
 
 ### Guards saat update
 
-- Status ranked yang mundur diblok.
-- Resi yang sudah ada tidak boleh tertimpa menjadi kosong.
-- Field lain tetap bisa di-update dari snapshot terbaru dan ditampilkan dulu pada preview.
+- Setiap `Order.all` wajib membawa waktu saat snapshot/report diexport dari Shopee. Nama file dan waktu order tidak dipakai sebagai penentu freshness.
+- Status ranked bersifat monotonic: tidak boleh mundur, bahkan bila sebuah snapshot yang diinput diberi waktu lebih baru.
+- Snapshot yang lebih lama tidak boleh menimpa field mana pun.
+- Nilai terisi tidak boleh diturunkan menjadi kosong atau versi tersamarkan (`******`).
+- Bila status sama tetapi nilai terisi berbeda dan belum ada provenance yang membuktikan incoming lebih baru, database dipertahankan secara konservatif.
+- Provenance per item tersimpan di `source_snapshot_at` dan `source_snapshot_file`.
+- Preview wajib membedakan `Update Aman` dari perbedaan yang diblok/dipertahankan.
 
 > Lifecycle `Batal`, return, dan refund belum boleh disederhanakan sebagai status linear sempurna. Saat menambah rule baru, validasi dulu dengan report finansial terkait.
 

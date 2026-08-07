@@ -4,20 +4,37 @@ import * as XLSX from 'xlsx';
 
 // Shared with node:test regression tests. The raw Shopee export uses IDR dot-thousands strings.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { parseIdr, validateOrderAllHeaders } = require('../../../lib/order-all-import.js') as {
+const { parseIdr, resolveOrderSnapshot, validateOrderAllHeaders } = require('../../../lib/order-all-import.js') as {
   parseIdr: (value: unknown) => number | null;
+  resolveOrderSnapshot: (
+    existingRow: Record<string, unknown>,
+    incomingRow: Record<string, unknown>,
+    columns: string[],
+    options?: { existingSnapshotAt?: unknown; incomingSnapshotAt?: unknown },
+  ) => {
+    row: Record<string, unknown>;
+    protectedColumns: string[];
+    staleSnapshot: boolean;
+    staleBySnapshotAt: boolean;
+    staleByStatus: boolean;
+    incomingProvenFresher: boolean;
+  };
   validateOrderAllHeaders: (headers: unknown[]) => { valid: boolean; missing: string[]; unexpected: string[] };
 };
 
 const BATCH_SIZE = 100;
 
 async function getConnection() {
+  const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME } = process.env;
+  if (!DB_HOST || !DB_USER || !DB_PASSWORD || !DB_NAME) {
+    throw new Error('Database environment variables are incomplete');
+  }
   return createConnection({
-    host: process.env.DB_HOST || '103.136.19.30',
-    port: parseInt(process.env.DB_PORT || '3306'),
-    user: process.env.DB_USER || 'supplie3_shopee_profit_estimation',
-    password: process.env.DB_PASSWORD || 'Persib1933',
-    database: process.env.DB_NAME || 'supplie3_shopee_profit_estimation',
+    host: DB_HOST,
+    port: parseInt(DB_PORT || '3306'),
+    user: DB_USER,
+    password: DB_PASSWORD,
+    database: DB_NAME,
     dateStrings: true,
   });
 }
@@ -61,6 +78,30 @@ function sameImportValue(incoming: unknown, stored: unknown): boolean {
   return incomingText === storedText;
 }
 
+function orderValuesToRow(values: unknown[]): Record<string, unknown> {
+  return Object.fromEntries(ORDER_COLS.map((column, index) => [column, values[index]]));
+}
+
+function shouldWriteSnapshotProvenance(
+  existingRow: Record<string, unknown>,
+  incomingSnapshotAt: string,
+  resolution: { staleSnapshot: boolean; protectedColumns: string[]; incomingProvenFresher: boolean },
+): boolean {
+  if (resolution.staleSnapshot) return false;
+  const existingSnapshotAt = existingRow.source_snapshot_at == null
+    ? null
+    : String(existingRow.source_snapshot_at).slice(0, 19);
+
+  // Existing legacy rows have no timestamp proof. A cleanly matching upload
+  // is allowed to establish provenance, so the operator can seed the current
+  // known snapshot once. Any stale/conflicting/downgraded field already made
+  // `protectedColumns` non-empty and therefore cannot establish provenance.
+  if (!existingSnapshotAt) {
+    return resolution.protectedColumns.length === 0;
+  }
+  return incomingSnapshotAt > existingSnapshotAt;
+}
+
 function detectReportType(workbook: XLSX.WorkBook): string | null {
   for (const name of workbook.SheetNames) {
     if (name.toLowerCase() === 'orders') {
@@ -81,6 +122,16 @@ function detectReportType(workbook: XLSX.WorkBook): string | null {
     }
   }
   return null;
+}
+
+function normalizeSourceSnapshotAt(value: FormDataEntryValue | null): string | null {
+  if (typeof value !== 'string') return null;
+  const timestamp = value.trim().replace('T', ' ');
+  // The UI enters the Shopee export/snapshot clock directly. Preserve that
+  // local clock; this value is used for ordering, not timezone conversion.
+  return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?$/.test(timestamp)
+    ? timestamp.length === 16 ? `${timestamp}:00` : timestamp
+    : null;
 }
 
 function getReportName(type: string): string {
@@ -153,7 +204,12 @@ async function fetchExistingRows(conn: Connection, keys: string[][], table: stri
   return existing;
 }
 
-async function previewOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
+async function previewOrderAll(
+  workbook: XLSX.WorkBook,
+  conn: Connection,
+  sourceSnapshotAt: string,
+  sourceSnapshotFile: string,
+) {
   let sheetName = workbook.SheetNames.find(n => n.toLowerCase() === 'orders');
   if (!sheetName) sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
@@ -163,8 +219,9 @@ async function previewOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
 
   const headers = rawData[0] as string[];
   const rows = rawData.slice(1);
+  const headerMap: Record<string, number> = {};
+  headers.forEach((header, index) => { if (header) headerMap[String(header).trim()] = index; });
 
-  // Preview: all rows, key columns
   const previewCols = ['No. Pesanan', 'Status Pesanan', 'Nomor Referensi SKU', 'Nama Variasi', 'Jumlah', 'Harga Setelah Diskon', 'Total Pembayaran', 'Waktu Pesanan Dibuat'];
   const previewHeaders = previewCols.filter(c => headers.includes(c));
   const previewRows = rows.map(row => {
@@ -175,115 +232,84 @@ async function previewOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
     return mapped;
   });
 
-  // Check against DB — fetch full rows for diff comparison
   const allKeys = extractOrderKeys(workbook);
-  // Compare the full imported row, not only status/resi. A Shopee snapshot may update
-  // return data, address, schedule, shipping cost, or total payment without changing status.
   const dbRows = await fetchExistingRows(
     conn,
     allKeys,
     'order_all',
     ['no_pesanan', 'nomor_referensi_sku', 'nama_variasi'],
-    ORDER_COLS,
+    [...ORDER_COLS, 'source_snapshot_at', 'source_snapshot_file'],
   );
 
   let newCount = 0;
   let existingCount = 0;
+  let safeUpdateCount = 0;
+  let protectedFieldCount = 0;
+  let staleSnapshotCount = 0;
   const updatedRows: any[] = [];
 
-  for (const k of allKeys) {
-    const key = k.join('||');
-    const dbRow = dbRows.get(key);
-    if (dbRow) {
-      existingCount++;
-      // Find this row in rawData to compare
-      const headerMap: Record<string, number> = {};
-      headers.forEach((h, i) => { if (h) headerMap[String(h).trim()] = i; });
+  for (const rawDataRow of rows) {
+    const excelRow: Record<string, unknown> = {};
+    headers.forEach((header, index) => { if (header) excelRow[String(header).trim()] = rawDataRow[index]; });
+    const importedValues = extractOrderRow(excelRow);
+    const importedRow = orderValuesToRow(importedValues);
+    const keyParts = [
+      String(importedRow.no_pesanan || '').trim(),
+      String(importedRow.nomor_referensi_sku || '').trim(),
+      String(importedRow.nama_variasi || '').trim(),
+    ];
+    const dbRow = dbRows.get(keyParts.join('||'));
 
-      const rawDataRow = rows.find(r => {
-        return String(r[headerMap['No. Pesanan']] || '').trim() === k[0]
-          && String(r[headerMap['Nomor Referensi SKU']] || '').trim() === k[1]
-          && String(r[headerMap['Nama Variasi']] || '').trim() === k[2];
-      });
-
-      if (rawDataRow) {
-        const changes: any[] = [];
-        const regressions: any[] = [];
-
-        // Get raw values
-        const norm = (v: any) => {
-          if (v == null) return '';
-          const s = String(v).trim();
-          return s === '-' || s === 'N/A' ? '' : s;
-        };
-
-        const getStatus = (col: string) => {
-          const idx = headerMap[col];
-          return idx !== undefined ? norm(rawDataRow[idx]) : '';
-        };
-        const getDbStatus = (dbCol: string) => norm(dbRow[dbCol]);
-
-        const newStatus = getStatus('Status Pesanan');
-        const oldStatus = getDbStatus('status_pesanan');
-        const newResi = getStatus('No. Resi');
-        const oldResi = getDbStatus('no_resi');
-
-        // Check status regression
-        if (isRegression(oldStatus, newStatus)) {
-          regressions.push({
-            type: 'status',
-            column: 'Status Pesanan',
-            from: oldStatus || '(kosong)',
-            to: newStatus || '(kosong)',
-            message: `Status mundur: ${oldStatus} → ${newStatus}`,
-          });
-        }
-
-        // Check resi regression
-        if (isResiRegression(dbRow['no_resi'], rawDataRow[headerMap['No. Resi']])) {
-          regressions.push({
-            type: 'resi',
-            column: 'No. Resi',
-            from: oldResi || '(kosong)',
-            to: newResi || '(kosong)',
-            message: `Resi hilang: ${oldResi} → kosong`,
-          });
-        }
-
-        // Collect all imported-field changes. This prevents a silent overwrite outside
-        // the old four-field status/resi-focused preview.
-        const excelRow: Record<string, unknown> = {};
-        headers.forEach((header, index) => {
-          if (header) excelRow[String(header).trim()] = rawDataRow[index];
-        });
-        const importedValues = extractOrderRow(excelRow);
-        ORDER_COLS.forEach((dbCol, index) => {
-          if (sameImportValue(importedValues[index], dbRow[dbCol])) return;
-          changes.push({
-            column: dbCol,
-            dbColumn: dbCol,
-            from: norm(dbRow[dbCol]) || '(kosong)',
-            to: norm(importedValues[index]) || '(kosong)',
-          });
-        });
-
-        if (changes.length > 0) {
-          updatedRows.push({
-            no_pesanan: k[0],
-            sku: k[1],
-            variasi: k[2],
-            changes,
-            regressions,
-          });
-        }
-      }
-    } else {
+    if (!dbRow) {
       newCount++;
+      continue;
+    }
+
+    existingCount++;
+    const resolution = resolveOrderSnapshot(dbRow, importedRow, ORDER_COLS, {
+      existingSnapshotAt: dbRow.source_snapshot_at,
+      incomingSnapshotAt: sourceSnapshotAt,
+    });
+    const changes: any[] = [];
+    const protectedColumns = new Set(resolution.protectedColumns);
+
+    ORDER_COLS.forEach((dbCol) => {
+      if (sameImportValue(importedRow[dbCol], dbRow[dbCol])) return;
+      const isProtected = protectedColumns.has(dbCol);
+      changes.push({
+        column: dbCol,
+        dbColumn: dbCol,
+        from: dbRow[dbCol] == null || String(dbRow[dbCol]).trim() === '' ? '(kosong)' : String(dbRow[dbCol]),
+        to: importedRow[dbCol] == null || String(importedRow[dbCol]).trim() === '' ? '(kosong)' : String(importedRow[dbCol]),
+        protected: isProtected,
+      });
+    });
+
+    const effectiveChanged = ORDER_COLS.some((dbCol) => !sameImportValue(resolution.row[dbCol], dbRow[dbCol]));
+    const writesProvenance = shouldWriteSnapshotProvenance(dbRow, sourceSnapshotAt, resolution);
+    if (effectiveChanged || writesProvenance) safeUpdateCount++;
+    protectedFieldCount += resolution.protectedColumns.length;
+    if (resolution.staleSnapshot) staleSnapshotCount++;
+
+    if (changes.length > 0) {
+      updatedRows.push({
+        no_pesanan: keyParts[0],
+        sku: keyParts[1],
+        variasi: keyParts[2],
+        changes,
+        regressions: changes.filter(change => change.protected).map(change => ({
+          type: resolution.staleSnapshot ? 'stale_snapshot' : 'quality_downgrade',
+          column: change.column,
+          from: change.from,
+          to: change.to,
+          message: resolution.staleSnapshot
+            ? `Snapshot lama ditahan: ${change.from} → ${change.to}`
+            : `Nilai kosong/tersamarkan ditahan: ${change.from} → ${change.to}`,
+        })),
+        safeUpdate: effectiveChanged || writesProvenance,
+      });
     }
   }
-
-  // Count regressions
-  const regressionCount = updatedRows.filter(r => r.regressions.length > 0).length;
 
   return {
     headers: headers.filter(Boolean).map(String),
@@ -291,11 +317,16 @@ async function previewOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
     newRows: newCount,
     existingRows: existingCount,
     updatedRows,
-    regressionCount,
-    unchangedRows: existingCount - updatedRows.length,
+    safeUpdateRows: safeUpdateCount,
+    protectedFieldCount,
+    staleSnapshotCount,
+    regressionCount: updatedRows.filter(row => row.regressions.length > 0).length,
+    unchangedRows: existingCount - safeUpdateCount,
     previewColumns: previewHeaders,
     previewRows,
     sheetName,
+    sourceSnapshotAt,
+    sourceSnapshotFile,
   };
 }
 
@@ -400,9 +431,17 @@ async function previewMaster(workbook: XLSX.WorkBook, conn: Connection) {
   };
 }
 
-async function handlePreview(workbook: XLSX.WorkBook, reportType: string, conn: Connection) {
+async function handlePreview(
+  workbook: XLSX.WorkBook,
+  reportType: string,
+  conn: Connection,
+  sourceSnapshotAt: string | null,
+  sourceSnapshotFile: string,
+) {
   switch (reportType) {
-    case 'order_all': return previewOrderAll(workbook, conn);
+    case 'order_all':
+      if (!sourceSnapshotAt) throw new Error('Waktu snapshot wajib diisi untuk Order.all');
+      return previewOrderAll(workbook, conn, sourceSnapshotAt, sourceSnapshotFile);
     case 'income': return previewIncome(workbook, conn);
     case 'master': return previewMaster(workbook, conn);
     default: return null;
@@ -493,141 +532,118 @@ function extractOrderRow(row: any): any[] {
   return ORDER_COLS.map(c => ORDER_FIELDS_MAP[c](row));
 }
 
-async function importOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
+async function importOrderAll(
+  workbook: XLSX.WorkBook,
+  conn: Connection,
+  sourceSnapshotAt: string,
+  sourceSnapshotFile: string,
+) {
   let sheetName = workbook.SheetNames.find(n => n.toLowerCase() === 'orders');
   if (!sheetName) sheetName = workbook.SheetNames[0];
 
   const sheet = workbook.Sheets[sheetName];
   const data = XLSX.utils.sheet_to_json(sheet) as any[];
-
-  const placeholders = ORDER_COLS.map(() => '?').join(',');
-  const cols = ORDER_COLS.join(',');
+  const insertCols = [...ORDER_COLS, 'source_snapshot_at', 'source_snapshot_file'];
+  const placeholders = insertCols.map(() => '?').join(',');
+  const cols = insertCols.join(',');
+  const updateAssignments = insertCols
+    .filter(column => !['no_pesanan', 'nomor_referensi_sku', 'nama_variasi'].includes(column))
+    .map(column => `${column}=VALUES(${column})`)
+    .join(',\n           ');
   let newInserted = 0;
   let updatedCount = 0;
-  let guardedCount = 0;
+  let guardedRows = 0;
+  let protectedFields = 0;
   let errors = 0;
 
-  // Status & resi column indices in ORDER_COLS
-  const statusIdx = ORDER_COLS.indexOf('status_pesanan');
-  const resiIdx = ORDER_COLS.indexOf('no_resi');
-  const keyIdx = [ORDER_COLS.indexOf('no_pesanan'), ORDER_COLS.indexOf('nomor_referensi_sku'), ORDER_COLS.indexOf('nama_variasi')];
+  const keyIdx = [
+    ORDER_COLS.indexOf('no_pesanan'),
+    ORDER_COLS.indexOf('nomor_referensi_sku'),
+    ORDER_COLS.indexOf('nama_variasi'),
+  ];
 
   // An import is one snapshot. Never leave the DB half-updated when a later batch fails.
   await conn.beginTransaction();
   try {
     for (let i = 0; i < data.length; i += BATCH_SIZE) {
-    const batch = data.slice(i, i + BATCH_SIZE);
-    const values: any[][] = [];
-    for (const [rowOffset, row] of batch.entries()) {
+      const rawBatch = data.slice(i, i + BATCH_SIZE);
+      const incoming = rawBatch.map((row, rowOffset) => {
+        const values = extractOrderRow(row);
+        if (values[keyIdx[0]] == null || values[keyIdx[1]] == null || values[keyIdx[2]] == null) {
+          throw new Error(`Order.all row ${i + rowOffset + 2} tidak valid: No. Pesanan, Nomor Referensi SKU, dan Nama Variasi wajib terisi`);
+        }
+        return { values, row: orderValuesToRow(values) };
+      });
+      if (incoming.length === 0) continue;
+
+      const batchKeys = incoming.map(item => [
+        item.values[keyIdx[0]], item.values[keyIdx[1]], item.values[keyIdx[2]],
+      ]);
+      const existingRows = await fetchExistingRows(
+        conn,
+        batchKeys,
+        'order_all',
+        ['no_pesanan', 'nomor_referensi_sku', 'nama_variasi'],
+        [...ORDER_COLS, 'source_snapshot_at', 'source_snapshot_file'],
+      );
+
+      const valuesToWrite: unknown[][] = [];
+      for (const item of incoming) {
+        const key = [item.values[keyIdx[0]], item.values[keyIdx[1]], item.values[keyIdx[2]]].join('||');
+        const existing = existingRows.get(key);
+
+        if (!existing) {
+          valuesToWrite.push([...item.values, sourceSnapshotAt, sourceSnapshotFile]);
+          newInserted++;
+          continue;
+        }
+
+        const resolution = resolveOrderSnapshot(existing, item.row, ORDER_COLS, {
+          existingSnapshotAt: existing.source_snapshot_at,
+          incomingSnapshotAt: sourceSnapshotAt,
+        });
+        const effectiveChanged = ORDER_COLS.some(column => !sameImportValue(resolution.row[column], existing[column]));
+        const writesProvenance = shouldWriteSnapshotProvenance(existing, sourceSnapshotAt, resolution);
+        if (resolution.protectedColumns.length > 0) {
+          guardedRows++;
+          protectedFields += resolution.protectedColumns.length;
+        }
+
+        if (!effectiveChanged && !writesProvenance) continue;
+
+        const resolvedValues = ORDER_COLS.map(column => resolution.row[column]);
+        const snapshotAt = writesProvenance
+          ? sourceSnapshotAt
+          : existing.source_snapshot_at;
+        const snapshotFile = writesProvenance
+          ? sourceSnapshotFile
+          : existing.source_snapshot_file;
+        valuesToWrite.push([...resolvedValues, snapshotAt, snapshotFile]);
+        updatedCount++;
+      }
+
+      if (valuesToWrite.length === 0) continue;
       try {
-        const extracted = extractOrderRow(row);
-        if (extracted[keyIdx[0]] == null || extracted[keyIdx[1]] == null || extracted[keyIdx[2]] == null) {
-          throw new Error('No. Pesanan, Nomor Referensi SKU, dan Nama Variasi wajib terisi');
-        }
-        values.push(extracted);
+        const valuePlaceholders = valuesToWrite.map(() => `(${placeholders})`).join(',');
+        await conn.query(
+          `INSERT INTO order_all (${cols}) VALUES ${valuePlaceholders}
+           ON DUPLICATE KEY UPDATE
+           ${updateAssignments}`,
+          valuesToWrite.flat(),
+        );
       } catch (error: any) {
-        throw new Error(`Order.all row ${i + rowOffset + 2} tidak valid: ${error.message}`);
-      }
-    }
-    if (values.length === 0) continue;
-
-    // Fetch existing rows for guard check
-    const batchKeys = values.map(v => [v[keyIdx[0]], v[keyIdx[1]], v[keyIdx[2]]]);
-    const existingRows = await fetchExistingRows(conn, batchKeys, 'order_all', ['no_pesanan', 'nomor_referensi_sku', 'nama_variasi'], ['no_pesanan', 'nomor_referensi_sku', 'nama_variasi', 'status_pesanan', 'no_resi']);
-
-    // Apply guards: prevent status regression & resi deletion
-    for (const row of values) {
-      const key = [row[keyIdx[0]], row[keyIdx[1]], row[keyIdx[2]]].join('||');
-      const existing = existingRows.get(key);
-      if (existing) {
-        const oldStatus = existing.status_pesanan;
-        const newStatus = row[statusIdx];
-        const oldResi = existing.no_resi;
-        const newResi = row[resiIdx];
-
-        // Guard: status regression
-        if (isRegression(oldStatus, newStatus)) {
-          row[statusIdx] = oldStatus; // keep old status
-          guardedCount++;
-        }
-
-        // Guard: resi deletion
-        if (isResiRegression(oldResi, newResi)) {
-          row[resiIdx] = oldResi; // keep old resi
-          guardedCount++;
-        }
-      }
-    }
-
-    try {
-      const valuePlaceholders = values.map(() => `(${placeholders})`).join(',');
-      const flatParams = values.flat();
-      const insertedInBatch = values.filter((row) => {
-        const key = [row[keyIdx[0]], row[keyIdx[1]], row[keyIdx[2]]].join('||');
-        return !existingRows.has(key);
-      }).length;
-      const [result] = await conn.query(
-        `INSERT INTO order_all (${cols}) VALUES ${valuePlaceholders}
-         ON DUPLICATE KEY UPDATE
-           status_pesanan=VALUES(status_pesanan),
-           alasan_pembatalan=VALUES(alasan_pembatalan),
-           status_pembatalan_pengembalian=VALUES(status_pembatalan_pengembalian),
-           no_resi=VALUES(no_resi),
-           opsi_pengiriman=VALUES(opsi_pengiriman),
-           antar_ke_counter=VALUES(antar_ke_counter),
-           pesanan_harus_dikirim_sebelum=VALUES(pesanan_harus_dikirim_sebelum),
-           waktu_pengiriman_diatur=VALUES(waktu_pengiriman_diatur),
-           waktu_pesanan_dibuat=VALUES(waktu_pesanan_dibuat),
-           waktu_pembayaran_dilakukan=VALUES(waktu_pembayaran_dilakukan),
-           tipe_pesanan=VALUES(tipe_pesanan),
-           metode_pembayaran=VALUES(metode_pembayaran),
-           sku_induk=VALUES(sku_induk),
-           harga_awal=VALUES(harga_awal),
-           harga_setelah_diskon=VALUES(harga_setelah_diskon),
-           jumlah=VALUES(jumlah),
-           returned_quantity=VALUES(returned_quantity),
-           subtotal_pesanan=VALUES(subtotal_pesanan),
-           total_diskon=VALUES(total_diskon),
-           diskon_dari_penjual=VALUES(diskon_dari_penjual),
-           diskon_dari_shopee=VALUES(diskon_dari_shopee),
-           berat_produk=VALUES(berat_produk),
-           jumlah_produk_di_pesan=VALUES(jumlah_produk_di_pesan),
-           total_berat=VALUES(total_berat),
-           voucher_ditanggung_penjual=VALUES(voucher_ditanggung_penjual),
-           cashback_koin=VALUES(cashback_koin),
-           voucher_ditanggung_shopee=VALUES(voucher_ditanggung_shopee),
-           paket_diskon=VALUES(paket_diskon),
-           paket_diskon_shopee=VALUES(paket_diskon_shopee),
-           paket_diskon_penjual=VALUES(paket_diskon_penjual),
-           potongan_koin_shopee=VALUES(potongan_koin_shopee),
-           diskon_kartu_kredit=VALUES(diskon_kartu_kredit),
-           ongkos_kirim_dibayar_pembeli=VALUES(ongkos_kirim_dibayar_pembeli),
-           estimasi_potongan_biaya_pengiriman=VALUES(estimasi_potongan_biaya_pengiriman),
-           ongkos_kirim_pengembalian_barang=VALUES(ongkos_kirim_pengembalian_barang),
-           total_pembayaran=VALUES(total_pembayaran),
-           perkiraan_ongkos_kirim=VALUES(perkiraan_ongkos_kirim),
-           catatan_dari_pembeli=VALUES(catatan_dari_pembeli),
-           catatan=VALUES(catatan),
-           username_pembeli=VALUES(username_pembeli),
-           nama_penerima=VALUES(nama_penerima),
-           no_telepon=VALUES(no_telepon),
-           alamat_pengiriman=VALUES(alamat_pengiriman),
-           kota_kabupaten=VALUES(kota_kabupaten),
-           provinsi=VALUES(provinsi),
-           waktu_pesanan_selesai=VALUES(waktu_pesanan_selesai)`,
-        flatParams
-      ) as any;
-      const updatedRows = result.changedRows || 0;
-      newInserted += insertedInBatch;
-      updatedCount += updatedRows;
-      console.log(`Batch ${i}: affectedRows=${result.affectedRows}, new=${insertedInBatch}, updated=${updatedRows}`);
-      } catch (err: any) {
-        throw new Error(`Order.all batch starting at row ${i + 2} failed: ${err.message}`);
+        throw new Error(`Order.all batch starting at row ${i + 2} failed: ${error.message}`);
       }
     }
 
     await conn.commit();
-    return { inserted: newInserted, updated: updatedCount, guarded: guardedCount, errors };
+    return {
+      inserted: newInserted,
+      updated: updatedCount,
+      guarded: guardedRows,
+      protectedFields,
+      errors,
+    };
   } catch (error) {
     await conn.rollback();
     throw error;
@@ -783,11 +799,21 @@ export async function POST(request: NextRequest) {
     if (!reportType) return NextResponse.json({ error: 'Cannot detect report type.' }, { status: 400 });
 
     const reportName = getReportName(reportType);
+    const sourceSnapshotAt = normalizeSourceSnapshotAt(formData.get('source_snapshot_at'));
+    const sourceSnapshotFile = typeof formData.get('source_snapshot_file') === 'string'
+      ? String(formData.get('source_snapshot_file')).slice(0, 255)
+      : file.name.slice(0, 255);
+
+    if (reportType === 'order_all' && !sourceSnapshotAt) {
+      return NextResponse.json({
+        error: 'Order.all wajib memiliki waktu snapshot/export. Isi waktu saat report diexport sebelum preview atau import.',
+      }, { status: 400 });
+    }
 
     // ── PREVIEW ──
     if (action === 'preview') {
       conn = await getConnection();
-      const preview = await handlePreview(workbook, reportType, conn);
+      const preview = await handlePreview(workbook, reportType, conn, sourceSnapshotAt, sourceSnapshotFile);
       if (!preview) return NextResponse.json({ error: 'Cannot parse file for preview.' }, { status: 400 });
       return NextResponse.json({
         success: true,
@@ -803,7 +829,7 @@ export async function POST(request: NextRequest) {
 
     switch (reportType) {
       case 'order_all':
-        result = await importOrderAll(workbook, conn);
+        result = await importOrderAll(workbook, conn, sourceSnapshotAt!, sourceSnapshotFile);
         break;
       case 'income':
         result = await importIncome(workbook, conn);
@@ -823,7 +849,8 @@ export async function POST(request: NextRequest) {
     } else {
       message = `0 rows imported to ${reportName}`;
     }
-    if (result.guarded) message += ` (${result.guarded} regressions di-block)`;
+    if (result.guarded) message += ` (${result.guarded} snapshot/field stale di-block)`;
+    if (result.protectedFields) message += ` (${result.protectedFields} field dipertahankan)`;
     if (result.errors) message += ` (${result.errors} errors)`;
 
     return NextResponse.json({
@@ -834,6 +861,8 @@ export async function POST(request: NextRequest) {
       rowsImported: result.inserted,
       rowsUpdated: result.updated || 0,
       rowsGuarded: result.guarded || 0,
+      protectedFields: result.protectedFields || 0,
+      sourceSnapshotAt: sourceSnapshotAt,
       errors: result.errors || 0,
     });
   } catch (error: any) {

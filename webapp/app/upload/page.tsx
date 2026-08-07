@@ -10,6 +10,7 @@ interface DiffChange {
   dbColumn: string;
   from: string;
   to: string;
+  protected?: boolean;
 }
 
 interface UpdatedRow {
@@ -29,6 +30,10 @@ interface PreviewData {
   existingRows: number;
   unchangedRows: number;
   regressionCount: number;
+  safeUpdateRows: number;
+  protectedFieldCount: number;
+  staleSnapshotCount: number;
+  sourceSnapshotAt: string | null;
   updatedRows: UpdatedRow[];
   headers: string[];
   previewColumns: string[];
@@ -41,6 +46,7 @@ interface ImportResult {
   rowsImported: number;
   rowsUpdated: number;
   rowsGuarded: number;
+  protectedFields: number;
   errors: number;
 }
 
@@ -54,6 +60,7 @@ export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [checking, setChecking] = useState(false);
   const [showDiff, setShowDiff] = useState(true);
+  const [sourceSnapshotAt, setSourceSnapshotAt] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -82,7 +89,6 @@ export default function UploadPage() {
       setError('Format file tidak didukung. Gunakan .xlsx, .xls, atau .csv');
       return;
     }
-
     setSelectedFile(file);
     setError(null);
     setStep('preview');
@@ -91,6 +97,8 @@ export default function UploadPage() {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('action', 'preview');
+    formData.append('source_snapshot_at', sourceSnapshotAt);
+    formData.append('source_snapshot_file', file.name);
 
     try {
       const res = await fetch('/api/upload', { method: 'POST', body: formData });
@@ -110,6 +118,10 @@ export default function UploadPage() {
         existingRows: data.existingRows,
         unchangedRows: data.unchangedRows,
         regressionCount: data.regressionCount || 0,
+        safeUpdateRows: data.safeUpdateRows || 0,
+        protectedFieldCount: data.protectedFieldCount || 0,
+        staleSnapshotCount: data.staleSnapshotCount || 0,
+        sourceSnapshotAt: data.sourceSnapshotAt || null,
         updatedRows: data.updatedRows || [],
         headers: data.headers,
         previewColumns: data.previewColumns,
@@ -123,7 +135,7 @@ export default function UploadPage() {
     setChecking(false);
   };
 
-  const changeCount = preview?.updatedRows.length || 0;
+  const changeCount = preview?.safeUpdateRows || 0;
   const canImport = !!preview && (preview.newRows > 0 || changeCount > 0);
 
   const handleImport = async () => {
@@ -134,6 +146,8 @@ export default function UploadPage() {
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('action', 'import');
+    formData.append('source_snapshot_at', sourceSnapshotAt);
+    formData.append('source_snapshot_file', selectedFile.name);
 
     try {
       const res = await fetch('/api/upload', { method: 'POST', body: formData });
@@ -148,6 +162,7 @@ export default function UploadPage() {
         rowsImported: data.rowsImported,
         rowsUpdated: data.rowsUpdated,
         rowsGuarded: data.rowsGuarded || 0,
+        protectedFields: data.protectedFields || 0,
         errors: data.errors,
       });
       setStep('done');
@@ -164,6 +179,7 @@ export default function UploadPage() {
     setError(null);
     setSelectedFile(null);
     setChecking(false);
+    setSourceSnapshotAt('');
     if (fileRef.current) fileRef.current.value = '';
   };
 
@@ -177,6 +193,22 @@ export default function UploadPage() {
         <div className="max-w-4xl mx-auto">
           <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 mb-1">Upload Manager</h1>
           <p className="text-sm text-slate-600 mb-6">Upload file Order.all, Income, atau Master SKU</p>
+
+          <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <label htmlFor="source-snapshot-at" className="block text-sm font-semibold text-amber-900 mb-1">
+              Waktu snapshot/export <span className="text-red-600">*</span>
+            </label>
+            <input
+              id="source-snapshot-at"
+              type="datetime-local"
+              value={sourceSnapshotAt}
+              onChange={(e) => { setSourceSnapshotAt(e.target.value); setError(null); }}
+              className="w-full max-w-sm px-3 py-2 border border-amber-300 rounded-lg bg-white text-sm text-slate-900"
+            />
+            <p className="mt-1.5 text-xs text-amber-800">
+              Wajib untuk <strong>Order.all</strong>. Isi waktu saat report diexport/diunduh dari Shopee, bukan waktu order dibuat. Dipakai untuk menahan snapshot lama agar tidak menimpa snapshot lebih baru.
+            </p>
+          </div>
 
           <div
             onDragOver={handleDragOver}
@@ -258,9 +290,9 @@ export default function UploadPage() {
                     <div className={`text-xl font-bold ${preview.newRows > 0 ? 'text-green-600' : 'text-slate-400'}`}>{preview.newRows.toLocaleString()}</div>
                     <div className="text-xs text-slate-500">Baru</div>
                   </div>
-                  <div className={`p-2 rounded-lg text-center ${preview.updatedRows.length > 0 ? 'bg-amber-50 border border-amber-200' : 'bg-slate-50 border border-slate-200'}`}>
-                    <div className={`text-xl font-bold ${preview.updatedRows.length > 0 ? 'text-amber-600' : 'text-slate-400'}`}>{preview.updatedRows.length.toLocaleString()}</div>
-                    <div className="text-xs text-slate-500">Update</div>
+                  <div className={`p-2 rounded-lg text-center ${preview.safeUpdateRows > 0 ? 'bg-amber-50 border border-amber-200' : 'bg-slate-50 border border-slate-200'}`}>
+                    <div className={`text-xl font-bold ${preview.safeUpdateRows > 0 ? 'text-amber-600' : 'text-slate-400'}`}>{preview.safeUpdateRows.toLocaleString()}</div>
+                    <div className="text-xs text-slate-500">Update Aman</div>
                   </div>
                   <div className={`p-2 rounded-lg text-center ${preview.unchangedRows > 0 ? 'bg-slate-100 border border-slate-200' : 'bg-slate-50 border border-slate-200'}`}>
                     <div className={`text-xl font-bold ${preview.unchangedRows > 0 ? 'text-slate-500' : 'text-slate-400'}`}>{preview.unchangedRows.toLocaleString()}</div>
@@ -274,12 +306,12 @@ export default function UploadPage() {
               </div>
 
               {/* Info banner */}
-              {preview.newRows === 0 && preview.updatedRows.length === 0 && (
+              {preview.newRows === 0 && preview.safeUpdateRows === 0 && (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 flex items-start gap-3">
                   <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
                   <div>
-                    <div className="text-sm font-semibold text-amber-800">Semua data sudah ada di database</div>
-                    <div className="text-xs text-amber-700 mt-0.5">Tidak ada data baru atau perubahan. File ini sudah pernah di-upload sebelumnya.</div>
+                    <div className="text-sm font-semibold text-amber-800">Tidak ada perubahan aman untuk di-import</div>
+                    <div className="text-xs text-amber-700 mt-0.5">Data identik atau perbedaan yang terdeteksi berasal dari snapshot lama / nilai yang lebih kosong, sehingga DB dipertahankan.</div>
                   </div>
                 </div>
               )}
@@ -287,14 +319,14 @@ export default function UploadPage() {
               {preview.newRows > 0 && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 text-xs text-green-700">
                   {preview.newRows} baris baru akan di-insert.
-                  {preview.updatedRows.length > 0 && ` ${preview.updatedRows.length} baris akan di-update.`}
-                  {preview.unchangedRows > 0 && ` ${preview.unchangedRows} baris duplikat (identik).`}
+                  {preview.safeUpdateRows > 0 && ` ${preview.safeUpdateRows} baris akan di-update aman.`}
+                  {preview.unchangedRows > 0 && ` ${preview.unchangedRows} baris tetap.`}
                 </div>
               )}
 
-              {preview.newRows === 0 && preview.updatedRows.length > 0 && (
+              {preview.newRows === 0 && preview.safeUpdateRows > 0 && (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-xs text-amber-700">
-                  {preview.updatedRows.length} baris akan di-update. {preview.unchangedRows} baris duplikat (identik).
+                  {preview.safeUpdateRows} baris akan di-update aman. {preview.unchangedRows} baris tetap.
                 </div>
               )}
 
@@ -303,7 +335,7 @@ export default function UploadPage() {
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
                   <div className="text-xs text-red-700">
-                    <span className="font-semibold">{preview.regressionCount} baris terdeteksi regressi</span> — status/resi akan di-BLOCK (tetap pakai data lama):
+                    <span className="font-semibold">{preview.regressionCount} baris dilindungi</span> — snapshot lama, nilai kosong, atau nilai tersamarkan tidak akan menimpa DB. {preview.protectedFieldCount} field dipertahankan.
                     <ul className="mt-1 list-disc list-inside space-y-0.5">
                       {preview.updatedRows.filter(r => r.regressions.length > 0).slice(0, 5).map((r, i) => (
                         <li key={i}>
