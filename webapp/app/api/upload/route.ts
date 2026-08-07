@@ -45,6 +45,24 @@ const {
   isValidBasicAuthorization: (authorization: string | null, username: string | undefined, password: string | undefined) => boolean;
   validateUploadFile: (file: { name: string; size: number; type: string } | null) => { valid: boolean; error: string | null };
 };
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const {
+  computeSha256,
+  parseIncomePackage,
+} = require('../../../lib/income-raw-import.js') as {
+  computeSha256: (buffer: Buffer) => string;
+  parseIncomePackage: (workbook: XLSX.WorkBook, sourceFile: string, sha256: string) => any;
+};
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const {
+  buildIncomePreview,
+  findExistingIncomeImport,
+  importIncomePackage,
+} = require('../../../lib/income-raw-db.js') as {
+  buildIncomePreview: (parsed: any, existingImport: any) => any;
+  findExistingIncomeImport: (conn: Connection, sha256: string) => Promise<any>;
+  importIncomePackage: (conn: Connection, parsed: any) => Promise<any>;
+};
 
 const BATCH_SIZE = 100;
 
@@ -898,6 +916,13 @@ export async function POST(request: NextRequest) {
     // ── PREVIEW ──
     if (action === 'preview') {
       conn = await getConnection();
+      if (reportType === 'income') {
+        const parsed = parseIncomePackage(workbook, sourceSnapshotFile, computeSha256(Buffer.from(buffer)));
+        const existingImport = await findExistingIncomeImport(conn, parsed.sha256);
+        const preview = buildIncomePreview(parsed, existingImport);
+        if (!preview.valid) return NextResponse.json({ error: 'Income package ditolak.', ...preview }, { status: 400 });
+        return NextResponse.json({ success: true, action: 'preview', reportType: reportName, ...preview });
+      }
       const preview = await handlePreview(workbook, reportType, conn, sourceSnapshotAt, sourceSnapshotFile);
       if (!preview) return NextResponse.json({ error: 'Cannot parse file for preview.' }, { status: 400 });
       return NextResponse.json({
@@ -917,7 +942,10 @@ export async function POST(request: NextRequest) {
         result = await importOrderAll(workbook, conn, sourceSnapshotAt!, sourceSnapshotFile);
         break;
       case 'income':
-        result = await importIncome(workbook, conn);
+        result = await importIncomePackage(
+          conn,
+          parseIncomePackage(workbook, sourceSnapshotFile, computeSha256(Buffer.from(buffer))),
+        );
         break;
       case 'master':
         result = { inserted: await importMaster(workbook, conn), errors: 0 };
@@ -925,7 +953,13 @@ export async function POST(request: NextRequest) {
     }
 
     let message = '';
-    if (result.inserted > 0 && result.updated > 0) {
+    if (reportType === 'income') {
+      if (result.duplicate) {
+        message = 'File Income identik sudah pernah di-import. Tidak ada row RAW baru.';
+      } else {
+        message = `Income RAW package #${result.importId} di-import: ${result.inserted.penghasilan} Penghasilan, ${result.inserted.adjustment} Adjustment, ${result.inserted.shippingFeeDiscrepancy} Selisih Ongkir.`;
+      }
+    } else if (result.inserted > 0 && result.updated > 0) {
       message = `${result.inserted} baru, ${result.updated} di-update ke ${reportName}`;
     } else if (result.inserted > 0) {
       message = `${result.inserted} rows imported to ${reportName}`;
@@ -943,12 +977,15 @@ export async function POST(request: NextRequest) {
       action: 'import',
       reportType: reportName,
       message,
-      rowsImported: result.inserted,
+      rowsImported: reportType === 'income'
+        ? result.inserted.penghasilan + result.inserted.adjustment + result.inserted.shippingFeeDiscrepancy
+        : result.inserted,
       rowsUpdated: result.updated || 0,
       rowsGuarded: result.guarded || 0,
       protectedFields: result.protectedFields || 0,
       sourceSnapshotAt: sourceSnapshotAt,
       errors: result.errors || 0,
+      incomeImportId: reportType === 'income' ? result.importId : undefined,
     });
   } catch (error: any) {
     console.error('Upload error:', error);

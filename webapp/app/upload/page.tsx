@@ -39,6 +39,12 @@ interface PreviewData {
   previewColumns: string[];
   previewRows: Record<string, any>[];
   sheetName: string;
+  canImport?: boolean;
+  duplicateHash?: boolean;
+  sha256?: string;
+  reportPeriod?: { from: string | null; to: string | null };
+  reconciliation?: { status: string; summaryTotal: number | null; orderSignedTotal: number | null; difference: number | null };
+  sections?: Record<string, { status: string; rows: number }>;
 }
 
 interface ImportResult {
@@ -113,20 +119,26 @@ export default function UploadPage() {
         fileName: file.name,
         fileSize: file.size,
         reportType: data.reportType,
-        totalRows: data.totalRows,
-        newRows: data.newRows,
-        existingRows: data.existingRows,
-        unchangedRows: data.unchangedRows,
+        totalRows: data.totalRows ?? Object.values(data.sections || {}).reduce((sum: number, item: any) => sum + (item.rows || 0), 0),
+        newRows: data.newRows ?? 0,
+        existingRows: data.existingRows ?? 0,
+        unchangedRows: data.unchangedRows ?? 0,
         regressionCount: data.regressionCount || 0,
         safeUpdateRows: data.safeUpdateRows || 0,
         protectedFieldCount: data.protectedFieldCount || 0,
         staleSnapshotCount: data.staleSnapshotCount || 0,
         sourceSnapshotAt: data.sourceSnapshotAt || null,
         updatedRows: data.updatedRows || [],
-        headers: data.headers,
-        previewColumns: data.previewColumns,
-        previewRows: data.previewRows,
-        sheetName: data.sheetName,
+        headers: (data.headers || []).map((header: any) => typeof header === 'string' ? header : header.label),
+        previewColumns: data.previewColumns || ['no_pesanan', 'lihat_berdasarkan', 'signed_total'],
+        previewRows: data.previewRows || [],
+        sheetName: data.sheetName || 'Income package',
+        canImport: data.canImport,
+        duplicateHash: data.duplicateHash,
+        sha256: data.sha256,
+        reportPeriod: data.reportPeriod,
+        reconciliation: data.reconciliation,
+        sections: data.sections,
       });
     } catch (err: any) {
       setError(err.message);
@@ -136,7 +148,7 @@ export default function UploadPage() {
   };
 
   const changeCount = preview?.safeUpdateRows || 0;
-  const canImport = !!preview && (preview.newRows > 0 || changeCount > 0);
+  const canImport = !!preview && (preview.canImport ?? (preview.newRows > 0 || changeCount > 0));
 
   const handleImport = async () => {
     if (!selectedFile || !preview || !canImport) return;
