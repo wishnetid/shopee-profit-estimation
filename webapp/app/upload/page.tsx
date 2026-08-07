@@ -291,10 +291,10 @@ export default function UploadPage() {
                     {showDiff ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
                   </button>
                   {showDiff && (
-                    <div className="overflow-x-auto">
+                    <div className="max-h-[400px] overflow-y-auto">
                       <table className="w-full text-xs">
-                        <thead>
-                          <tr className="bg-slate-50">
+                        <thead className="sticky top-0 bg-slate-50 z-10">
+                          <tr>
                             <th className="px-3 py-2 text-left font-semibold text-slate-600 border-b border-slate-200">No. Pesanan</th>
                             <th className="px-3 py-2 text-left font-semibold text-slate-600 border-b border-slate-200">SKU</th>
                             <th className="px-3 py-2 text-left font-semibold text-slate-600 border-b border-slate-200">Variasi</th>
@@ -328,17 +328,17 @@ export default function UploadPage() {
                 </div>
               )}
 
-              {/* Preview Table */}
+              {/* Preview Table — all rows */}
               <div className="bg-white border border-slate-200 rounded-lg overflow-hidden mb-4">
                 <div className="p-3 border-b border-slate-200">
                   <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
-                    <Eye className="w-4 h-4" /> Sample Data (10 baris pertama)
+                    <Eye className="w-4 h-4" /> Semua Data ({preview.previewRows.length} rows)
                   </h3>
                 </div>
-                <div className="overflow-x-auto">
+                <div className="max-h-[400px] overflow-y-auto">
                   <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-slate-50">
+                    <thead className="sticky top-0 bg-slate-50 z-10">
+                      <tr>
                         {preview.previewColumns.map(col => (
                           <th key={col} className="px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap border-b border-slate-200">
                             {col}

@@ -120,10 +120,10 @@ async function previewOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
   const headers = rawData[0] as string[];
   const rows = rawData.slice(1);
 
-  // Preview: first 10 rows, only key columns
+  // Preview: all rows, key columns
   const previewCols = ['No. Pesanan', 'Status Pesanan', 'Nomor Referensi SKU', 'Nama Variasi', 'Jumlah', 'Harga Setelah Diskon', 'Total Pembayaran', 'Waktu Pesanan Dibuat'];
   const previewHeaders = previewCols.filter(c => headers.includes(c));
-  const previewRows = rows.slice(0, 10).map(row => {
+  const previewRows = rows.map(row => {
     const obj: Record<string, any> = {};
     headers.forEach((h, i) => { if (h) obj[String(h).trim()] = row[i]; });
     const mapped: Record<string, any> = {};
