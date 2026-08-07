@@ -64,6 +64,127 @@ function detectReportType(workbook: XLSX.WorkBook): string | null {
   return null;
 }
 
+function getReportName(type: string): string {
+  switch (type) {
+    case 'order_all': return 'Order.all';
+    case 'income': return 'Income Penghasilan';
+    case 'master': return 'Master SKU';
+    default: return type;
+  }
+}
+
+// ─── PREVIEW ───────────────────────────────────────────
+
+function previewOrderAll(workbook: XLSX.WorkBook) {
+  let sheetName = workbook.SheetNames.find(n => n.toLowerCase() === 'orders');
+  if (!sheetName) sheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  const rawData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+
+  if (rawData.length === 0) return null;
+
+  const headers = rawData[0] as string[];
+  const rows = rawData.slice(1);
+
+  // Preview: first 10 rows, only key columns
+  const previewCols = ['No. Pesanan', 'Status Pesanan', 'Nomor Referensi SKU', 'Nama Variasi', 'Jumlah', 'Harga Setelah Diskon', 'Total Pembayaran', 'Waktu Pesanan Dibuat'];
+  const previewHeaders = previewCols.filter(c => headers.includes(c));
+  const previewRows = rows.slice(0, 10).map(row => {
+    const obj: Record<string, any> = {};
+    headers.forEach((h, i) => { if (h) obj[String(h).trim()] = row[i]; });
+    const mapped: Record<string, any> = {};
+    previewHeaders.forEach(h => { mapped[h] = obj[h] ?? null; });
+    return mapped;
+  });
+
+  return {
+    headers: headers.filter(Boolean).map(String),
+    totalRows: rows.length,
+    previewColumns: previewHeaders,
+    previewRows,
+    sheetName,
+  };
+}
+
+function previewIncome(workbook: XLSX.WorkBook) {
+  let sheetName = workbook.SheetNames.find(n => n.toLowerCase().includes('penghasilan'));
+  if (!sheetName) sheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  const rawData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+
+  // Find header row
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rawData.length, 10); i++) {
+    if (rawData[i] && String(rawData[i][0] || '').includes('No. Pesanan')) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx === -1) return null;
+
+  const headers = rawData[headerIdx].filter(Boolean).map(String);
+  const rows = rawData.slice(headerIdx + 1);
+
+  const previewCols = ['No. Pesanan', 'Lihat berdasarkan', 'Harga Produk', 'Jumlah Dibayar Pembeli', 'Waktu Pesanan Dibuat', 'Tanggal Dana Dilepaskan'];
+  const previewHeaders = previewCols.filter(c => headers.includes(c));
+  const previewRows = rows.slice(0, 10).map(row => {
+    const obj: Record<string, any> = {};
+    headers.forEach((h, i) => { if (h) obj[h] = row[i]; });
+    const mapped: Record<string, any> = {};
+    previewHeaders.forEach(h => { mapped[h] = obj[h] ?? null; });
+    return mapped;
+  });
+
+  return {
+    headers,
+    totalRows: rows.length,
+    previewColumns: previewHeaders,
+    previewRows,
+    sheetName,
+  };
+}
+
+function previewMaster(workbook: XLSX.WorkBook) {
+  let sheetName = workbook.SheetNames[0];
+  for (const name of workbook.SheetNames) {
+    const sheet = workbook.Sheets[name];
+    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+    if (data.length > 0) {
+      const h = data[0].map((x: any) => String(x || '').toLowerCase());
+      if (h.includes('sku1') || h.includes('harga')) { sheetName = name; break; }
+    }
+  }
+  const sheet = workbook.Sheets[sheetName];
+  const rawData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+
+  if (rawData.length === 0) return null;
+  const headers = rawData[0].filter(Boolean).map(String);
+  const rows = rawData.slice(1);
+
+  return {
+    headers,
+    totalRows: rows.length,
+    previewColumns: headers,
+    previewRows: rows.slice(0, 10).map(row => {
+      const obj: Record<string, any> = {};
+      headers.forEach((h, i) => { obj[h] = row[i]; });
+      return obj;
+    }),
+    sheetName,
+  };
+}
+
+function handlePreview(workbook: XLSX.WorkBook, reportType: string) {
+  switch (reportType) {
+    case 'order_all': return previewOrderAll(workbook);
+    case 'income': return previewIncome(workbook);
+    case 'master': return previewMaster(workbook);
+    default: return null;
+  }
+}
+
+// ─── IMPORT ────────────────────────────────────────────
+
 const ORDER_COLS = [
   'no_pesanan','status_pesanan','alasan_pembatalan',
   'status_pembatalan_pengembalian','no_resi','opsi_pengiriman','antar_ke_counter',
@@ -223,7 +344,6 @@ async function importOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
            waktu_pesanan_selesai=VALUES(waktu_pesanan_selesai)`,
         flatParams
       ) as any;
-      // affectedRows: 1 = new insert, 2 = updated (ON DUPLICATE KEY UPDATE)
       const newRows = result.affectedRows - (result.changedRows || 0);
       const updatedRows = result.changedRows || 0;
       newInserted += newRows;
@@ -371,11 +491,15 @@ async function importMaster(workbook: XLSX.WorkBook, conn: Connection) {
   return inserted;
 }
 
+// ─── HANDLER ───────────────────────────────────────────
+
 export async function POST(request: NextRequest) {
   let conn: Connection | null = null;
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
+    const action = formData.get('action') as string || 'preview';
+
     if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
 
     const buffer = await file.arrayBuffer();
@@ -383,22 +507,33 @@ export async function POST(request: NextRequest) {
     const reportType = detectReportType(workbook);
     if (!reportType) return NextResponse.json({ error: 'Cannot detect report type.' }, { status: 400 });
 
+    const reportName = getReportName(reportType);
+
+    // ── PREVIEW ──
+    if (action === 'preview') {
+      const preview = handlePreview(workbook, reportType);
+      if (!preview) return NextResponse.json({ error: 'Cannot parse file for preview.' }, { status: 400 });
+      return NextResponse.json({
+        success: true,
+        action: 'preview',
+        reportType: reportName,
+        ...preview,
+      });
+    }
+
+    // ── IMPORT ──
     conn = await getConnection();
     let result: any;
-    let reportName = '';
 
     switch (reportType) {
       case 'order_all':
         result = await importOrderAll(workbook, conn);
-        reportName = 'Order.all';
         break;
       case 'income':
         result = await importIncome(workbook, conn);
-        reportName = 'Income Penghasilan';
         break;
       case 'master':
         result = { inserted: await importMaster(workbook, conn), errors: 0 };
-        reportName = 'Master SKU';
         break;
     }
 
@@ -416,6 +551,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      action: 'import',
       reportType: reportName,
       message,
       rowsImported: result.inserted,
