@@ -65,6 +65,22 @@ const {
   findExistingIncomeImport: (conn: Connection, sha256: string) => Promise<any>;
   importIncomePackage: (conn: Connection, parsed: any) => Promise<any>;
 };
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const {
+  parseSkuRawPackage,
+} = require('../../../lib/sku-raw-import.js') as {
+  parseSkuRawPackage: (workbook: XLSX.WorkBook, sourceFile: string, sha256: string) => any;
+};
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const {
+  buildSkuPreview,
+  findExistingSkuImport,
+  importSkuRawPackage,
+} = require('../../../lib/sku-raw-db.js') as {
+  buildSkuPreview: (parsed: any, existingImport: any) => any;
+  findExistingSkuImport: (conn: Connection, sha256: string) => Promise<any>;
+  importSkuRawPackage: (conn: Connection, parsed: any) => Promise<any>;
+};
 
 const BATCH_SIZE = 100;
 
@@ -211,7 +227,7 @@ function getReportName(type: string): string {
   switch (type) {
     case 'order_all': return 'Order.all';
     case 'income': return 'Income Penghasilan';
-    case 'master': return 'Master SKU';
+    case 'master': return 'SKU Master RAW';
     default: return type;
   }
 }
@@ -457,53 +473,6 @@ async function previewIncome(workbook: XLSX.WorkBook, conn: Connection) {
   };
 }
 
-async function previewMaster(workbook: XLSX.WorkBook, conn: Connection) {
-  let sheetName = workbook.SheetNames[0];
-  for (const name of workbook.SheetNames) {
-    const sheet = workbook.Sheets[name];
-    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-    if (data.length > 0) {
-      const h = data[0].map((x: any) => String(x || '').toLowerCase());
-      if (h.includes('sku1') || h.includes('harga')) { sheetName = name; break; }
-    }
-  }
-  const sheet = workbook.Sheets[sheetName];
-  const rawData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-
-  if (rawData.length === 0) return null;
-  const headers = rawData[0].filter(Boolean).map(String);
-  const rows = rawData.slice(1);
-
-  // Check master by sku1
-  const allKeys = rows.map(r => {
-    const obj: any = {};
-    headers.forEach((h, i) => { obj[h] = r[i]; });
-    return [sanitize(obj['SKU1'])];
-  }).filter(k => k[0]);
-
-  const dbRows = await fetchExistingRows(conn, allKeys, 'master_products', ['sku1'], ['sku1']);
-  let newCount = 0;
-  let existingCount = 0;
-  for (const k of allKeys) {
-    if (dbRows.has(k[0])) existingCount++;
-    else newCount++;
-  }
-
-  return {
-    headers,
-    totalRows: rows.length,
-    newRows: newCount,
-    existingRows: existingCount,
-    previewColumns: headers.slice(0, 8),
-    previewRows: rows.slice(0, 10).map(row => {
-      const obj: Record<string, any> = {};
-      headers.forEach((h, i) => { obj[h] = row[i]; });
-      return obj;
-    }),
-    sheetName,
-  };
-}
-
 async function handlePreview(
   workbook: XLSX.WorkBook,
   reportType: string,
@@ -516,7 +485,6 @@ async function handlePreview(
       if (!sourceSnapshotAt) throw new Error('Waktu snapshot wajib diisi untuk Order.all');
       return previewOrderAll(workbook, conn, sourceSnapshotAt, sourceSnapshotFile);
     case 'income': return previewIncome(workbook, conn);
-    case 'master': return previewMaster(workbook, conn);
     default: return null;
   }
 }
@@ -807,54 +775,6 @@ async function importIncome(workbook: XLSX.WorkBook, conn: Connection) {
   return { inserted, errors };
 }
 
-async function importMaster(workbook: XLSX.WorkBook, conn: Connection) {
-  let sheetName = workbook.SheetNames[0];
-  for (const name of workbook.SheetNames) {
-    const sheet = workbook.Sheets[name];
-    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-    if (data.length > 0) {
-      const headers = data[0].map((h: any) => String(h || '').toLowerCase());
-      if (headers.includes('sku1') || headers.includes('harga')) { sheetName = name; break; }
-    }
-  }
-
-  const sheet = workbook.Sheets[sheetName];
-  const data = XLSX.utils.sheet_to_json(sheet) as any[];
-  let inserted = 0;
-  let batch: any[][] = [];
-
-  for (const row of data) {
-    batch.push([
-      sanitize(row['SKU1']),
-      sanitize(row['SKU2']),
-      sanitizeDecimal(row['Harga']),
-      sanitize(row['IDPRODUK']),
-    ]);
-    if (batch.length >= BATCH_SIZE) {
-      try {
-        const [res] = await conn.query(
-          `INSERT IGNORE INTO master_products (sku1,sku2,harga,idproduk) VALUES ${batch.map(() => '(?,?,?,?)').join(',')}`,
-          batch.flat()
-        ) as any;
-        inserted += res.affectedRows || 0;
-      } catch { /* skip */ }
-      batch = [];
-    }
-  }
-  if (batch.length > 0) {
-    try {
-      const [res] = await conn.query(
-        `INSERT IGNORE INTO master_products (sku1,sku2,harga,idproduk) VALUES ${batch.map(() => '(?,?,?,?)').join(',')}`,
-        batch.flat()
-      ) as any;
-      inserted += res.affectedRows || 0;
-    } catch { /* skip */ }
-  }
-
-  await conn.commit();
-  return inserted;
-}
-
 // ─── HANDLER ───────────────────────────────────────────
 
 function unauthorizedResponse() {
@@ -927,6 +847,13 @@ export async function POST(request: NextRequest) {
         if (!preview.valid) return NextResponse.json({ error: 'Income package ditolak.', ...preview }, { status: 400 });
         return NextResponse.json({ success: true, action: 'preview', reportType: reportName, ...preview });
       }
+      if (reportType === 'master') {
+        const parsed = parseSkuRawPackage(workbook, sourceSnapshotFile, computeSha256(Buffer.from(buffer)));
+        const existingImport = await findExistingSkuImport(conn, parsed.sha256);
+        const preview = buildSkuPreview(parsed, existingImport);
+        if (!preview.valid) return NextResponse.json({ error: 'SKU RAW package ditolak.', ...preview }, { status: 400 });
+        return NextResponse.json({ success: true, action: 'preview', reportType: reportName, ...preview });
+      }
       const preview = await handlePreview(workbook, reportType, conn, sourceSnapshotAt, sourceSnapshotFile);
       if (!preview) return NextResponse.json({ error: 'Cannot parse file for preview.' }, { status: 400 });
       return NextResponse.json({
@@ -952,7 +879,10 @@ export async function POST(request: NextRequest) {
         );
         break;
       case 'master':
-        result = { inserted: await importMaster(workbook, conn), errors: 0 };
+        result = await importSkuRawPackage(
+          conn,
+          parseSkuRawPackage(workbook, sourceSnapshotFile, computeSha256(Buffer.from(buffer))),
+        );
         break;
     }
 
@@ -963,6 +893,10 @@ export async function POST(request: NextRequest) {
       } else {
         message = `Income RAW package #${result.importId} di-import: ${result.inserted.penghasilan} Penghasilan, ${result.inserted.adjustment} Adjustment, ${result.inserted.shippingFeeDiscrepancy} Selisih Ongkir.`;
       }
+    } else if (reportType === 'master') {
+      message = result.duplicate
+        ? 'File SKU identik sudah pernah di-import. Tidak ada row RAW baru.'
+        : `SKU RAW package #${result.importId} di-import: ${result.inserted} row.`;
     } else if (result.inserted > 0 && result.updated > 0) {
       message = `${result.inserted} baru, ${result.updated} di-update ke ${reportName}`;
     } else if (result.inserted > 0) {

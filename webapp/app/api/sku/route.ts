@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createConnection } from 'mysql2/promise';
 
+const SORT_COLUMNS: Record<string, string> = {
+  source_excel_row: 'r.source_excel_row',
+  sku1: 'r.sku1',
+  sku2: 'r.sku2',
+  harga: 'r.harga',
+  idproduk: 'r.idproduk',
+};
+
 async function getConnection() {
   const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME } = process.env;
   if (!DB_HOST || !DB_USER || !DB_PASSWORD || !DB_NAME) {
@@ -8,78 +16,76 @@ async function getConnection() {
   }
   return createConnection({
     host: DB_HOST,
-    port: parseInt(DB_PORT || '3306'),
+    port: Number(DB_PORT || 3306),
     user: DB_USER,
     password: DB_PASSWORD,
     database: DB_NAME,
+    dateStrings: true,
   });
 }
 
 export async function GET(request: NextRequest) {
   const conn = await getConnection();
-  
   try {
-    const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '50');
-    const search = searchParams.get('search') || '';
-    const sort = searchParams.get('sort') || 'id';
-    const direction = searchParams.get('direction') || 'asc';
-    
-    const offset = (page - 1) * limit;
-    
-    // Build WHERE clause for multi-query search
-    let whereClause = '';
-    const params: any[] = [];
-    
+    const sp = request.nextUrl.searchParams;
+    const page = Math.max(1, Number(sp.get('page') || 1));
+    const limit = Math.min(100, Math.max(5, Number(sp.get('limit') || 50)));
+    const search = (sp.get('search') || '').trim();
+    const requestedImport = sp.get('importId');
+    const sort = SORT_COLUMNS[sp.get('sort') || 'source_excel_row'] || SORT_COLUMNS.source_excel_row;
+    const direction = sp.get('direction') === 'desc' ? 'DESC' : 'ASC';
+
+    const [imports] = await conn.query(
+      `SELECT id, source_file, source_sha256, sheet_name, warnings_payload, imported_at
+       FROM sku_report_imports
+       ORDER BY imported_at DESC, id DESC`,
+    ) as any;
+    const importRows = imports as any[];
+    const importId = requestedImport ? Number(requestedImport) : importRows[0]?.id;
+    if (!importId) {
+      return NextResponse.json({ success: true, imports: [], selectedImport: null, data: [], total: 0, page, limit });
+    }
+    const selectedImport = importRows.find((row) => Number(row.id) === importId);
+    if (!selectedImport) return NextResponse.json({ error: 'SKU RAW import tidak ditemukan.' }, { status: 404 });
+
+    let where = 'WHERE r.sku_report_import_id = ?';
+    const params: any[] = [importId];
     if (search) {
-      const queries = search.split('||').map(q => q.trim()).filter(q => q);
-      if (queries.length > 0) {
-        const conditions = queries.map(() => {
-          return `(
-            sku1 LIKE ? OR
-            sku2 LIKE ? OR
-            idproduk LIKE ?
-          )`;
-        }).join(' OR ');
-        
-        whereClause = `WHERE ${conditions}`;
-        
-        queries.forEach(q => {
-          const searchTerm = `%${q}%`;
-          params.push(searchTerm, searchTerm, searchTerm);
-        });
+      const clauses = search.split('||').map((query) => query.trim()).filter(Boolean).map(() => `(
+        r.sku1 LIKE ? OR r.sku2 LIKE ? OR r.idproduk LIKE ?
+      )`);
+      if (clauses.length) {
+        where += ` AND (${clauses.join(' OR ')})`;
+        for (const query of search.split('||').map((value) => value.trim()).filter(Boolean)) {
+          const pattern = `%${query}%`;
+          params.push(pattern, pattern, pattern);
+        }
       }
     }
-    
-    // Get data
-    const [rows] = await conn.execute(
-      `SELECT * FROM master_products ${whereClause} ORDER BY ${sort} ${direction} LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
-    );
-    
-    // Get total count
-    const [countResult] = await conn.execute(
-      `SELECT COUNT(*) as total FROM master_products ${whereClause}`,
-      params
-    );
-    
-    const total = (countResult as any)[0].total;
-    
+    const offset = (page - 1) * limit;
+    const [rows] = await conn.query(
+      `SELECT r.id, r.source_excel_row, r.sku1, r.sku2, r.harga, r.idproduk
+       FROM sku_master_raw r ${where}
+       ORDER BY ${sort} ${direction}, r.id ASC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset],
+    ) as any;
+    const [[count]] = await conn.query(
+      `SELECT COUNT(*) AS total FROM sku_master_raw r ${where}`,
+      params,
+    ) as any;
+
     return NextResponse.json({
       success: true,
+      imports: importRows,
+      selectedImport,
       data: rows,
-      total,
+      total: count.total,
       page,
       limit,
     });
-    
   } catch (error: any) {
-    console.error('SKU API error:', error);
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message || 'SKU RAW query failed.' }, { status: 500 });
   } finally {
     await conn.end();
   }

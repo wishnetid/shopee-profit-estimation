@@ -78,7 +78,7 @@ export default function HomePage() {
           <ActionCard href="/upload" title="Upload Report" desc="Order.all, Income, Master" color="blue" />
           <ActionCard href="/orders" title="Order All" desc="Lihat semua order" color="green" />
           <ActionCard href="/income" title="Income" desc="Net payout breakdown" color="emerald" />
-          <ActionCard href="/sku" title="SKU Master" desc="Mapping HPP" color="purple" />
+          <ActionCard href="/sku" title="SKU Master RAW" desc="Data source SKU" color="purple" />
         </div>
 
         {/* Instructions */}

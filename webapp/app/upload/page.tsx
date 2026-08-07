@@ -443,7 +443,7 @@ export default function UploadPage() {
               <div className="bg-white border border-slate-200 rounded-lg overflow-hidden mb-4">
                 <div className="p-3 border-b border-slate-200">
                   <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
-                    <Eye className="w-4 h-4" /> Semua Data ({preview.previewRows.length} rows)
+                    <Eye className="w-4 h-4" /> Data Preview ({preview.previewRows.length} row)
                   </h3>
                 </div>
                 <div className="max-h-[400px] overflow-y-auto">
