@@ -1,9 +1,23 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Eye, ArrowLeft, AlertTriangle } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Eye, ArrowLeft, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 
 type Step = 'select' | 'preview' | 'done';
+
+interface DiffChange {
+  column: string;
+  dbColumn: string;
+  from: string;
+  to: string;
+}
+
+interface UpdatedRow {
+  no_pesanan: string;
+  sku: string;
+  variasi: string;
+  changes: DiffChange[];
+}
 
 interface PreviewData {
   fileName: string;
@@ -12,6 +26,7 @@ interface PreviewData {
   totalRows: number;
   newRows: number;
   existingRows: number;
+  updatedRows: UpdatedRow[];
   headers: string[];
   previewColumns: string[];
   previewRows: Record<string, any>[];
@@ -34,6 +49,7 @@ export default function UploadPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [checking, setChecking] = useState(false);
+  const [showDiff, setShowDiff] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -88,6 +104,7 @@ export default function UploadPage() {
         totalRows: data.totalRows,
         newRows: data.newRows,
         existingRows: data.existingRows,
+        updatedRows: data.updatedRows || [],
         headers: data.headers,
         previewColumns: data.previewColumns,
         previewRows: data.previewRows,
@@ -257,6 +274,57 @@ export default function UploadPage() {
               {preview.newRows > 0 && preview.existingRows > 0 && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-xs text-blue-700">
                   {preview.existingRows} baris sudah ada dan akan di-update, {preview.newRows} baris baru akan di-insert.
+                </div>
+              )}
+
+              {/* ── DIFF TABLE: Rows yang berubah ── */}
+              {preview.updatedRows.length > 0 && (
+                <div className="bg-white border border-slate-200 rounded-lg overflow-hidden mb-4">
+                  <button
+                    onClick={() => setShowDiff(!showDiff)}
+                    className="w-full p-3 border-b border-slate-200 flex items-center justify-between hover:bg-slate-50 transition-colors"
+                  >
+                    <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                      <span className="text-amber-500">●</span>
+                      Perubahan yang terdeteksi ({preview.updatedRows.length} baris)
+                    </h3>
+                    {showDiff ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                  </button>
+                  {showDiff && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-slate-50">
+                            <th className="px-3 py-2 text-left font-semibold text-slate-600 border-b border-slate-200">No. Pesanan</th>
+                            <th className="px-3 py-2 text-left font-semibold text-slate-600 border-b border-slate-200">SKU</th>
+                            <th className="px-3 py-2 text-left font-semibold text-slate-600 border-b border-slate-200">Variasi</th>
+                            <th className="px-3 py-2 text-left font-semibold text-slate-600 border-b border-slate-200">Perubahan</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {preview.updatedRows.map((row, i) => (
+                            <tr key={i} className="border-b border-slate-100 hover:bg-amber-50/30">
+                              <td className="px-3 py-2 font-mono text-slate-900 whitespace-nowrap">{row.no_pesanan}</td>
+                              <td className="px-3 py-2 text-slate-700 whitespace-nowrap">{row.sku}</td>
+                              <td className="px-3 py-2 text-slate-700 whitespace-nowrap">{row.variasi}</td>
+                              <td className="px-3 py-2">
+                                <div className="flex flex-wrap gap-1.5">
+                                  {row.changes.map((ch, j) => (
+                                    <span key={j} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100">
+                                      <span className="font-medium text-slate-600">{ch.column}:</span>
+                                      <span className="text-red-500 line-through">{ch.from}</span>
+                                      <span className="text-slate-400">→</span>
+                                      <span className="text-green-600 font-medium">{ch.to}</span>
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
 

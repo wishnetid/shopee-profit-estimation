@@ -88,22 +88,22 @@ function extractOrderKeys(workbook: XLSX.WorkBook): string[][] {
   ]).filter(k => k[0] && k[1] && k[2]);
 }
 
-// Check which keys exist in DB
-async function checkExistingKeys(conn: Connection, keys: string[][], table: string, keyCols: string[]): Promise<Set<string>> {
-  const existing = new Set<string>();
+// Check which keys exist in DB, return full rows for overlap comparison
+async function fetchExistingRows(conn: Connection, keys: string[][], table: string, keyCols: string[], selectCols: string[]): Promise<Map<string, any>> {
+  const existing = new Map<string, any>();
   if (keys.length === 0) return existing;
 
-  // Batch query: max 500 per query
-  for (let i = 0; i < keys.length; i += 500) {
-    const batch = keys.slice(i, i + 500);
+  for (let i = 0; i < keys.length; i += 200) {
+    const batch = keys.slice(i, i + 200);
     const placeholders = batch.map(() => `(${keyCols.map(() => '?').join(',')})`).join(',');
     const flatParams = batch.flat();
     const [rows] = await conn.query(
-      `SELECT ${keyCols.join(',')} FROM ${table} WHERE (${keyCols.join(',')}) IN (${placeholders})`,
+      `SELECT ${selectCols.join(',')} FROM ${table} WHERE (${keyCols.join(',')}) IN (${placeholders})`,
       flatParams
     ) as any[];
     for (const row of rows) {
-      existing.add(keyCols.map(c => row[c]).join('||'));
+      const key = keyCols.map(c => row[c]).join('||');
+      existing.set(key, row);
     }
   }
   return existing;
@@ -131,16 +131,69 @@ async function previewOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
     return mapped;
   });
 
-  // Check against DB
+  // Check against DB — fetch full rows for diff comparison
   const allKeys = extractOrderKeys(workbook);
-  const existing = await checkExistingKeys(conn, allKeys, 'order_all', ['no_pesanan', 'nomor_referensi_sku', 'nama_variasi']);
+  const highlightCols = ['no_resi', 'status_pesanan', 'alasan_pembatalan', 'status_pembatalan_pengembalian'];
+  const dbRows = await fetchExistingRows(conn, allKeys, 'order_all', ['no_pesanan', 'nomor_referensi_sku', 'nama_variasi'], ['no_pesanan', 'nomor_referensi_sku', 'nama_variasi', ...highlightCols]);
+
+  // Excel column → DB column mapping for highlight fields
+  const excelToDb: Record<string, string> = {
+    'No. Resi': 'no_resi',
+    'Status Pesanan': 'status_pesanan',
+    'Alasan Pembatalan': 'alasan_pembatalan',
+    'Status Pembatalan/ Pengembalian': 'status_pembatalan_pengembalian',
+  };
 
   let newCount = 0;
   let existingCount = 0;
+  const updatedRows: any[] = [];
+
   for (const k of allKeys) {
     const key = k.join('||');
-    if (existing.has(key)) existingCount++;
-    else newCount++;
+    const dbRow = dbRows.get(key);
+    if (dbRow) {
+      existingCount++;
+      // Find this row in rawData to compare
+      const headerMap: Record<string, number> = {};
+      headers.forEach((h, i) => { if (h) headerMap[String(h).trim()] = i; });
+
+      const rawDataRow = rows.find(r => {
+        return String(r[headerMap['No. Pesanan']] || '').trim() === k[0]
+          && String(r[headerMap['Nomor Referensi SKU']] || '').trim() === k[1]
+          && String(r[headerMap['Nama Variasi']] || '').trim() === k[2];
+      });
+
+      if (rawDataRow) {
+        const changes: any[] = [];
+        for (const excelCol of Object.keys(excelToDb)) {
+          const dbCol = excelToDb[excelCol];
+          const idx = headerMap[excelCol];
+          if (idx === undefined) continue;
+          const newVal = rawDataRow[idx];
+          const oldVal = dbRow[dbCol];
+          const newStr = newVal != null ? String(newVal).trim() : null;
+          const oldStr = oldVal != null ? String(oldVal) : null;
+          if (newStr !== oldStr) {
+            changes.push({
+              column: excelCol,
+              dbColumn: dbCol,
+              from: oldStr || '(kosong)',
+              to: newStr || '(kosong)',
+            });
+          }
+        }
+        if (changes.length > 0) {
+          updatedRows.push({
+            no_pesanan: k[0],
+            sku: k[1],
+            variasi: k[2],
+            changes,
+          });
+        }
+      }
+    } else {
+      newCount++;
+    }
   }
 
   return {
@@ -148,6 +201,7 @@ async function previewOrderAll(workbook: XLSX.WorkBook, conn: Connection) {
     totalRows: rows.length,
     newRows: newCount,
     existingRows: existingCount,
+    updatedRows,
     previewColumns: previewHeaders,
     previewRows,
     sheetName,
@@ -189,11 +243,11 @@ async function previewIncome(workbook: XLSX.WorkBook, conn: Connection) {
     return [sanitize(obj['No. Pesanan'])];
   }).filter(k => k[0]);
 
-  const existing = await checkExistingKeys(conn, allKeys, 'income_penghasilan', ['no_pesanan']);
+  const dbRows = await fetchExistingRows(conn, allKeys, 'income_penghasilan', ['no_pesanan'], ['no_pesanan']);
   let newCount = 0;
   let existingCount = 0;
   for (const k of allKeys) {
-    if (existing.has(k[0])) existingCount++;
+    if (dbRows.has(k[0])) existingCount++;
     else newCount++;
   }
 
@@ -232,11 +286,11 @@ async function previewMaster(workbook: XLSX.WorkBook, conn: Connection) {
     return [sanitize(obj['SKU1'])];
   }).filter(k => k[0]);
 
-  const existing = await checkExistingKeys(conn, allKeys, 'master_products', ['sku1']);
+  const dbRows = await fetchExistingRows(conn, allKeys, 'master_products', ['sku1'], ['sku1']);
   let newCount = 0;
   let existingCount = 0;
   for (const k of allKeys) {
-    if (existing.has(k[0])) existingCount++;
+    if (dbRows.has(k[0])) existingCount++;
     else newCount++;
   }
 
