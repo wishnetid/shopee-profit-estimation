@@ -15,7 +15,7 @@ Harga
 IDPRODUK
 ```
 
-Parser menyimpan setiap row sumber yang berisi data. Exact duplicate content antar-row tetap dipertahankan karena RAW identity tidak memakai nilai bisnis row.
+Parser menyimpan setiap row sumber yang berisi data. Exact duplicate content antar-row tetap dipertahankan karena RAW identity tidak memakai nilai bisnis row. Header tambahan yang label tampilannya berulang disimpan dengan canonical key berurutan (`catatan__1`, `catatan__2`) agar payload tidak menimpa nilai sumber. Header wajib (`SKU1`, `SKU2`, `Harga`, `IDPRODUK`) yang muncul lebih dari sekali diblok sebelum import karena mapping normalisasi menjadi ambigu.
 
 ## Storage
 

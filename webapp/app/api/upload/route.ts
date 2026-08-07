@@ -865,6 +865,14 @@ export async function POST(request: NextRequest) {
     }
 
     // ── IMPORT ──
+    let parsedSkuPackage: any = null;
+    if (reportType === 'master') {
+      parsedSkuPackage = parseSkuRawPackage(workbook, sourceSnapshotFile, computeSha256(Buffer.from(buffer)));
+      if (!parsedSkuPackage.valid) {
+        return NextResponse.json({ error: 'SKU RAW package ditolak.', ...parsedSkuPackage }, { status: 400 });
+      }
+    }
+
     conn = await getConnection();
     let result: any;
 
@@ -879,10 +887,7 @@ export async function POST(request: NextRequest) {
         );
         break;
       case 'master':
-        result = await importSkuRawPackage(
-          conn,
-          parseSkuRawPackage(workbook, sourceSnapshotFile, computeSha256(Buffer.from(buffer))),
-        );
+        result = await importSkuRawPackage(conn, parsedSkuPackage);
         break;
     }
 

@@ -21,6 +21,11 @@ interface UpdatedRow {
   regressions: { type: string; column: string; from: string; to: string; message: string }[];
 }
 
+interface PreviewColumn {
+  key: string;
+  label: string;
+}
+
 interface PreviewData {
   fileName: string;
   fileSize: number;
@@ -36,7 +41,7 @@ interface PreviewData {
   sourceSnapshotAt: string | null;
   updatedRows: UpdatedRow[];
   headers: string[];
-  previewColumns: string[];
+  previewColumns: PreviewColumn[];
   previewRows: Record<string, any>[];
   sheetName: string;
   canImport?: boolean;
@@ -130,7 +135,9 @@ export default function UploadPage() {
         sourceSnapshotAt: data.sourceSnapshotAt || null,
         updatedRows: data.updatedRows || [],
         headers: (data.headers || []).map((header: any) => typeof header === 'string' ? header : header.label),
-        previewColumns: data.previewColumns || ['no_pesanan', 'lihat_berdasarkan', 'signed_total'],
+        previewColumns: (data.previewColumns || ['no_pesanan', 'lihat_berdasarkan', 'signed_total']).map((column: any) => (
+          typeof column === 'string' ? { key: column, label: column } : column
+        )),
         previewRows: data.previewRows || [],
         sheetName: data.sheetName || 'Income package',
         canImport: data.canImport,
@@ -450,9 +457,9 @@ export default function UploadPage() {
                   <table className="w-full text-xs">
                     <thead className="sticky top-0 bg-slate-50 z-10">
                       <tr>
-                        {preview.previewColumns.map(col => (
-                          <th key={col} className="px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap border-b border-slate-200">
-                            {col}
+                        {preview.previewColumns.map((column, columnIndex) => (
+                          <th key={`${column.key}-${columnIndex}`} className="px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap border-b border-slate-200">
+                            {column.label}
                           </th>
                         ))}
                       </tr>
@@ -460,9 +467,9 @@ export default function UploadPage() {
                     <tbody>
                       {preview.previewRows.map((row, i) => (
                         <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
-                          {preview.previewColumns.map(col => (
-                            <td key={col} className="px-3 py-2 text-slate-700 whitespace-nowrap max-w-[200px] truncate">
-                              {row[col] != null ? String(row[col]) : <span className="text-slate-300">—</span>}
+                          {preview.previewColumns.map((column, columnIndex) => (
+                            <td key={`${column.key}-${columnIndex}`} className="px-3 py-2 text-slate-700 whitespace-nowrap max-w-[200px] truncate">
+                              {row[column.key] != null ? String(row[column.key]) : <span className="text-slate-300">—</span>}
                             </td>
                           ))}
                         </tr>
@@ -478,8 +485,8 @@ export default function UploadPage() {
                   Semua Kolom ({preview.headers.length})
                 </summary>
                 <div className="px-3 pb-3 flex flex-wrap gap-1.5">
-                  {preview.headers.map(h => (
-                    <span key={h} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded">{h}</span>
+                  {preview.headers.map((header, index) => (
+                    <span key={`${header}-${index}`} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded">{header}</span>
                   ))}
                 </div>
               </details>

@@ -1,5 +1,9 @@
 function buildSkuPreview(parsed, existingImport) {
   const duplicateHash = Boolean(existingImport);
+  const previewColumns = [
+    { key: 'source_excel_row', label: 'Row Excel' },
+    ...parsed.headerFields.map((field) => ({ key: field.key, label: field.label })),
+  ];
   return {
     valid: parsed.valid,
     canImport: parsed.valid && !duplicateHash,
@@ -18,8 +22,11 @@ function buildSkuPreview(parsed, existingImport) {
     sha256: parsed.sha256,
     sheetName: parsed.sheetName,
     headers: parsed.headers,
-    previewColumns: parsed.headers,
-    previewRows: parsed.rows.slice(0, 10),
+    previewColumns,
+    previewRows: parsed.rows.slice(0, 10).map((row) => ({
+      source_excel_row: row.source_excel_row,
+      ...row.raw_payload,
+    })),
     warnings: parsed.warnings,
     errors: parsed.errors,
   };
