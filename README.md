@@ -1,309 +1,385 @@
-# Shopee Profit Estimation — Documentation
+# Shopee Profit Estimation
 
-**Last Updated:** 2026-08-07  
-**Production URL:** https://webappumber-five.vercel.app  
-**Order.all Import State:** raw snapshot import repaired and verified; profit processing remains a later phase.
-**GitHub:** https://github.com/wishnetid/shopee-profit-estimation
+**Last updated:** 2026-08-07
+**Production:** https://webapp-umber-five.vercel.app
+**Repository:** https://github.com/wishnetid/shopee-profit-estimation
+**Current branch:** `master`
 
----
-
-## 1. Database Info
-
-```
-Host:     103.136.19.30
-Port:     3306
-Database: supplie3_shopee_profit_estimation
-User:     supplie3_shopee_profit_estimation
-Password: Persib1933
-```
+> **Baca file ini dulu sebelum menyentuh project.** Fokus project saat ini hanya memastikan `Order.all` masuk ke `order_all` sebagai raw snapshot yang benar. Jangan melanjutkan logic profit, Income, Balance, HPP allocation, atau perubahan schema tanpa analisa report terkait dan diskusi dulu.
 
 ---
 
-## 2. Tables
+## 1. Status Saat Ini
 
-### order_all
-Order details — 1 row per item (multi-item orders = multiple rows).
+### Sudah selesai dan tervalidasi
 
-| Column | Type | Note |
-|---|---|---|
-| id | INT AUTO_INCREMENT | PK |
-| no_pesanan | VARCHAR(50) NOT NULL | Order number |
-| status_pesanan | VARCHAR(50) | Selesai/Batal/Sedang Dikirim/Telah Dikirim/Perlu Dikirim/Belum Bayar |
-| alasan_pembatalan | TEXT | Cancel reason (only for Batal) |
-| status_pembatalan_pengembalian | VARCHAR(100) | Return status (e.g. Permintaan Disetujui, Sedang Dikembalikan) |
-| no_resi | VARCHAR(100) | Tracking number |
-| nama_produk | TEXT | Product name |
-| nomor_referensi_sku | VARCHAR(100) | SKU reference (base SKU) |
-| sku_induk | VARCHAR(100) | Parent SKU |
-| nama_variasi | VARCHAR(255) | Variation (format: "Warna,Size") |
-| harga_awal | DECIMAL(15,2) | Original price |
-| harga_setelah_diskon | DECIMAL(15,2) | Price after discount |
-| jumlah | INT | Quantity |
-| returned_quantity | INT | Returned quantity |
-| subtotal_pesanan | DECIMAL(15,2) | Order subtotal |
-| total_diskon | DECIMAL(15,2) | Total discount |
-| diskon_dari_penjual | DECIMAL(15,2) | Seller discount |
-| diskon_dari_shopee | DECIMAL(15,2) | Shopee discount |
-| berat_produk | VARCHAR(50) | Product weight (e.g. "333 gr") |
-| jumlah_produk_di_pesan | INT | Items ordered |
-| total_berat | VARCHAR(50) | Total weight |
-| voucher_ditanggung_penjual | DECIMAL(15,2) | Seller voucher |
-| cashback_koin | DECIMAL(15,2) | Coin cashback |
-| voucher_ditanggung_shopee | DECIMAL(15,2) | Shopee voucher |
-| paket_diskon | VARCHAR(10) | Discount package flag |
-| paket_diskon_shopee | DECIMAL(15,2) | Shopee package discount |
-| paket_diskon_penjual | DECIMAL(15,2) | Seller package discount |
-| potongan_koin_shopee | DECIMAL(15,2) | Shopee coin deduction |
-| diskon_kartu_kredit | DECIMAL(15,2) | Credit card discount |
-| opsi_pengiriman | VARCHAR(100) | Shipping option |
-| antar_ke_counter | VARCHAR(50) | Counter delivery |
-| pesanan_harus_dikirim_sebelum | DATETIME | Shipping deadline |
-| waktu_pengiriman_diatur | DATETIME | Scheduled shipping |
-| ongkos_kirim_dibayar_pembeli | DECIMAL(15,2) | Shipping paid by buyer |
-| estimasi_potongan_biaya_pengiriman | DECIMAL(15,2) | Estimated shipping cost deduction |
-| ongkos_kirim_pengembalian_barang | DECIMAL(15,2) | Return shipping cost |
-| perkiraan_ongkos_kirim | DECIMAL(15,2) | Estimated shipping |
-| catatan_dari_pembeli | TEXT | Buyer notes |
-| catatan | TEXT | Notes |
-| total_pembayaran | DECIMAL(15,2) | Total payment |
-| waktu_pesanan_dibuat | DATETIME | Order created |
-| waktu_pembayaran_dilakukan | DATETIME | Payment time |
-| tipe_pesanan | VARCHAR(50) | Order type |
-| waktu_pesanan_selesai | DATETIME | Order completed |
-| username_pembeli | VARCHAR(100) | Buyer username |
-| nama_penerima | VARCHAR(200) | Receiver name |
-| no_telepon | VARCHAR(50) | Phone number |
-| alamat_pengiriman | TEXT | Shipping address |
-| kota_kabupaten | VARCHAR(100) | City/Regency |
-| provinsi | VARCHAR(100) | Province |
-| metode_pembayaran | VARCHAR(100) | Payment method |
-| created_at | TIMESTAMP | Auto |
-| updated_at | TIMESTAMP | Auto |
+- Aplikasi Next.js sudah deploy di Vercel dan terhubung ke MySQL cPanel.
+- `Order.all` sudah menjadi raw source/master untuk data order-item.
+- Import memakai composite unique key:
 
-**UNIQUE KEY:** `(no_pesanan, nomor_referensi_sku, nama_variasi)` — composite key for dedup
-
-### income_penghasilan
-Fee breakdown per order.
-
-| Column | Type |
-|---|---|
-| id | INT AUTO_INCREMENT |
-| no_pesanan | VARCHAR(50) |
-| lihat_berdasarkan | VARCHAR(20) |
-| waktu_pesanan_dibuat | DATETIME |
-| tanggal_dana_dilepaskan | DATETIME |
-| harga_produk | DECIMAL(15,2) |
-| ongkir_dibayar_pembeli | DECIMAL(15,2) |
-| ongkos_kirim_ke_jasa_kirim | DECIMAL(15,2) |
-| gratis_ongkir_dari_shopee | DECIMAL(15,2) |
-| biaya_administrasi | DECIMAL(15,2) |
-| biaya_proses_pesanan | DECIMAL(15,2) |
-| biaya_gratis_ongkir_xtra | DECIMAL(15,2) |
-| biaya_layanan_promo_xtra | DECIMAL(15,2) |
-| biaya_lainnya | DECIMAL(15,2) |
-| jumlah_dibayar_pembeli | DECIMAL(15,2) |
-| metode_pembayaran_pembeli | VARCHAR(100) |
-| username_pembeli | VARCHAR(100) |
-
-**Filter:** Only import rows where `lihat_berdasarkan = 'Order'`
-
-### master_products
-HPP reference — SKU → price mapping.
-
-| Column | Type |
-|---|---|
-| id | INT AUTO_INCREMENT |
-| sku1 | VARCHAR(100) |
-| sku2 | VARCHAR(100) |
-| harga | DECIMAL(15,2) |
-| idproduk | VARCHAR(100) |
-
----
-
-## 3. Upload Flow
-
-### Step 1: Select File
-User drags & drops or picks a file (.xlsx, .xls, .csv).
-
-### Step 2: Preview (with DB comparison)
-API parses Excel → queries DB → returns:
-- **Baru:** rows not in DB → will be INSERT
-- **Update:** rows in DB with changes → will be UPDATE
-- **Duplikat:** rows in DB identical → will be SKIP
-- **Total:** all rows in file
-
-Plus:
-- **Diff table:** compares every mapped `order_all` field before import, so a newer snapshot cannot silently overwrite nominal, return state, address, schedule, or shipping data.
-- **Regression detection:** flags rows where a ranked status would go backward or an existing resi would be deleted.
-- **Schema guard:** accepts only one `orders` sheet with the exact 50 Order.all headers.
-
-### Step 3: Import
-User clicks "Import" when there is a new row **or an update-only snapshot**. The handler applies guards and writes the full file in one database transaction: any failing batch rolls back the entire snapshot.
-
-### Step 4: Result
-Shows: new rows, updated rows, blocked regressions, errors.
-
-### Order.all Raw Import Contract
-- **Grain:** one item row, identified by `(no_pesanan, nomor_referensi_sku, nama_variasi)`.
-- **Duplicate:** identical snapshot item is skipped.
-- **Update:** same composite key with a changed mapped value is updated; this works even when there are zero new rows.
-- **Currency:** Shopee values such as `82.500` are parsed as integer IDR `82500`, never decimal `82.5`.
-- **Snapshots:** overlapping exports must be merged by composite key, never appended as independent transactions.
-- **Scope:** `order_all` is raw operational source data. Profit calculation, Income, Balance, HPP allocation, and final return accounting are a separate next phase.
-
----
-
-## 4. Regression Guards
-
-### Status Progression Guard
-Status can only move FORWARD, never backward.
-
-```
-Belum Bayar → Perlu Dikirim → Sedang Dikirim → Telah Dikirim → Selesai
-                                                                     ↓
-                                                                   Batal
+```text
+(no_pesanan, nomor_referensi_sku, nama_variasi)
 ```
 
-**BLOCKED examples:**
-- `Selesai → Belum Bayar` ❌
-- `Telah Dikirim → Perlu Dikirim` ❌
-- `Sedang Dikirim → Perlu Dikirim` ❌
+- Composite key menangani multi-item order; `no_pesanan` sendiri **bukan** key baris.
+- Import mendukung tiga hasil:
+  - **Baru**: insert.
+  - **Identik**: skip.
+  - **Berubah**: update snapshot terbaru, termasuk bila file tidak punya row baru.
+- Parser nominal Shopee sudah benar untuk format IDR bertitik:
 
-**ALLOWED examples:**
-- `Perlu Dikirim → Sedang Dikirim` ✅
-- `Telah Dikirim → Selesai` ✅
-- `Sedang Dikirim → Batal` ✅
-- `Selesai + Permintaan Disetujui` ✅ (return info, not regression)
-- `Selesai + Sedang Dikembalikan` ✅ (return info, not regression)
-
-### Resi Guard
-If DB already has a tracking number, it CANNOT be deleted.
-
-**BLOCKED:**
-- `SPXID068... → (kosong)` ❌
-
-**ALLOWED:**
-- `(kosong) → SPXID068...` ✅ (new resi)
-- `SPXID068... → SPXID099...` ✅ (resi change, same order)
-
-### Free Columns (no guard)
-These columns can be updated freely:
-- `alasan_pembatalan`
-- `status_pembatalan_pengembalian`
-- All other columns except `status_pesanan` and `no_resi`
-
----
-
-## 5. Duplicate Handling
-
-### Composite Unique Key
-`(no_pesanan, nomor_referensi_sku, nama_variasi)` — exactly identifies 1 row.
-
-**Why not just `no_pesanan`?**
-- 1 order can have multiple items (multi-item orders)
-- Example: Order `260610QCJS4F4M` has 5 items = 5 rows with same `no_pesanan`
-- Each item has different `nomor_referensi_sku` and/or `nama_variasi`
-
-**Why not `no_pesanan + nomor_referensi_sku`?**
-- Same SKU base can have multiple variations (e.g. "M-TAC Pendek" with "Hitam,M" and "Hitam,L")
-- 104 duplicate combos found when testing this
-
-**Valid:** `no_pesanan + nomor_referensi_sku + nama_variasi` = 1108 unique, 0 duplicates ✅
-
-### Upload Dedup
-`INSERT ... ON DUPLICATE KEY UPDATE` — if same composite key exists, update all columns.
-
----
-
-## 6. Auto-Detection
-
-| Report | Detection | Sheet | Columns |
-|---|---|---|---|
-| Order.all | Sheet "orders" + 50+ columns | orders | 50 |
-| Income | Sheet name contains "penghasilan" | Penghasilan | 16 (filtered) |
-| Master SKU | Has columns "sku1" + "harga" | varies | 4 |
-
----
-
-## 7. File Structure
-
-```
-shopee_profit_estimation/
-├── .git/
-├── .gitignore
-├── .venv/
-├── data_sample/                    # Excel files + guides
-│   ├── Order.all.*.xlsx
-│   ├── Income.*.xlsx
-│   ├── master.xlsx
-│   └── guide/
-│       └── HPP-MAPPING-LOGIC.txt   # HPP calculation logic
-│
-└── webapp/                         # Next.js 15 app
-    ├── app/
-    │   ├── layout.tsx              # Root layout + Sidebar
-    │   ├── page.tsx                # Homepage (dashboard)
-    │   ├── upload/page.tsx         # Upload with preview
-    │   ├── orders/page.tsx         # Order list
-    │   ├── income/page.tsx         # Income list
-    │   ├── sku/page.tsx            # SKU master list
-    │   ├── profit/page.tsx         # Profit analysis
-    │   ├── settings/page.tsx       # DB management
-    │   └── api/
-    │       ├── upload/route.ts     # Preview + Import
-    │       ├── orders/route.ts     # GET orders
-    │       ├── income/route.ts     # GET income
-    │       ├── sku/route.ts        # GET SKU
-    │       └── settings/database/route.ts
-    ├── components/
-    │   └── DataTable.tsx           # Reusable table
-    ├── database/
-    │   └── schema.sql              # DB schema
-    └── lib/
-        ├── db.ts                   # MySQL pool
-        └── types.ts                # TypeScript types
+```text
+82.500 → 82500
+1.234,50 → 1234.50
 ```
 
+- Semua nilai monetary `order_all` yang pernah masuk dengan parser lama sudah dipulihkan dari raw report dan diverifikasi terhadap raw snapshot terbaru.
+- Import `Order.all` dilakukan dalam satu database transaction. Jika ada batch gagal, seluruh import rollback; tidak boleh ada snapshot setengah masuk.
+- Preview membandingkan seluruh field import yang dipetakan, bukan hanya status dan resi.
+- Schema guard menolak `Order.all` yang tidak memiliki satu sheet `orders` dengan exact 50 header yang diharapkan.
+- Unit test parser IDR, schema guard, dan update-only import sudah ada dan lulus.
+- Production health check dan preview `Order.all` asli sudah diverifikasi setelah deploy.
+
+### Belum dikerjakan — jangan diasumsikan selesai
+
+- Analisa struktural dan import yang benar untuk `Income`, `Balance`, `Failed Delivery`, `Cancellation`, dan `Return/Refund`.
+- Desain final profit. `Order.all` sendiri **belum cukup** untuk menentukan net payout atau profit final.
+- Mapping HPP final dan alokasi pendapatan order-level ke item-level.
+- Rekonsiliasi return/refund dengan laporan finansial.
+- Hardening autentikasi/otorisasi endpoint aplikasi dan manajemen destructive action.
+- Konsolidasi schema/reproducible migration. `webapp/database/schema.sql` dan `webapp/scripts/setup-db.js` adalah artefak lama dan **bukan source of truth** untuk table live `order_all` saat ini.
+
 ---
 
-## 8. Tech Stack
+## 2. Workflow Wajib
 
-| Component | Tech |
-|---|---|
-| Framework | Next.js 15 (App Router) |
-| Styling | Tailwind CSS v4 |
-| Database | MySQL (cPanel remote) |
-| File Parsing | xlsx (SheetJS) |
-| Icons | lucide-react |
-| Deployment | Vercel (auto-deploy on push) |
-| Language | TypeScript |
+```text
+Report → Analisa struktur → Diskusi → Coding → Test → Deploy
+```
+
+Aturan:
+
+1. Jangan coding logic report yang belum dianalisa.
+2. Jangan mendesain profit dari `Order.all` saja.
+3. Jangan menganggap nama file export sebagai transaksi baru; export bisa snapshot overlap.
+4. Jangan append seluruh export sebagai row baru.
+5. Jangan menghapus/truncate database tanpa backup timestamp dan persetujuan eksplisit.
+6. Jangan memakai password atau credential fallback hardcoded di source baru. Credential hanya melalui environment variables.
+7. Dokumentasi harus logic-only: pakai nama field, pattern, key, dan rule. Jangan hardcode nomor row/kolom Excel atau statistik sample sebagai business rule.
 
 ---
 
-## 9. Deploy
+## 3. Akses dan Konfigurasi
+
+### Project path
+
+```text
+/home/yogaimawan/Dokumentasi/shopee_profit_estimation
+```
+
+### Aplikasi
+
+```text
+webapp/
+```
+
+### Data source
+
+```text
+data_sample/
+```
+
+### Database
+
+- Database MySQL remote cPanel.
+- Environment names:
+
+```text
+DB_HOST
+DB_PORT
+DB_USER
+DB_PASSWORD
+DB_NAME
+```
+
+- Local development: `webapp/.env.local`.
+- Production: Vercel Production Environment Variables.
+- Jangan tulis credential di README, source code, Git, log, atau output chat.
+
+### Deploy
+
+Push ke `master` memicu auto-deploy Vercel.
 
 ```bash
-git add .
-git commit -m "your message"
-git push
+git push origin master
 ```
-
-Vercel auto-deploys from `master` branch. Production: https://webappumber-five.vercel.app
 
 ---
 
-## 10. Data Insights (from 5 Order.all files)
+## 4. Order.all — Kontrak Raw Import
 
-| File | Rows | In-Progress | Terminal |
-|---|---|---|---|
-| 0601_0630 (Juni) | 1108 | ❌ | ✅ |
-| 0701_0731 (Juli) | 1093 | ✅ | ✅ |
-| 0707_0806 (Jul-Agu) | 1023 | ✅ | ✅ |
-| 0708_0807 (Jul-Agu) | 1037 | ✅ | ✅ |
-| 0801_0806 (Agu) | 174 | ✅ | ✅ |
+### Source dan struktur
 
-**Key findings:**
-- Status ALWAYS progresses forward (0 regressions in real data)
-- Resi ALWAYS increases (null → has resi, never the reverse)
-- 1 order can have 1-5+ items (multi-item orders)
-- `Status Pembatalan/Pengembalian` is additional info (not a regression indicator)
+- Satu workbook harus punya sheet `orders`.
+- Header harus persis cocok dengan 50 header export Shopee yang dikenal.
+- Semua nilai raw report, termasuk nominal, quantity, dan tanggal, dapat tersimpan sebagai string Excel. Jangan mengandalkan type native Excel.
+- Waktu valid memakai pola `YYYY-MM-DD HH:mm`.
+- Blank dan `-` berarti data belum tersedia; normalisasi ke `NULL` pada field yang nullable.
+
+### Grain data
+
+Satu row = satu item/variasi dalam satu pesanan.
+
+```text
+no_pesanan + nomor_referensi_sku + nama_variasi
+```
+
+Implikasi:
+
+- Multi-item order menghasilkan beberapa row dengan `no_pesanan` yang sama.
+- `Total Pembayaran` berada pada grain order dan dapat berulang pada setiap item row. Jangan menjumlahkannya per item saat membangun laporan finansial.
+- SKU, variasi, `jumlah`, `returned_quantity`, dan HPP berada pada grain item.
+- Status return dapat berlaku parsial di satu item/variasi; jangan menganggap return berlaku untuk semua item dalam order.
+
+### Snapshot behaviour
+
+Export dengan period berbeda dapat memiliki order yang sama karena jendela export overlap. Snapshot yang lebih baru dapat memperbarui:
+
+- status pesanan;
+- resi;
+- return/cancellation state;
+- alamat;
+- jadwal pengiriman;
+- voucher/diskon;
+- ongkir;
+- total pembayaran;
+- waktu selesai.
+
+Karena itu, import adalah **merge state terbaru per item**, bukan append ledger.
+
+### Duplicate dan update
+
+| Kondisi | Aksi |
+|---|---|
+| Composite key belum ada | INSERT |
+| Composite key ada, seluruh field mapped sama | SKIP |
+| Composite key ada dan minimal satu field mapped berubah | UPDATE |
+| File hanya berisi update, tanpa row baru | UPDATE tetap diizinkan |
+
+### Guards saat update
+
+- Status ranked yang mundur diblok.
+- Resi yang sudah ada tidak boleh tertimpa menjadi kosong.
+- Field lain tetap bisa di-update dari snapshot terbaru dan ditampilkan dulu pada preview.
+
+> Lifecycle `Batal`, return, dan refund belum boleh disederhanakan sebagai status linear sempurna. Saat menambah rule baru, validasi dulu dengan report finansial terkait.
+
+---
+
+## 5. Database Live yang Dipakai Sekarang
+
+### Source of truth aktif untuk tahap ini
+
+```text
+order_all
+```
+
+- Unique index live: `uk_order_item` pada composite key item.
+- Gunakan `SHOW CREATE TABLE order_all` untuk melihat DDL nyata sebelum migration.
+- Jangan memakai table `orders` untuk flow `Order.all` saat ini; table tersebut adalah artefak lama dan belum dipakai oleh importer aktif.
+- Table/route profit lama belum boleh dianggap valid karena masih bergantung pada model `orders` dan report finansial yang belum dianalisa ulang.
+
+### Backup recovery terakhir
+
+Sebelum repair nominal dilakukan backup lokal:
+
+```text
+Archive/order_all-pre-repair-20260807-204459.json
+```
+
+- Berisi snapshot database dan DDL sebelum repair.
+- Diproteksi oleh `.gitignore`; jangan commit karena mengandung customer/order data.
+- Repair script bersifat idempotent: dry-run setelah repair harus menunjukkan `rows_requiring_currency_repair: 0`.
+
+---
+
+## 6. Implementasi Penting
+
+### Import route
+
+```text
+webapp/app/api/upload/route.ts
+```
+
+Tanggung jawab:
+
+- detect report;
+- exact header validation untuk `Order.all`;
+- preview DB comparison;
+- full-field diff;
+- status/resi regression guard;
+- transactional `INSERT ... ON DUPLICATE KEY UPDATE`;
+- raw import `Order.all`, Income, dan Master.
+
+### Shared Order.all logic
+
+```text
+webapp/lib/order-all-import.js
+```
+
+Memuat:
+
+- `parseIdr()`;
+- `validateOrderAllHeaders()`;
+- `shouldAllowImport()`.
+
+### Currency repair utility
+
+```text
+webapp/scripts/repair-order-all-currency.js
+```
+
+Mode aman default:
+
+```bash
+node scripts/repair-order-all-currency.js
+```
+
+Mode mutasi DB, hanya sesudah backup tervalidasi:
+
+```bash
+node scripts/repair-order-all-currency.js --apply
+```
+
+### Regression test
+
+```text
+webapp/test/order-all-import.test.mjs
+```
+
+Jalankan:
+
+```bash
+cd /home/yogaimawan/Dokumentasi/shopee_profit_estimation/webapp
+```
+
+```bash
+npm test
+```
+
+### Build
+
+```bash
+npm run build
+```
+
+---
+
+## 7. Verifikasi sebelum Mengubah Import Order.all
+
+Wajib jalankan:
+
+```bash
+cd /home/yogaimawan/Dokumentasi/shopee_profit_estimation/webapp
+```
+
+```bash
+npm test
+```
+
+```bash
+./node_modules/.bin/tsc --noEmit --incremental false
+```
+
+```bash
+npm run build
+```
+
+Untuk check raw/DB tanpa mutasi:
+
+```bash
+node scripts/repair-order-all-currency.js
+```
+
+Hasil yang sehat:
+
+- `raw_latest_composite_rows` sama dengan `db_rows`;
+- `missing_in_db: 0`;
+- `unexpected_db_rows: 0`;
+- `rows_requiring_currency_repair: 0`.
+
+Untuk production health:
+
+```bash
+curl -sS https://webapp-umber-five.vercel.app/api/health
+```
+
+---
+
+## 8. Report yang Tersedia tetapi Belum Boleh Diolah
+
+Folder `data_sample/` berisi report tambahan sebagai bahan analisa berikutnya:
+
+- `Income.sudah dilepas...xlsx`
+- `my_balance_transaction_report...xlsx`
+- `Order.failed_delivery...xlsx`
+- `Order.cancellation...xlsx`
+- `Order.return_refund...xls`
+- `master.xlsx`
+- report iklan CSV
+
+Urutan next yang disarankan:
+
+1. Analisa penuh **Income Penghasilan**: sheet, header, grain, key, duplicate, nominal sign, dan keterkaitan terhadap `Order.all`.
+2. Analisa **Balance**: tipe transaksi, lokasi No. Pesanan, settlement, adjustment, dan biaya iklan.
+3. Analisa **Return/Refund** serta Failed Delivery dan Cancellation.
+4. Diskusi model data: order header vs item vs financial transaction.
+5. Baru desain schema final dan logic estimasi/actual profit.
+
+---
+
+## 9. Struktur Project
+
+```text
+shopee_profit_estimation/
+├── README.md
+├── .gitignore
+├── Archive/                         # backup lokal, di-ignore Git
+├── data_sample/                     # raw report export + reference
+└── webapp/
+    ├── app/
+    │   ├── upload/page.tsx
+    │   └── api/upload/route.ts
+    ├── lib/
+    │   └── order-all-import.js
+    ├── scripts/
+    │   └── repair-order-all-currency.js
+    ├── test/
+    │   └── order-all-import.test.mjs
+    ├── database/                    # legacy; jangan jadikan DDL live tanpa verifikasi
+    ├── package.json
+    └── .env.local                   # local only, tidak di-commit
+```
+
+---
+
+## 10. Handoff untuk Agent Baru
+
+Mulai dengan urutan ini:
+
+1. Baca README ini penuh.
+2. Cek `git status --short` dan jangan menimpa kerja yang belum committed.
+3. Jika menyentuh `Order.all`, baca:
+   - `webapp/app/api/upload/route.ts`
+   - `webapp/lib/order-all-import.js`
+   - `webapp/test/order-all-import.test.mjs`
+4. Jalankan `npm test` sebelum dan setelah perubahan.
+5. Untuk query/DDL DB, inspeksi live dulu secara read-only. Jangan percaya schema legacy tanpa `SHOW CREATE TABLE`.
+6. Untuk report baru: lakukan Report → Analisa → Diskusi → Coding.
+7. Jangan melanjutkan profit calculation sampai Income, Balance, Return/Refund selesai dianalisa dan user menyetujui design-nya.
+
+**Commit terakhir yang membenahi Order.all import:**
+
+```text
+f9c5bac fix(order-all): protect snapshot imports
+```
