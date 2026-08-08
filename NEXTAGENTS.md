@@ -1,249 +1,291 @@
 # NEXTAGENTS — Shopee Profit Estimation
 
-> Baca file ini lalu `README.md` penuh. `Order.all` dan RAW Income sudah live serta tervalidasi di production. Jangan melanjutkan ke Balance, HPP, return/refund, atau profit sebelum user secara eksplisit memilih report berikutnya.
+**Last updated:** 2026-08-08
+**Production:** https://webapp-umber-five.vercel.app
+**Repository:** `wishnetid/shopee-profit-estimation`
+**Branch:** `master`
 
-## Status handoff — 2026-08-08
+> Mulai dengan membaca `README.md` penuh, lalu baca file ini. Jangan langsung coding, migration, import, atau mengubah konfigurasi. Fase RAW **Order.all** dan **Income** sudah live; report berikutnya belum dipilih user.
 
-### Production
+---
 
-```text
-URL: https://webapp-umber-five.vercel.app
-Repository: wishnetid/shopee-profit-estimation
-Branch: master
-Commit: 8006c1fe7317aaf743b6bdf6d5ee75b2a0d01af9
-Deployment: Ready
-```
+## 1. Kondisi Nyata Saat Handoff
 
-### Scope yang sudah selesai
+### Yang sudah selesai
 
-`Order.all` sekarang adalah RAW current-state per item dengan key:
+- `Order.all` live sebagai RAW **current-state per item** pada `order_all`.
+- `Income` live sebagai RAW **package berkala**, dengan parent import dan child table per section.
+- Paket Income yang sudah di-import lolos rekonsiliasi `Summary Total yang Dilepas` terhadap signed total `Penghasilan` view `Order`.
+- Halaman `/orders` dan `/income`, endpoint production `/api/orders`, `/api/income`, dan `/api/health` aktif.
+- Test regression, typecheck, dan build lulus pada audit terakhir.
 
-```text
-(no_pesanan, nomor_referensi_sku, nama_variasi)
-```
+### Yang belum selesai
 
-- Snapshot overlap di-merge, bukan di-append sebagai row baru.
-- Snapshot lama tidak boleh overwrite state/field terbaru.
-- Status tidak boleh mundur.
-- Nilai terisi tidak boleh turun menjadi kosong atau `******`.
-- `source_snapshot_at` dan `source_snapshot_file` menjadi provenance per item.
-- Workbook ditolak sebelum preview/import jika header tidak tepat, composite key kosong, atau composite key duplicate dalam workbook.
-- Timestamp snapshot memakai validasi kalender strict dan disimpan sortable sebagai `YYYY-MM-DD HH:mm:ss`.
-- Import memakai DB transaction.
+- Balance Transaction.
+- Return/refund, failed delivery, cancellation.
+- Master HPP final dan alokasi ke item.
+- Biaya iklan.
+- Financial layer: net payout, actual profit, estimation profit.
+- Validasi/refactor halaman dan route Profit legacy.
 
-## Income RAW — Live dan Tervalidasi di Production
+**Batas penting:** jangan menganggap UI Profit lama atau table legacy sudah benar hanya karena masih ada di source.
 
-### Batas scope dan urutan kerja
+---
 
-```text
-Order.all RAW current-state                 ✅ live
-Income RAW package + halaman Income baru    ← implementasi berikutnya
-Balance Transaction                         ← hanya setelah Income live dan tervalidasi
-Return / Refund → Failed Delivery → Cancellation → Master HPP → Iklan
-Schema financial + profit                   ← terakhir, setelah seluruh report diaudit
-```
+## 2. Opening Procedure Wajib
 
-- Jangan mulai observasi atau coding `Balance` sebelum Income selesai sampai endpoint production nyata.
-- Jangan menganggap table, route, UI, atau importer Income lama sebagai implementasi valid. Mereka artefak legacy dari fase sebelum analisa report selesai.
-- Perubahan berikutnya harus tetap mengikuti: `Report → Analisa → Diskusi → Coding → Test → Deploy → Endpoint test nyata`.
-
-### Sumber dan bentuk report Income
-
-Satu file `Income.sudah dilepas...xlsx` adalah **satu paket report**, bukan satu sheet tunggal. Sheet yang ada dan fungsi penyimpanannya:
-
-| Sheet sumber | Status implementasi | Tujuan penyimpanan |
-|---|---|---|
-| `Penghasilan` | WAJIB | Sumber RAW settlement finance utama. Simpan dua view: `Order` dan `Sku`. |
-| `Adjustment` | WAJIB | Sumber RAW event penyesuaian dan biaya yang dapat terkait pesanan. |
-| `Shipping Fee Discrepancy` | WAJIB | Sumber RAW exception/silang ongkir untuk audit. |
-| `Summary` | WAJIB sebagai metadata | Ringkasan/checksum per file import; bukan row transaksi. |
-| `Seller Fee` | Audit-only v1 | Dibaca/validasi struktur, tetapi belum jadi table atau tab operasional. Bukan sumber payout/profit utama. |
-
-Jangan menjumlahkan antar-sheet. `Seller Fee`, `Summary`, `Adjustment`, dan `Shipping Fee Discrepancy` bukan pengganti atau tambahan otomatis untuk semua nilai `Penghasilan`.
-
-### Grain dan aturan financial yang sudah tervalidasi
-
-- `Penghasilan` memiliki view `Order` dan `Sku` pada field `Lihat berdasarkan`.
-- `Order` adalah settlement total per `No. Pesanan`; dipakai untuk rekonsiliasi dan dashboard order-level.
-- `Sku` adalah rincian/alokasi per item. Wajib disimpan karena menjadi dasar HPP/profit per item nanti; **bukan duplicate sampah**.
-- Untuk order multi-item, total setiap komponen financial pada `Order` cocok dengan penjumlahan rincian `Sku`.
-- Seluruh nominal disimpan bertanda asli positif/negatif. Jangan memakai `ABS()`, membalik tanda, atau menghitung net payout/profit baru sebelum report lain selesai dianalisa.
-- `Income` dapat memuat pesanan yang dibuat sebelum periode `Order.all` tetapi dana-nya dilepas pada periode Income. Itu normal; gunakan relasi/query `LEFT JOIN`, **tanpa foreign key wajib** ke `order_all`.
-- Ada nama header display yang identik untuk komponen Gratis Ongkir XTRA. Parser dan schema harus memakai key canonical yang berbeda per source field; jangan membangun object dengan nama header mentah sampai nilai pertama tertimpa nilai kedua.
-
-### Model RAW berkala yang akan dibuat
-
-Income **tidak** boleh dipaksa menjadi satu upsert business-key current-state seperti `Order.all`. Detail `Sku` tidak memiliki natural key bisnis yang stabil dari field yang tersedia untuk melakukan upsert aman lintas export overlap.
-
-Target table/layer:
-
-```text
-income_report_imports
-  Satu row per file report yang lolos import.
-  Menyimpan provenance: nama file, SHA-256, periode report, waktu import,
-  serta nilai Summary untuk rekonsiliasi.
-
-income_penghasilan_raw
-  Semua row Penghasilan view Order DAN Sku.
-  Identity RAW: (income_report_import_id, source_excel_row).
-  Simpan raw source payload + field normalized bertanda asli.
-
-income_adjustments_raw
-  Semua row Adjustment, identity RAW per import + source_excel_row.
-
-income_shipping_fee_discrepancies_raw
-  Semua row Shipping Fee Discrepancy, identity RAW per import + source_excel_row.
-```
-
-Aturan import:
-
-1. Exact file SHA-256 yang sudah pernah diimport harus preview sebagai duplicate/no-op; tidak boleh menduplikasi row RAW.
-2. Export berbeda, walau periodenya overlap, tetap disimpan sebagai import RAW terpisah. Jangan merge, overwrite, atau menjumlahkan lintas report pada tahap RAW.
-3. App memilih `report terbaru` sebagai tampilan default; operator tetap bisa memilih riwayat import/report lain untuk audit.
-4. `Summary` harus direkonsiliasi dengan penjumlahan komponen bertanda dari `Penghasilan` view `Order` sebelum import diizinkan.
-5. Semua insert untuk satu paket report harus berada dalam satu DB transaction. Satu sheet/baris gagal berarti rollback seluruh paket.
-6. Tidak ada truncate/clear table. Migration harus tracked, idempotent, default dry-run, dan didahului backup timestamp tervalidasi.
-
-### Kontrak parser, preview, dan test
-
-- Cari header dengan presence field bernama (`No. Pesanan` dan `Lihat berdasarkan`), bukan dengan asumsi header berada di first cell atau nomor row tertentu.
-- Validasi sheet wajib serta kontrak header setiap sheet. Sheet hilang, header bergeser/berubah, atau sheet baru yang belum dikenali harus ditampilkan sebagai `BLOCKED`/warning; jangan silently drop data.
-- Representasi raw harus membedakan source field yang label tampilannya sama.
-- Normalisasi nilai kosong/`-` secara eksplisit tanpa menghancurkan raw source payload.
-- Parser nominal harus menjaga tanda dan format IDR; date harus diparse tanpa timezone shift.
-- Preview sebelum import wajib menampilkan per-section: `Penghasilan Order`, `Penghasilan Sku`, `Adjustment`, `Shipping Fee Discrepancy`, status duplicate hash, periode report, dan hasil rekonsiliasi Summary.
-- TDD wajib: test failing dulu untuk header nyata, duplicate display header, kedua view `Order`/`Sku`, duplicate file hash, rollback package, dan mismatch Summary; baru implementasi minimal.
-- Production verification wajib memakai raw Income asli melalui endpoint preview dulu, lalu import eksplisit setelah user menyetujui preview. Sesudah import: query jumlah per section, rekonsiliasi Summary, re-upload file sama sebagai no-op, cek halaman Income, dan cek screenshot sampel yang sudah tervalidasi.
-
-### UI yang akan diterapkan
-
-Sidebar tetap hanya satu primary menu: `Income`. Jangan menambah submenu di sidebar atau bottom navigation.
-
-```text
-Income
-├─ Penghasilan                 # tab default
-│  ├─ Per Pesanan              # view Order
-│  └─ Per SKU                  # view Sku
-├─ Penyesuaian                 # Adjustment
-├─ Selisih Ongkir              # Shipping Fee Discrepancy
-└─ Riwayat Import              # pilih/audit report RAW
-```
-
-- Default saat membuka halaman: `Income → Penghasilan → Per Pesanan → report terbaru`.
-- `Summary` ditampilkan sebagai kartu ringkasan untuk report yang sedang dipilih, bukan sebagai tab tabel.
-- `Seller Fee` belum muncul sebagai tab awal. Bila nanti diperlukan, tambahkan sebagai `Audit Fee`, bukan source profit.
-- Header/tab berada di area konten halaman Income, di bawah judul dan sebelum search/table; sidebar tetap bersih sebagai primary navigation.
-
-### Legacy yang wajib diganti/diaudit saat coding
-
-- `income_penghasilan` live saat handoff ini masih kosong, hanya menampung subset kolom, tidak punya provenance import, dan bukan kontrak RAW baru.
-- `webapp/app/api/upload/route.ts` legacy `previewIncome()`/`importIncome()` gagal untuk workbook Income asli karena hanya mencari `No. Pesanan` di first cell header; header asli dimulai dengan `No.`.
-- Mapping object legacy dengan header display mentah menyebabkan collision pada label Gratis Ongkir XTRA yang muncul lebih dari sekali.
-- `webapp/app/api/income/route.ts` dan `webapp/app/income/page.tsx` masih membaca table legacy kosong. Ganti hanya setelah API/table RAW baru siap; jangan deploy UI tab yang belum memiliki jalur data nyata.
-- Raw files Income baru di `data_sample/` dapat muncul sebagai untracked Git files. Jangan `git add -A` atau commit data raw tanpa arahan eksplisit user.
-
-### Security yang sudah live
-
-- `webapp/proxy.ts` melindungi seluruh page dan `/api/*` memakai Basic Auth environment-only.
-- `POST /api/upload` dan `POST /api/settings/database` melakukan Basic Auth lagi di route serta menolak cross-origin POST.
-- Upload hanya menerima Excel `.xlsx`/`.xls` dalam batas ukuran server-side.
-- Runtime DB connection memakai environment-only; fallback credential hardcoded sudah dihapus dari source aktif.
-- `webapp/scripts/migrate-order-all-snapshot-metadata.js` adalah migration idempotent tracked. Default hanya dry-run.
-
-### Bukti verifikasi
-
-```text
-Archive/order_all-security-hardening-production-20260808-000813.json
-SHA-256: 593134df4284e4475eed89a1aef75d83d70678a3e04f56b801b3654fc75da174
-```
-
-Bukti ini tidak melakukan mutasi DB dan mencatat:
-
-- unauthenticated upload: `401`;
-- unauthenticated Settings POST: `401`;
-- unauthenticated/wrong-auth page: `401`;
-- authenticated health: `200`, database connected;
-- authenticated raw `Order.all` preview: `200`;
-- duplicate composite key: `400`;
-- invalid calendar timestamp: `400`;
-- cross-origin upload: `403`.
-
-Local gate terakhir:
-
-```text
-npm test: 18 pass, 0 fail
-npm run build: pass
-migration dry-run: no missing metadata columns
-```
-
-Backup code sebelum hardening:
-
-```text
-Archive/code-backups/20260807-234738-order-all-security-hardening/
-```
-
-## Remaining security work
-
-Credential DB lama pernah tersimpan di riwayat repository sebelum hardening. Runtime aktif sudah tidak memakai fallback itu, tetapi password DB tetap perlu **dirotasi melalui cPanel**, lalu nilai baru dipasang di:
-
-```text
-webapp/.env.local
-Vercel Production Environment Variables
-```
-
-Jangan menaruh password di source, Git, README, terminal output, atau chat. Setelah rotasi, test endpoint authenticated dan `/api/health` lagi.
-
-## Rules wajib
-
-```text
-Report → Analisa struktur → Diskusi → Coding → Test → Deploy → Endpoint test nyata
-```
-
-- Jangan truncate/clear database tanpa backup timestamp tervalidasi dan persetujuan eksplisit user.
-- Jangan menganggap `webapp/database/schema.sql`, `webapp/scripts/setup-db.js`, table `orders`, atau profit routes sebagai source of truth untuk RAW `Order.all`.
-- Gunakan DDL live read-only sebelum migration:
-
-```bash
-cd /home/yogaimawan/Dokumentasi/shopee_profit_estimation/webapp
-```
-
-```bash
-set -a
-. ./.env.local
-set +a
-node scripts/migrate-order-all-snapshot-metadata.js
-```
-
-- RAW Income boleh diimplementasikan **hanya** mengikuti kontrak Income di atas. Report lain tetap dilarang dikerjakan sampai Income live dan tervalidasi.
-
-## Quality gates sebelum perubahan Order.all atau implementasi RAW Income
-
-```bash
-cd /home/yogaimawan/Dokumentasi/shopee_profit_estimation/webapp
-```
-
-```bash
-npm test
-```
-
-```bash
-npm run build
-```
+1. Baca `README.md` penuh.
+2. Cek working tree sebelum menyentuh file:
 
 ```bash
 cd /home/yogaimawan/Dokumentasi/shopee_profit_estimation
 ```
 
 ```bash
-git diff --check
+git status --short
 ```
 
-Untuk perubahan import, test endpoint production harus mencakup request tanpa auth, auth valid, cross-origin, serta preview raw valid. Untuk `Order.all` tambahkan duplicate key dan timestamp invalid. Untuk Income tambahkan duplicate file hash, header asli multi-row, duplicate display header, kedua view, Summary reconciliation, dan rollback package. Jangan menjalankan import mutasi terhadap DB tanpa persetujuan eksplisit.
+3. Jangan menimpa perubahan user yang belum committed.
+4. Raw workbook Income dapat tampil sebagai untracked di `data_sample/`. Jangan jalankan `git add -A`, jangan commit raw report, dan jangan menghapus file tersebut tanpa arahan user.
+5. Untuk perubahan database, inspeksi DDL live secara read-only dahulu. Jangan memakai `schema.sql` atau `setup-db.js` sebagai fakta database live.
+6. Untuk report baru, berhenti setelah analisa dan diskusi. Coding hanya setelah user menyetujui kontraknya.
 
-## Langkah berikutnya yang direkomendasikan
+---
 
-1. Rotasi password DB lewat cPanel dan update `.env.local` + Vercel Production Environment Variables.
-2. Verifikasi ulang health dan raw preview `Order.all` setelah rotasi.
-3. RAW Income telah diimplementasikan: migration idempotent, parser package, preview, importer transaction, API, dan halaman Income tabs; commit production: `d82125a`.
-4. Preview production report `Income.sudah dilepas.id.20260701_20260731.xlsx` lulus: SHA baru, Summary `Total yang Dilepas` sama dengan signed total Penghasilan `Order`, dan seluruh section tersedia. Minta persetujuan user sebelum import mutasi pertama.
-5. Sesudah persetujuan: import report Juli, query count setiap table RAW, re-upload file yang sama sebagai duplicate/no-op, cek `/api/income` serta halaman Income. Baru setelah seluruhnya lulus lanjut observasi **Balance Transaction**.
+## 3. Kontrak Aktif — Order.all
+
+### Grain dan identity
+
+```text
+Satu row = satu item/variasi pesanan
+(no_pesanan, nomor_referensi_sku, nama_variasi)
+```
+
+- `no_pesanan` tidak cukup sebagai key karena order dapat multi-item.
+- `total_pembayaran` adalah nominal order-level dan dapat berulang pada item row; jangan dijumlahkan per item.
+- `jumlah`, SKU, variasi, return quantity, dan HPP nanti berada di item-level.
+
+### Import behavior
+
+- `Order.all` adalah current-state merge, bukan ledger append.
+- Operator wajib mengisi waktu snapshot/export Shopee.
+- `source_snapshot_at` dan `source_snapshot_file` menyimpan provenance.
+- Snapshot lama tidak boleh overwrite state terbaru.
+- Status tidak boleh mundur.
+- Nilai terisi tidak boleh menjadi kosong/tersamarkan.
+- Preview harus memperlihatkan row baru, update aman, identik, dan field yang ditahan.
+- Import transactional; satu kegagalan membatalkan seluruh batch.
+
+### File penting
+
+```text
+webapp/app/api/upload/route.ts
+webapp/lib/order-all-import.js
+webapp/test/order-all-import.test.mjs
+webapp/scripts/migrate-order-all-snapshot-metadata.js
+webapp/scripts/repair-order-all-currency.js
+```
+
+---
+
+## 4. Kontrak Aktif — Income RAW Package
+
+### Storage live
+
+```text
+income_report_imports
+income_penghasilan_raw
+income_adjustments_raw
+income_shipping_fee_discrepancies_raw
+```
+
+### Aturan penting
+
+- Satu workbook Income adalah satu **package import**.
+- Exact SHA-256 yang pernah masuk berarti duplicate/no-op.
+- Workbook berbeda dengan periode overlap tetap disimpan terpisah; jangan merge, overwrite, atau agregasi lintas package di layer RAW.
+- Semua child section harus berada dalam satu DB transaction dengan parent import.
+- `Summary` adalah metadata/reconciliation, bukan tabel transaksi.
+- `Seller Fee` audit-only pada fase ini.
+
+### Penghasilan punya dua view valid
+
+```text
+Order  = settlement total per No. Pesanan
+Sku    = alokasi settlement per item
+```
+
+- Keduanya wajib disimpan.
+- Jangan menjumlahkan view `Order` dan `Sku` bersamaan.
+- Semua nominal mempertahankan tanda asli.
+- Header display duplikat harus disimpan dengan canonical key berbeda.
+- Income bisa memiliki order yang belum terlihat pada snapshot Order.all yang tersedia. Gunakan `LEFT JOIN`, bukan foreign key wajib.
+
+### File penting
+
+```text
+webapp/lib/income-raw-import.js
+webapp/lib/income-raw-db.js
+webapp/scripts/migrate-income-raw.js
+webapp/app/api/income/route.ts
+webapp/app/income/page.tsx
+webapp/test/income-raw-import.test.mjs
+```
+
+### Legacy yang jangan dipakai
+
+- `income_penghasilan` bukan kontrak RAW aktif.
+- Helper `previewIncome()` dan `importIncome()` legacy masih ada dalam `webapp/app/api/upload/route.ts`, tetapi jalur runtime Income yang benar memakai `parseIncomePackage()` dan `importIncomePackage()`.
+- Jangan memperluas atau memperbaiki helper legacy sebagai bagian feature baru; lakukan penghapusan/refactor hanya setelah dibahas.
+
+---
+
+## 5. UI dan Endpoint Aktif
+
+```text
+/upload  → preview/import Order.all, Income, Master
+/orders  → baca order_all
+/income  → baca Income RAW package
+```
+
+Halaman `/income` saat ini menyediakan:
+
+```text
+Penghasilan → Per Pesanan / Per SKU
+Penyesuaian
+Selisih Ongkir
+Semua package Income dalam satu tabel lintas report
+```
+
+- Dropdown `Report yang ditampilkan` sudah dihapus.
+- API Income membaca semua package dan menambahkan provenance report pada setiap row.
+- Pagination, search, dan sort menggunakan kontrak query yang sama-sama di-whitelist.
+- `Per Pesanan` dan `Per SKU` tetap terpisah; jangan menjumlahkan keduanya.
+- Summary lintas package tidak dijumlahkan karena periode Income dapat overlap.
+
+---
+
+## 6. Access dan Security State
+
+- Environment source default: Basic Auth aktif.
+- `DASHBOARD_AUTH_ENABLED=false` adalah public mode sementara dan melewati Basic Auth untuk page/API termasuk mutation route; same-origin/file/schema/transaction guard tetap aktif.
+- Audit production terakhir menunjukkan URL dapat diakses tanpa Basic Auth. Perlakukan ini sebagai temporary public mode.
+- Environment lokal dapat berbeda dengan Vercel production. Jangan menyimpulkan mode production dari `.env.local` saja.
+- Jangan mengubah `DASHBOARD_AUTH_ENABLED`, credential DB, atau credential Basic Auth tanpa persetujuan eksplisit user.
+- Credential historis tetap perlu dirotasi via cPanel lalu diperbarui ke `.env.local` dan Vercel pada sesi terpisah yang disetujui user.
+
+Environment names:
+
+```text
+DB_HOST
+DB_PORT
+DB_USER
+DB_PASSWORD
+DB_NAME
+DASHBOARD_BASIC_AUTH_USER
+DASHBOARD_BASIC_AUTH_PASSWORD
+DASHBOARD_AUTH_ENABLED
+```
+
+---
+
+## 7. Quality Gates
+
+Masuk ke app directory:
+
+```bash
+cd /home/yogaimawan/Dokumentasi/shopee_profit_estimation/webapp
+```
+
+Regression tests:
+
+```bash
+npm test
+```
+
+Typecheck:
+
+```bash
+./node_modules/.bin/tsc --noEmit --incremental false
+```
+
+Build:
+
+```bash
+npm run build
+```
+
+Income RAW migration dry-run, tanpa mutation:
+
+```bash
+set -a
+```
+
+```bash
+. ./.env.local
+```
+
+```bash
+set +a
+```
+
+```bash
+node scripts/migrate-income-raw.js
+```
+
+Setelah perubahan importer, jangan klaim selesai hanya dari test/build. Wajib preview endpoint production memakai raw file nyata dulu. Mutation import hanya jika user sudah menyetujui preview.
+
+---
+
+## 8. Next Scope — Diskusi Dulu
+
+**Jangan melanjutkan coding otomatis.** Saat user memilih report berikutnya, ikuti ini:
+
+```text
+Report → Analisa struktur → Diskusi → Coding → Test → Deploy → Endpoint test nyata
+```
+
+Rekomendasi urutan, belum menjadi instruksi eksekusi:
+
+1. **Balance Transaction**
+   - Inventaris sheet/header.
+   - Tipe transaksi dan tanda nominal.
+   - Lokasi `No. Pesanan`, termasuk bila embedded pada deskripsi.
+   - Bedakan settlement, adjustment, dan biaya iklan.
+   - Tentukan grain dan duplicate policy sebelum schema/import.
+
+2. **Return/refund, failed delivery, cancellation**
+   - Validasi terhadap Order.all, Balance, dan Income.
+   - Jangan menyederhanakan sebagai satu status linear tanpa bukti laporan finansial.
+
+3. **Financial layer**
+   - Diskusikan relasi order header, item, Income `Order`, Income `Sku`, HPP, biaya iklan, dan return.
+   - Baru desain actual vs estimation profit.
+
+---
+
+## 9. Larangan Keras
+
+- Jangan truncate/clear DB tanpa backup timestamp tervalidasi dan approval eksplisit.
+- Jangan auto-import raw workbook hanya karena ditemukan di `data_sample/`.
+- Jangan commit `.env.local`, raw customer report, backup DB, atau Archive.
+- Jangan membangun profit dari `Order.all` saja.
+- Jangan menghitung `Penghasilan Order` dan `Penghasilan Sku` sekaligus.
+- Jangan menganggap aplikasi/DB legacy valid tanpa audit source dan DDL live.
+- Jangan mengubah source, schema, atau Vercel env hanya untuk menyelesaikan warning kosmetik.
+
+---
+
+## 10. Referensi Cepat
+
+```text
+README.md                                      Kontrak lengkap dan status aktual
+webapp/app/api/upload/route.ts                 Upload route + cabang importer aktif
+webapp/lib/order-all-import.js                 Kontrak Order.all
+webapp/lib/income-raw-import.js                Parser package Income
+webapp/lib/income-raw-db.js                    Preview/transaction Income RAW
+webapp/app/api/income/route.ts                 Query Income RAW
+webapp/app/income/page.tsx                     UI Income
+webapp/test/*.test.mjs                         Regression test
+Archive/docs-backups/                          Backup dokumentasi lokal, di-ignore Git
+```

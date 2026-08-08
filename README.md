@@ -3,106 +3,222 @@
 **Last updated:** 2026-08-08
 **Production:** https://webapp-umber-five.vercel.app
 **Repository:** https://github.com/wishnetid/shopee-profit-estimation
-**Current branch:** `master`
+**Branch:** `master`
 
-> **Baca file ini dulu sebelum menyentuh project.** Fokus project saat ini hanya memastikan `Order.all` masuk ke `order_all` sebagai raw snapshot yang benar. Jangan melanjutkan logic profit, Income, Balance, HPP allocation, atau perubahan schema tanpa analisa report terkait dan diskusi dulu.
+> Baca file ini penuh sebelum menyentuh project. Kondisi saat ini: fondasi RAW untuk **Order.all** dan **Income** sudah live. Profit final, Balance, HPP, return/refund, dan iklan belum boleh diasumsikan selesai.
 
 ---
 
-## 1. Status Saat Ini
+## 1. Status Fase Saat Ini
 
-### Sudah selesai dan tervalidasi
+### Sudah live dan tervalidasi
 
-- Aplikasi Next.js sudah deploy di Vercel dan terhubung ke MySQL cPanel.
-- `Order.all` sudah menjadi raw source/master untuk data order-item.
-- Import memakai composite unique key:
+1. **Order.all RAW current-state per item**
+   - Disimpan pada table live `order_all`.
+   - Dipakai sebagai source of truth state terbaru untuk item pesanan.
+   - Workbook overlap tidak di-append sebagai histori row baru; data di-merge secara konservatif per item.
 
-```text
-(no_pesanan, nomor_referensi_sku, nama_variasi)
-```
+2. **Income RAW package berkala**
+   - Disimpan sebagai paket report terpisah, bukan current-state upsert.
+   - Satu paket Income memuat `Penghasilan`, `Adjustment`, `Shipping Fee Discrepancy`, serta metadata `Summary`.
+   - Paket Income awal dari `data_sample/` sudah masuk DB dan seluruhnya lolos rekonsiliasi Summary terhadap `Penghasilan` view `Order`.
 
-- Composite key menangani multi-item order; `no_pesanan` sendiri **bukan** key baris.
-- Import mendukung tiga hasil:
-  - **Baru**: insert.
-  - **Identik**: skip.
-  - **Berubah dan terbukti lebih baru**: update snapshot, termasuk bila file tidak punya row baru.
-  - **Lebih lama / ambigu / menurunkan kualitas data**: database dipertahankan.
-- Setiap upload `Order.all` wajib menyertakan **waktu snapshot/export** dari Shopee. Waktu ini disimpan sebagai provenance per item (`source_snapshot_at`, `source_snapshot_file`) dan menjadi urutan utama saat dua export overlap.
-- Jika provenance lama belum tersedia, aplikasi memakai mode konservatif: status yang maju boleh memperbarui data; status yang sama tetapi nilai terisi saling konflik ditahan sampai snapshot baru memiliki waktu yang lebih baru.
-- Snapshot lama tidak boleh menimpa field mana pun. Nilai terisi juga tidak boleh diturunkan menjadi kosong atau versi tersamarkan (`******`).
-- Parser nominal Shopee sudah benar untuk format IDR bertitik:
+3. **Aplikasi dan jalur nyata**
+   - Next.js di Vercel terhubung ke MySQL cPanel.
+   - `GET /api/health`, `GET /api/orders`, dan `GET /api/income` sudah merespons dari production.
+   - Test regression dan production build lulus pada audit terakhir.
 
-```text
-82.500 → 82500
-1.234,50 → 1234.50
-```
+### Belum dikerjakan — jangan diasumsikan valid
 
-- Semua nilai monetary `order_all` yang pernah masuk dengan parser lama sudah dipulihkan dari raw report dan diverifikasi terhadap raw snapshot terbaru.
-- Import `Order.all` dilakukan dalam satu database transaction. Jika ada batch gagal, seluruh import rollback; tidak boleh ada snapshot setengah masuk.
-- Preview membandingkan seluruh field import yang dipetakan, bukan hanya status dan resi.
-- Schema guard menolak `Order.all` yang tidak memiliki satu sheet `orders` dengan exact 50 header yang diharapkan.
-- Workbook juga ditolak sebelum preview/import jika ada composite key duplicate atau bagian key kosong.
-- Waktu snapshot memakai validasi kalender strict dan dinormalisasi menjadi `YYYY-MM-DD HH:mm:ss`.
-- Dashboard dan seluruh `/api/*` memakai Basic Auth dari environment; `POST /api/upload` dan `POST /api/settings/database` juga memvalidasi auth di route serta same-origin.
-- Upload server-side hanya menerima `.xlsx`/`.xls` hingga batas ukuran yang ditentukan.
-- Seluruh koneksi DB runtime memakai environment-only; tidak ada credential/fallback DB hardcoded pada source runtime.
-- Unit test parser, schema, duplicate key, strict timestamp, auth, origin, dan file validation lulus.
-- Production health, auth, preview raw asli, reject duplicate key, reject timestamp invalid, dan reject cross-origin sudah diverifikasi setelah deploy.
-- Preview kelima raw `Order.all` di `data_sample/` juga lulus terhadap endpoint production tanpa mutasi DB; evidence lokal di `Archive/order_all-preview-rotation-production-20260808-001300.json`.
-
-### Belum dikerjakan — jangan diasumsikan selesai
-
-- Analisa struktural dan import yang benar untuk `Income`, `Balance`, `Failed Delivery`, `Cancellation`, dan `Return/Refund`.
-- Desain final profit. `Order.all` sendiri **belum cukup** untuk menentukan net payout atau profit final.
-- Mapping HPP final dan alokasi pendapatan order-level ke item-level.
-- Rekonsiliasi return/refund dengan laporan finansial.
-- Rotasi password DB di cPanel dan Vercel. Password lama pernah ada di riwayat source; source aktif sudah environment-only, tetapi credential tetap perlu dirotasi terpisah.
-- Audit dan desain ulang endpoint/table legacy di luar scope RAW `Order.all`; `webapp/database/schema.sql` dan `webapp/scripts/setup-db.js` bukan source of truth untuk table live `order_all` saat ini.
+- Analisa dan kontrak RAW untuk **Balance Transaction**.
+- Analisa return/refund, failed delivery, dan cancellation terhadap laporan finansial.
+- Mapping HPP final serta alokasi pendapatan/biaya order-level ke item-level.
+- Model **estimasi profit** dan **actual/confirmed profit**.
+- Alokasi biaya iklan.
+- Validasi atau refactor halaman/route Profit lama.
+- Rotasi credential DB yang pernah muncul pada riwayat source lama.
 
 ---
 
 ## 2. Workflow Wajib
 
 ```text
-Report → Analisa struktur → Diskusi → Coding → Test → Deploy
+Report → Analisa struktur → Diskusi → Coding → Test → Deploy → Endpoint test nyata
 ```
 
-Aturan:
+Aturan utama:
 
 1. Jangan coding logic report yang belum dianalisa.
-2. Jangan mendesain profit dari `Order.all` saja.
-3. Jangan menganggap nama file export sebagai transaksi baru; export bisa snapshot overlap.
-4. Jangan append seluruh export sebagai row baru.
-5. Jangan menghapus/truncate database tanpa backup timestamp dan persetujuan eksplisit.
-6. Jangan memakai password atau credential fallback hardcoded di source baru. Credential hanya melalui environment variables.
-7. Dokumentasi harus logic-only: pakai nama field, pattern, key, dan rule. Jangan hardcode nomor row/kolom Excel atau statistik sample sebagai business rule.
+2. Jangan menyusun net payout atau profit dari `Order.all` saja.
+3. Jangan menghapus, truncate, atau re-import DB tanpa backup timestamp dan persetujuan eksplisit user.
+4. Jangan menyamakan overlap export dengan duplicate bisnis.
+5. Jangan memasukkan credential ke source, Git, dokumentasi, terminal output, atau chat.
+6. Dokumentasi business rule harus logic-only: gunakan field, key, pattern, dan rule; jangan menjadikan statistik atau posisi Excel sebagai aturan.
+7. Gunakan DDL live secara read-only sebelum migration. `schema.sql` legacy bukan source of truth database production.
 
 ---
 
-## 3. Akses dan Konfigurasi
+## 3. Order.all — Kontrak RAW Current-State
 
-### Project path
+### Source dan grain
 
-```text
-/home/yogaimawan/Dokumentasi/shopee_profit_estimation
-```
-
-### Aplikasi
+- Workbook harus memiliki sheet `orders` dengan kontrak header export Shopee yang dikenal.
+- Satu row berarti satu item/variasi dalam satu pesanan.
+- Identity row live:
 
 ```text
-webapp/
+(no_pesanan, nomor_referensi_sku, nama_variasi)
 ```
 
-### Data source
+- `no_pesanan` sendiri bukan unique row karena satu pesanan dapat memiliki beberapa item/variasi.
+- Field item: SKU, variasi, quantity, returned quantity, dan HPP nanti berada pada grain item.
+- Field seperti `total_pembayaran` berada pada grain order dan bisa berulang pada beberapa item row. Jangan menjumlahkannya langsung per item.
+
+### Snapshot dan freshness
+
+- Import `Order.all` adalah merge state terbaru per item, bukan append ledger.
+- Operator wajib mengisi waktu snapshot/export dari Shopee.
+- Provenance disimpan melalui `source_snapshot_at` dan `source_snapshot_file`.
+- Snapshot lebih lama tidak boleh menimpa field state terbaru.
+- Status tidak boleh mundur.
+- Nilai terisi tidak boleh diturunkan menjadi kosong atau versi tersamarkan seperti `******`.
+- Bila waktu snapshot belum membuktikan data incoming lebih baru, konflik nilai terisi ditahan secara konservatif.
+- Preview harus membedakan row baru, update aman, identik, dan field yang dipertahankan.
+
+### Validasi sebelum import
+
+- Header schema harus valid.
+- Composite key tidak boleh kosong.
+- Composite key duplicate di dalam workbook harus ditolak sebelum preview/import.
+- Nominal IDR bertitik harus diparse sebagai nominal penuh, bukan pecahan desimal.
+- Seluruh import berada dalam satu database transaction; gagal batch berarti rollback seluruh snapshot.
+
+Implementasi utama:
 
 ```text
-data_sample/
+webapp/app/api/upload/route.ts
+webapp/lib/order-all-import.js
+webapp/test/order-all-import.test.mjs
 ```
 
-### Database
+---
 
-- Database MySQL remote cPanel.
-- Environment names:
+## 4. Income — Kontrak RAW Package
+
+### Prinsip dasar
+
+Income adalah **paket report** berkala. Jangan dipaksa menjadi satu table current-state atau di-upsert lintas export berdasarkan `No. Pesanan`.
+
+Setiap paket menyimpan:
+
+```text
+income_report_imports
+  Parent/provenance per workbook: nama file, SHA-256, periode, Summary, hasil rekonsiliasi.
+
+income_penghasilan_raw
+  Seluruh row Penghasilan view Order dan Sku.
+  Identity RAW: (income_report_import_id, source_excel_row).
+
+income_adjustments_raw
+  Event Adjustment per import + source_excel_row.
+
+income_shipping_fee_discrepancies_raw
+  Exception Selisih Ongkir per import + source_excel_row.
+```
+
+### Sheet dan fungsi
+
+- `Penghasilan` adalah sumber settlement RAW utama.
+- `Summary` adalah metadata dan target rekonsiliasi; bukan tabel transaksi.
+- `Adjustment` adalah event terpisah, bukan nilai yang otomatis ditambahkan ke setiap payout.
+- `Shipping Fee Discrepancy` adalah exception/audit ongkir.
+- `Seller Fee` bersifat audit-only pada fase ini; bukan source payout/profit utama.
+
+### Dua grain Penghasilan
+
+- **`Order`**: total settlement per `No. Pesanan`; dipakai untuk rekonsiliasi dan tampilan order-level.
+- **`Sku`**: rincian/alokasi settlement per item; harus disimpan untuk HPP dan profit item-level nanti.
+- Jangan menghitung kedua view bersama-sama karena akan double count.
+- Semua nominal disimpan dengan tanda sumber asli. Jangan memakai `ABS()` atau membalik tanda sebelum model financial disetujui.
+
+### Ketentuan import
+
+1. Exact SHA-256 yang sudah ada adalah duplicate/no-op.
+2. Workbook berbeda walaupun periodenya overlap tetap disimpan sebagai RAW package terpisah.
+3. Semua section satu workbook di-import dalam satu transaction.
+4. Summary `Total yang Dilepas` harus cocok dengan signed total `Penghasilan` view `Order`; mismatch memblok import.
+5. Parser mencari header berdasarkan nama field yang diperlukan, bukan asumsi posisi header.
+6. Header display yang sama harus mempunyai canonical key berbeda agar payload tidak tertimpa.
+7. Income boleh memiliki order yang belum ada pada snapshot `Order.all` yang tersedia karena tanggal dana dilepas dan waktu pesanan dibuat berbeda. Gunakan `LEFT JOIN`; jangan membuat foreign key wajib ke `order_all`.
+
+Implementasi utama:
+
+```text
+webapp/lib/income-raw-import.js
+webapp/lib/income-raw-db.js
+webapp/scripts/migrate-income-raw.js
+webapp/app/api/income/route.ts
+webapp/app/income/page.tsx
+webapp/test/income-raw-import.test.mjs
+```
+
+---
+
+## 5. Data Model Live dan Batas Legacy
+
+### Source of truth aktif
+
+```text
+order_all
+income_report_imports
+income_penghasilan_raw
+income_adjustments_raw
+income_shipping_fee_discrepancies_raw
+```
+
+### Artefak legacy — jangan dijadikan acuan baru
+
+- Table `orders` bukan source of truth untuk `Order.all`.
+- Table `income_penghasilan` adalah artefak legacy dan bukan kontrak Income RAW.
+- Route/halaman Profit lama belum tervalidasi terhadap fondasi RAW baru.
+- `webapp/database/schema.sql` dan `webapp/scripts/setup-db.js` tidak boleh dipercaya tanpa membandingkan DDL live.
+- Ada helper Income legacy dalam `webapp/app/api/upload/route.ts`; jalur runtime Income yang benar menggunakan `parseIncomePackage()` dan `importIncomePackage()`. Jangan memperluas helper legacy itu.
+
+---
+
+## 6. UI dan Jalur Operasional Saat Ini
+
+### Halaman aktif
+
+```text
+/upload  → preview dan import Order.all / Income / Master
+/orders  → pembacaan order_all
+/income  → pembacaan paket Income RAW
+```
+
+Di halaman Income:
+
+```text
+Penghasilan
+  ├─ Per Pesanan (view Order)
+  └─ Per SKU      (view Sku)
+Penyesuaian
+Selisih Ongkir
+Semua package Income dalam satu tabel lintas report
+```
+
+- Dropdown `Report yang ditampilkan` sudah dihapus.
+- Tabel Income membaca seluruh package melalui `JOIN income_report_imports` dan pagination.
+- Setiap row membawa provenance report: file, periode, import ID, view, dan source row.
+- `Per Pesanan` dan `Per SKU` tetap terpisah agar settlement tidak double count.
+- Summary `Total yang Dilepas` tidak dijumlahkan lintas package karena periode export dapat overlap.
+- `Adjustment` dan `Selisih Ongkir` tetap menjadi section terpisah karena struktur row dan maknanya berbeda.
+
+---
+
+## 7. Akses, Environment, dan Security
+
+### Environment names
 
 ```text
 DB_HOST
@@ -112,320 +228,87 @@ DB_PASSWORD
 DB_NAME
 DASHBOARD_BASIC_AUTH_USER
 DASHBOARD_BASIC_AUTH_PASSWORD
+DASHBOARD_AUTH_ENABLED
 ```
 
-- Local development: `webapp/.env.local`.
-- Production: Vercel Production Environment Variables.
-- Jangan tulis credential di README, source code, Git, log, atau output chat.
+- Local development memakai `webapp/.env.local`.
+- Production memakai Vercel Production Environment Variables.
+- Source default adalah protected Basic Auth.
+- `DASHBOARD_AUTH_ENABLED=false` adalah mode public sementara yang juga melewati pemeriksaan Basic Auth di mutating route; same-origin, schema, transaction, dan file guard tetap berlaku.
+- Audit production terakhir menunjukkan endpoint dapat dibuka tanpa Basic Auth. Ini harus diperlakukan sebagai **temporary public mode** sampai user memutuskan mengaktifkan proteksi lagi.
+- Jangan mengubah mode access atau credential tanpa persetujuan eksplisit user.
 
-### Deploy
+### Raw data dan Git
 
-Push ke `master` memicu auto-deploy Vercel.
-
-```bash
-git push origin master
-```
+- `Archive/` di-ignore karena berisi backup lokal/database/customer data.
+- Raw workbook Income baru dapat muncul sebagai untracked file di `data_sample/`.
+- Jangan memakai `git add -A` atau commit raw report tanpa arahan eksplisit user.
 
 ---
 
-## 4. Order.all — Kontrak Raw Import
+## 8. Verifikasi Aman
 
-### Source dan struktur
-
-- Satu workbook harus punya sheet `orders`.
-- Header harus persis cocok dengan 50 header export Shopee yang dikenal.
-- Semua nilai raw report, termasuk nominal, quantity, dan tanggal, dapat tersimpan sebagai string Excel. Jangan mengandalkan type native Excel.
-- Waktu valid memakai pola `YYYY-MM-DD HH:mm`.
-- Blank dan `-` berarti data belum tersedia; normalisasi ke `NULL` pada field yang nullable.
-
-### Grain data
-
-Satu row = satu item/variasi dalam satu pesanan.
-
-```text
-no_pesanan + nomor_referensi_sku + nama_variasi
-```
-
-Implikasi:
-
-- Multi-item order menghasilkan beberapa row dengan `no_pesanan` yang sama.
-- `Total Pembayaran` berada pada grain order dan dapat berulang pada setiap item row. Jangan menjumlahkannya per item saat membangun laporan finansial.
-- SKU, variasi, `jumlah`, `returned_quantity`, dan HPP berada pada grain item.
-- Status return dapat berlaku parsial di satu item/variasi; jangan menganggap return berlaku untuk semua item dalam order.
-
-### Snapshot behaviour
-
-Export dengan period berbeda dapat memiliki order yang sama karena jendela export overlap. Snapshot yang lebih baru dapat memperbarui:
-
-- status pesanan;
-- resi;
-- return/cancellation state;
-- alamat;
-- jadwal pengiriman;
-- voucher/diskon;
-- ongkir;
-- total pembayaran;
-- waktu selesai.
-
-Karena itu, import adalah **merge state terbaru per item**, bukan append ledger.
-
-### Duplicate dan update
-
-| Kondisi | Aksi |
-|---|---|
-| Composite key belum ada | INSERT + simpan provenance snapshot |
-| Composite key ada, seluruh field mapped sama | SKIP; provenance dapat disematkan sekali pada row legacy yang clean |
-| Snapshot punya waktu lebih baru dan tidak menurunkan kualitas field | UPDATE |
-| Snapshot lebih lama | BLOCK seluruh perbedaan; DB tetap dipakai |
-| Waktu sama atau provenance belum ada, tetapi nilai terisi konflik | HOLD/BLOCK; butuh snapshot yang terbukti lebih baru |
-| File hanya berisi update aman, tanpa row baru | UPDATE tetap diizinkan |
-
-### Guards saat update
-
-- Setiap `Order.all` wajib membawa waktu saat snapshot/report diexport dari Shopee. Nama file dan waktu order tidak dipakai sebagai penentu freshness.
-- Status ranked bersifat monotonic: tidak boleh mundur, bahkan bila sebuah snapshot yang diinput diberi waktu lebih baru.
-- Snapshot yang lebih lama tidak boleh menimpa field mana pun.
-- Nilai terisi tidak boleh diturunkan menjadi kosong atau versi tersamarkan (`******`).
-- Bila status sama tetapi nilai terisi berbeda dan belum ada provenance yang membuktikan incoming lebih baru, database dipertahankan secara konservatif.
-- Provenance per item tersimpan di `source_snapshot_at` dan `source_snapshot_file`.
-- Preview wajib membedakan `Update Aman` dari perbedaan yang diblok/dipertahankan.
-
-> Lifecycle `Batal`, return, dan refund belum boleh disederhanakan sebagai status linear sempurna. Saat menambah rule baru, validasi dulu dengan report finansial terkait.
-
----
-
-## 5. Database Live yang Dipakai Sekarang
-
-### Source of truth aktif untuk tahap ini
-
-```text
-order_all
-```
-
-- Unique index live: `uk_order_item` pada composite key item.
-- Gunakan `SHOW CREATE TABLE order_all` untuk melihat DDL nyata sebelum migration.
-- Jangan memakai table `orders` untuk flow `Order.all` saat ini; table tersebut adalah artefak lama dan belum dipakai oleh importer aktif.
-- Table/route profit lama belum boleh dianggap valid karena masih bergantung pada model `orders` dan report finansial yang belum dianalisa ulang.
-
-### Backup recovery terakhir
-
-Sebelum repair nominal dilakukan backup lokal:
-
-```text
-Archive/order_all-pre-repair-20260807-204459.json
-```
-
-- Berisi snapshot database dan DDL sebelum repair.
-- Diproteksi oleh `.gitignore`; jangan commit karena mengandung customer/order data.
-- Repair script bersifat idempotent: dry-run setelah repair harus menunjukkan `rows_requiring_currency_repair: 0`.
-
----
-
-## 6. Implementasi Penting
-
-### Import route
-
-```text
-webapp/app/api/upload/route.ts
-```
-
-Tanggung jawab:
-
-- detect report;
-- exact header validation untuk `Order.all`;
-- preview DB comparison;
-- full-field diff;
-- status/resi regression guard;
-- transactional `INSERT ... ON DUPLICATE KEY UPDATE`;
-- raw import `Order.all`, Income, dan Master.
-
-### Shared Order.all logic
-
-```text
-webapp/lib/order-all-import.js
-```
-
-Memuat:
-
-- `parseIdr()`;
-- `parseSnapshotAt()`;
-- `validateOrderAllHeaders()`;
-- `validateOrderAllCompositeKeys()`;
-- `shouldAllowImport()`.
-
-### Dashboard protection
-
-```text
-webapp/proxy.ts
-webapp/lib/dashboard-auth.js
-```
-
-- `proxy.ts` memakai Basic Auth environment-only untuk page dan `/api/*`.
-- Mutating route tetap melakukan validasi auth dan same-origin sendiri.
-- Tidak ada credential Basic Auth di Git, README, atau source.
-
-### Snapshot metadata migration
-
-```text
-webapp/scripts/migrate-order-all-snapshot-metadata.js
-```
-
-Default dry-run membaca DDL live tanpa mutasi. `--apply` hanya menambah kolom metadata yang belum ada.
-
-### Currency repair utility
-
-```text
-webapp/scripts/repair-order-all-currency.js
-```
-
-Mode aman default:
-
-```bash
-node scripts/repair-order-all-currency.js
-```
-
-Mode mutasi DB, hanya sesudah backup tervalidasi:
-
-```bash
-node scripts/repair-order-all-currency.js --apply
-```
-
-### Regression test
-
-```text
-webapp/test/order-all-import.test.mjs
-```
-
-Jalankan:
+Jalankan dari aplikasi:
 
 ```bash
 cd /home/yogaimawan/Dokumentasi/shopee_profit_estimation/webapp
 ```
 
-```bash
-npm test
-```
-
-### Build
-
-```bash
-npm run build
-```
-
----
-
-## 7. Verifikasi sebelum Mengubah Import Order.all
-
-Wajib jalankan:
-
-```bash
-cd /home/yogaimawan/Dokumentasi/shopee_profit_estimation/webapp
-```
+Test regression:
 
 ```bash
 npm test
 ```
+
+Typecheck:
 
 ```bash
 ./node_modules/.bin/tsc --noEmit --incremental false
 ```
 
+Build production lokal:
+
 ```bash
 npm run build
 ```
 
-Untuk check raw/DB tanpa mutasi:
-
-```bash
-node scripts/repair-order-all-currency.js
-```
-
-Hasil yang sehat:
-
-- `raw_latest_composite_rows` sama dengan `db_rows`;
-- `missing_in_db: 0`;
-- `unexpected_db_rows: 0`;
-- `rows_requiring_currency_repair: 0`.
-
-Untuk production health, gunakan Basic Auth dari environment lokal dan jangan paste credential ke command history:
-
-```bash
-cd /home/yogaimawan/Dokumentasi/shopee_profit_estimation/webapp
-```
+Dry-run migration Income RAW, tanpa mutasi:
 
 ```bash
 set -a
+```
+
+```bash
 . ./.env.local
+```
+
+```bash
 set +a
-curl -sS -u "$DASHBOARD_BASIC_AUTH_USER:$DASHBOARD_BASIC_AUTH_PASSWORD" https://webapp-umber-five.vercel.app/api/health
 ```
+
+```bash
+node scripts/migrate-income-raw.js
+```
+
+Health production:
+
+```bash
+curl -sS https://webapp-umber-five.vercel.app/api/health
+```
+
+Jika Basic Auth sudah diaktifkan lagi, gunakan credential environment lokal tanpa menulis nilai credential ke command atau dokumentasi.
 
 ---
 
-## 8. Report yang Tersedia tetapi Belum Boleh Diolah
+## 9. Langkah Berikutnya
 
-Folder `data_sample/` berisi report tambahan sebagai bahan analisa berikutnya:
+Income lintas package sudah diimplementasikan dan lolos test/typecheck/build. Pilihan report berikutnya perlu diputuskan bersama user.
 
-- `Income.sudah dilepas...xlsx`
-- `my_balance_transaction_report...xlsx`
-- `Order.failed_delivery...xlsx`
-- `Order.cancellation...xlsx`
-- `Order.return_refund...xls`
-- `master.xlsx`
-- report iklan CSV
+Urutan yang direkomendasikan:
 
-Urutan next yang disarankan:
+1. Analisa **Balance Transaction**: struktur, tipe transaksi, lokasi `No. Pesanan`, settlement, adjustment, dan biaya iklan.
+2. Analisa return/refund, failed delivery, dan cancellation terhadap Balance/Income.
+3. Diskusikan model financial: order header, item, settlement package, HPP, dan alokasi biaya.
+4. Baru desain financial layer, actual profit, dan estimation profit.
 
-1. Analisa penuh **Income Penghasilan**: sheet, header, grain, key, duplicate, nominal sign, dan keterkaitan terhadap `Order.all`.
-2. Analisa **Balance**: tipe transaksi, lokasi No. Pesanan, settlement, adjustment, dan biaya iklan.
-3. Analisa **Return/Refund** serta Failed Delivery dan Cancellation.
-4. Diskusi model data: order header vs item vs financial transaction.
-5. Baru desain schema final dan logic estimasi/actual profit.
-
----
-
-## 9. Struktur Project
-
-```text
-shopee_profit_estimation/
-├── README.md
-├── .gitignore
-├── Archive/                         # backup lokal, di-ignore Git
-├── data_sample/                     # raw report export + reference
-└── webapp/
-    ├── app/
-    │   ├── upload/page.tsx
-    │   └── api/upload/route.ts
-    ├── lib/
-    │   └── order-all-import.js
-    ├── scripts/
-    │   └── repair-order-all-currency.js
-    ├── test/
-    │   └── order-all-import.test.mjs
-    ├── database/                    # legacy; jangan jadikan DDL live tanpa verifikasi
-    ├── package.json
-    └── .env.local                   # local only, tidak di-commit
-```
-
----
-
-## 10. Handoff untuk Agent Baru
-
-Mulai dengan urutan ini:
-
-1. Baca README ini penuh.
-2. Cek `git status --short` dan jangan menimpa kerja yang belum committed.
-3. Jika menyentuh `Order.all`, baca:
-   - `webapp/app/api/upload/route.ts`
-   - `webapp/lib/order-all-import.js`
-   - `webapp/test/order-all-import.test.mjs`
-4. Jalankan `npm test` sebelum dan setelah perubahan.
-5. Untuk query/DDL DB, inspeksi live dulu secara read-only. Jangan percaya schema legacy tanpa `SHOW CREATE TABLE`.
-6. Untuk report baru: lakukan Report → Analisa → Diskusi → Coding.
-7. Jangan melanjutkan profit calculation sampai Income, Balance, Return/Refund selesai dianalisa dan user menyetujui design-nya.
-
-**Commit terakhir yang membenahi Order.all import:**
-
-```text
-f9c5bac fix(order-all): protect snapshot imports
-```
+Untuk handoff detail agent berikutnya, baca `NEXTAGENTS.md` setelah README ini.

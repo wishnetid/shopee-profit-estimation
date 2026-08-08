@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createConnection } from 'mysql2/promise';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { buildIncomeQueryPlan } = require('../../../lib/income-query.js') as {
+  buildIncomeQueryPlan: (options?: Record<string, unknown>) => {
+    table: string;
+    selectSql: string;
+    whereSql: string;
+    params: unknown[];
+    orderSql: string;
+  };
+};
 
 const ALLOWED_SECTIONS = new Set(['penghasilan', 'adjustment', 'shipping']);
 const ALLOWED_VIEWS = new Set(['Order', 'Sku']);
@@ -16,34 +26,37 @@ export async function GET(request: NextRequest) {
     const sp = request.nextUrl.searchParams;
     const section = sp.get('section') || 'penghasilan';
     const view = sp.get('view') || 'Order';
-    const selectedImport = sp.get('importId');
     const page = Math.max(1, Number(sp.get('page') || 1));
     const limit = Math.min(100, Math.max(5, Number(sp.get('limit') || 50)));
     const search = (sp.get('search') || '').trim();
-    if (!ALLOWED_SECTIONS.has(section) || !ALLOWED_VIEWS.has(view)) return NextResponse.json({ error: 'Invalid Income query.' }, { status: 400 });
+    const sort = sp.get('sort') || 'report_period_from';
+    const direction = sp.get('direction') || 'desc';
+    if (!ALLOWED_SECTIONS.has(section) || (section === 'penghasilan' && !ALLOWED_VIEWS.has(view))) {
+      return NextResponse.json({ error: 'Invalid Income query.' }, { status: 400 });
+    }
 
     const [imports] = await conn.query(`SELECT id, source_file, source_sha256, report_period_from, report_period_to, summary_payload, summary_total_yang_dilepas, reconciliation_order_signed_total, reconciliation_difference, reconciliation_status, warnings_payload, imported_at FROM income_report_imports ORDER BY imported_at DESC, id DESC`) as any;
     const importRows = imports as any[];
-    const importId = selectedImport ? Number(selectedImport) : importRows[0]?.id;
-    if (!importId) return NextResponse.json({ success: true, imports: [], selectedImport: null, summary: null, data: [], total: 0, page, limit });
-    const selected = importRows.find((row) => Number(row.id) === importId);
-    if (!selected) return NextResponse.json({ error: 'Income import tidak ditemukan.' }, { status: 404 });
-
-    let table = 'income_penghasilan_raw';
-    let where = 'WHERE income_report_import_id = ?';
-    let params: any[] = [importId];
-    let orderBy = 'source_excel_row ASC';
-    if (section === 'penghasilan') { where += ' AND lihat_berdasarkan = ?'; params.push(view); }
-    if (section === 'adjustment') { table = 'income_adjustments_raw'; }
-    if (section === 'shipping') { table = 'income_shipping_fee_discrepancies_raw'; }
-    if (search) {
-      const col = section === 'adjustment' ? 'no_pesanan_terhubung' : 'no_pesanan';
-      where += ` AND ${col} LIKE ?`; params.push(`%${search}%`);
-    }
+    const plan = buildIncomeQueryPlan({ section, view, search, sort, direction });
     const offset = (page - 1) * limit;
-    const [rows] = await conn.query(`SELECT * FROM ${table} ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...params, limit, offset]) as any;
-    const [[count]] = await conn.query(`SELECT COUNT(*) AS total FROM ${table} ${where}`, params) as any;
-    return NextResponse.json({ success: true, imports: importRows, selectedImport: selected, summary: typeof selected.summary_payload === 'string' ? JSON.parse(selected.summary_payload) : selected.summary_payload, data: rows, total: count.total, page, limit, section, view });
+    const fromClause = `${plan.table} r INNER JOIN income_report_imports i ON i.id = r.income_report_import_id`;
+    const [rows] = await conn.query(`SELECT ${plan.selectSql} FROM ${fromClause} ${plan.whereSql} ORDER BY ${plan.orderSql}, r.id DESC LIMIT ? OFFSET ?`, [...plan.params, limit, offset]) as any;
+    const [[count]] = await conn.query(`SELECT COUNT(*) AS total FROM ${fromClause} ${plan.whereSql}`, plan.params) as any;
+    return NextResponse.json({
+      success: true,
+      imports: importRows,
+      packageCount: importRows.length,
+      selectedImport: null,
+      summary: null,
+      data: rows,
+      total: Number(count.total || 0),
+      page,
+      limit,
+      section,
+      view: section === 'penghasilan' ? view : null,
+      sort,
+      direction,
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Income query failed.' }, { status: 500 });
   } finally { await conn.end(); }

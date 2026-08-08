@@ -12,8 +12,53 @@ const {
   parseIncomePackage,
 } = incomeRawImport;
 import incomeRawDb from '../lib/income-raw-db.js';
+import { buildIncomeQueryPlan } from '../lib/income-query.js';
 
 const { buildIncomePreview, importIncomePackage } = incomeRawDb;
+
+test('buildIncomeQueryPlan reads every Income package and includes package provenance', () => {
+  const plan = buildIncomeQueryPlan({ section: 'penghasilan', view: 'Order' });
+
+  assert.equal(plan.table, 'income_penghasilan_raw');
+  assert.match(plan.whereSql, /r\.lihat_berdasarkan = \?/);
+  assert.doesNotMatch(plan.whereSql, /income_report_import_id/);
+  assert.match(plan.selectSql, /i\.source_file/);
+  assert.match(plan.selectSql, /i\.report_period_from/);
+  assert.match(plan.selectSql, /r\.income_report_import_id/);
+  assert.deepEqual(plan.params, ['Order']);
+});
+
+test('buildIncomeQueryPlan keeps the selected Penghasilan view separate', () => {
+  const plan = buildIncomeQueryPlan({ section: 'penghasilan', view: 'Sku' });
+
+  assert.match(plan.whereSql, /r\.lihat_berdasarkan = \?/);
+  assert.deepEqual(plan.params, ['Sku']);
+});
+
+test('buildIncomeQueryPlan parameterizes multi-term search and whitelists sorting', () => {
+  const plan = buildIncomeQueryPlan({
+    section: 'penghasilan',
+    view: 'Order',
+    search: 'ORDER-1\nORDER-2',
+    sort: 'source_file',
+    direction: 'asc',
+  });
+
+  assert.match(plan.whereSql, /LIKE \?/);
+  assert.equal(plan.params.length, 11);
+  assert.deepEqual(plan.params.slice(-10), [
+    '%ORDER-1%', '%ORDER-1%', '%ORDER-1%', '%ORDER-1%', '%ORDER-1%',
+    '%ORDER-2%', '%ORDER-2%', '%ORDER-2%', '%ORDER-2%', '%ORDER-2%',
+  ]);
+  assert.equal(plan.orderSql, 'i.source_file ASC');
+  assert.doesNotMatch(plan.orderSql, /ORDER-1|DROP|;/i);
+});
+
+test('buildIncomeQueryPlan rejects invalid section, view, and sort input', () => {
+  assert.throws(() => buildIncomeQueryPlan({ section: 'unknown' }), /Invalid Income section/);
+  assert.throws(() => buildIncomeQueryPlan({ view: 'Both' }), /Invalid Income view/);
+  assert.throws(() => buildIncomeQueryPlan({ sort: 'source_file; DROP TABLE income_penghasilan_raw' }), /Invalid Income sort/);
+});
 
 const projectRoot = path.resolve(import.meta.dirname, '../..');
 const dataSample = (name) => path.join(projectRoot, 'data_sample', name);
