@@ -1,9 +1,11 @@
 # Shopee Profit Estimation
 
-**Last updated:** 2026-08-08
+**Last updated:** 2026-08-09
 **Production:** https://webapp-umber-five.vercel.app
 **Repository:** https://github.com/wishnetid/shopee-profit-estimation
 **Branch:** `master`
+**Latest commit:** `c58e689` — `feat(income): show all raw report packages`
+**Latest deployment:** Vercel Production `Ready` — `dpl_6SWf2kBAT7G1GBEd3XCDeBKSgVmz`
 
 > Baca file ini penuh sebelum menyentuh project. Kondisi saat ini: fondasi RAW untuk **Order.all** dan **Income** sudah live. Profit final, Balance, HPP, return/refund, dan iklan belum boleh diasumsikan selesai.
 
@@ -157,6 +159,7 @@ Implementasi utama:
 webapp/lib/income-raw-import.js
 webapp/lib/income-raw-db.js
 webapp/scripts/migrate-income-raw.js
+webapp/lib/income-query.js
 webapp/app/api/income/route.ts
 webapp/app/income/page.tsx
 webapp/test/income-raw-import.test.mjs
@@ -213,6 +216,37 @@ Semua package Income dalam satu tabel lintas report
 - `Per Pesanan` dan `Per SKU` tetap terpisah agar settlement tidak double count.
 - Summary `Total yang Dilepas` tidak dijumlahkan lintas package karena periode export dapat overlap.
 - `Adjustment` dan `Selisih Ongkir` tetap menjadi section terpisah karena struktur row dan maknanya berbeda.
+- Tombol `Riwayat Import` masih tampil sebagai placeholder pasif; histori package sudah tercakup dalam tabel lintas report, tetapi tombol tersebut belum memiliki action khusus.
+
+### Kontrak API Income lintas package
+
+`GET /api/income` membaca semua package Income secara default. API tidak lagi memakai `importId` sebagai filter tampilan utama.
+
+Parameter query:
+
+```text
+section   = penghasilan | adjustment | shipping
+view      = Order | Sku                  # berlaku untuk section penghasilan
+page      = nomor halaman, default 1
+limit     = 5–100, default 50
+search    = satu atau beberapa istilah; pemisah newline atau ||
+sort      = kolom yang di-whitelist sesuai section
+direction = asc | desc
+```
+
+Response row Income Penghasilan membawa provenance:
+
+```text
+income_report_import_id
+source_file
+report_period_from
+report_period_to
+imported_at
+source_excel_row
+lihat_berdasarkan
+```
+
+Response juga memuat `packageCount`, `total`, `page`, `limit`, `section`, `view`, `sort`, dan `direction`. Query builder server-side berada di `webapp/lib/income-query.js`; table name, search column, dan sort column tidak menerima input SQL mentah dari client.
 
 ---
 

@@ -1,9 +1,11 @@
 # NEXTAGENTS — Shopee Profit Estimation
 
-**Last updated:** 2026-08-08
+**Last updated:** 2026-08-09
 **Production:** https://webapp-umber-five.vercel.app
 **Repository:** `wishnetid/shopee-profit-estimation`
 **Branch:** `master`
+**Latest commit:** `c58e689` — `feat(income): show all raw report packages`
+**Latest deployment:** Vercel Production `Ready` — `dpl_6SWf2kBAT7G1GBEd3XCDeBKSgVmz`
 
 > Mulai dengan membaca `README.md` penuh, lalu baca file ini. Jangan langsung coding, migration, import, atau mengubah konfigurasi. Fase RAW **Order.all** dan **Income** sudah live; report berikutnya belum dipilih user.
 
@@ -162,6 +164,25 @@ Semua package Income dalam satu tabel lintas report
 - Pagination, search, dan sort menggunakan kontrak query yang sama-sama di-whitelist.
 - `Per Pesanan` dan `Per SKU` tetap terpisah; jangan menjumlahkan keduanya.
 - Summary lintas package tidak dijumlahkan karena periode Income dapat overlap.
+- Tombol `Riwayat Import` masih placeholder pasif. Histori package sudah terlihat melalui tabel lintas report; tombol belum mempunyai action khusus.
+
+### Kontrak API Income lintas package
+
+`GET /api/income` membaca semua package Income dan melakukan join child RAW ke `income_report_imports`. Filter `importId` tidak lagi digunakan oleh UI.
+
+Parameter yang didukung:
+
+```text
+section   = penghasilan | adjustment | shipping
+view      = Order | Sku                  # untuk penghasilan
+page      = default 1
+limit     = 5–100, default 50
+search    = istilah newline-delimited atau dipisah ||
+sort      = key sort yang di-whitelist per section
+direction = asc | desc
+```
+
+Setiap row combined Income membawa `income_report_import_id`, `source_file`, `report_period_from`, `report_period_to`, `imported_at`, dan `source_excel_row`. Query builder dan whitelist berada di `webapp/lib/income-query.js`.
 
 ---
 
@@ -284,6 +305,7 @@ webapp/app/api/upload/route.ts                 Upload route + cabang importer ak
 webapp/lib/order-all-import.js                 Kontrak Order.all
 webapp/lib/income-raw-import.js                Parser package Income
 webapp/lib/income-raw-db.js                    Preview/transaction Income RAW
+webapp/lib/income-query.js                     Query lintas package + whitelist search/sort
 webapp/app/api/income/route.ts                 Query Income RAW
 webapp/app/income/page.tsx                     UI Income
 webapp/test/*.test.mjs                         Regression test
