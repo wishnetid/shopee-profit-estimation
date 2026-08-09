@@ -15,8 +15,10 @@ export default function SettingsPage() {
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [clearing, setClearing] = useState(false);
+  const [clearingSharedSku, setClearingSharedSku] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [confirmedStoreId, setConfirmedStoreId] = useState<string | null>(null);
+  const [confirmedSharedSku, setConfirmedSharedSku] = useState(false);
   const [loadedStoreId, setLoadedStoreId] = useState<string | null>(null);
   const requestSequence = useRef(0);
 
@@ -46,6 +48,7 @@ export default function SettingsPage() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setConfirmedStoreId(null);
+      setConfirmedSharedSku(false);
       void fetchTables();
     }, 0);
     return () => {
@@ -75,6 +78,28 @@ export default function SettingsPage() {
       setMessage({ type: 'error', text: cause instanceof Error ? cause.message : 'Clear data toko gagal.' });
     } finally {
       setClearing(false);
+    }
+  };
+
+  const clearSharedSku = async () => {
+    if (!confirmedSharedSku) return;
+    setClearingSharedSku(true);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/settings/database', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'clear_shared_sku', confirmation: true }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Reset Master SKU shared gagal.');
+      setMessage({ type: 'success', text: data.message });
+      setConfirmedSharedSku(false);
+      await fetchTables();
+    } catch (cause) {
+      setMessage({ type: 'error', text: cause instanceof Error ? cause.message : 'Reset Master SKU shared gagal.' });
+    } finally {
+      setClearingSharedSku(false);
     }
   };
 
@@ -181,8 +206,8 @@ export default function SettingsPage() {
                   </div>
                 ) : (
                   <button
-                    onClick={() => setConfirmedStoreId(storeId)}
-                    disabled={storeRows === 0 || clearing || storeLoading || !storeId}
+                    onClick={() => { setConfirmedSharedSku(false); setConfirmedStoreId(storeId); }}
+                    disabled={storeRows === 0 || clearing || clearingSharedSku || storeLoading || !storeId}
                     className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -198,11 +223,53 @@ export default function SettingsPage() {
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" />
             <div>
-              <p className="mb-1 font-semibold">Batas clear data</p>
+              <p className="mb-1 font-semibold">Batas clear data toko</p>
               <p>
-                Tombol clear hanya menghapus Order.all dan package Income milik toko aktif. Master SKU shared tidak ikut dihapus.
+                Tombol clear toko hanya menghapus Order.all dan package Income milik toko aktif. Master SKU shared tidak ikut dihapus.
                 {sharedTables.length > 0 ? ` ${sharedTables.length} tabel shared tetap dipertahankan.` : ''}
               </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800 lg:p-4">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-600" />
+            <div className="min-w-0 flex-1">
+              <p className="mb-1 font-semibold">Reset Master SKU Shared</p>
+              <p>
+                Menghapus semua package dan row Master SKU untuk seluruh toko. Order.all dan Income tidak ikut dihapus.
+              </p>
+              {confirmedSharedSku ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="text-red-700">
+                    Reset semua Master SKU shared untuk seluruh toko? Aksi ini tidak bisa dibatalkan.
+                  </span>
+                  <button
+                    onClick={() => void clearSharedSku()}
+                    disabled={clearingSharedSku || clearing}
+                    className="rounded-lg bg-red-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-800 disabled:opacity-50"
+                  >
+                    {clearingSharedSku ? 'Mereset...' : 'Ya, Reset Master SKU'}
+                  </button>
+                  <button
+                    onClick={() => setConfirmedSharedSku(false)}
+                    disabled={clearingSharedSku}
+                    className="rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs text-red-700 hover:bg-red-100 disabled:opacity-50"
+                  >
+                    Batal
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setConfirmedStoreId(null); setConfirmedSharedSku(true); }}
+                  disabled={sharedTables.every(table => table.rows === 0) || clearing || clearingSharedSku}
+                  className="mt-3 flex items-center gap-2 rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Reset Master SKU Shared
+                </button>
+              )}
             </div>
           </div>
         </div>

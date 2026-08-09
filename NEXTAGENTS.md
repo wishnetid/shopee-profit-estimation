@@ -26,7 +26,7 @@
 - Child Income membaca scope melalui parent `income_report_imports`.
 - Master SKU tetap shared/global.
 - Orders, Income, Upload, Settings, dan Dashboard mengikuti active store.
-- Settings hanya menyediakan `clear_store`; Master SKU shared tidak ikut clear.
+- Release production saat ini hanya memiliki `clear_store` untuk data operasional store aktif. Working tree menambahkan tombol merah `clear_shared_sku` untuk reset Master SKU global; belum commit/push/deploy.
 - Basic Auth berlaku untuk page dan API.
 - Profit legacy disengaja mengembalikan `503 PROFIT_NOT_READY`.
 - GitHub `master` dan Vercel Production sudah memuat release `d143899`.
@@ -170,6 +170,7 @@ webapp/test/income-raw-import.test.mjs
 - Shared semua store.
 - Tidak memakai `store_id`.
 - Tidak ikut `clear_store`.
+- Working tree menambahkan aksi global `clear_shared_sku` dengan confirmation eksplisit; sebelum release, child `sku_master_raw` wajib dihapus sebelum parent `sku_report_imports`.
 - Halaman `/sku` tidak perlu active-store scope kecuali produk memutuskan override SKU per store pada fase lain.
 
 ---

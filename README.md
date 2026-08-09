@@ -95,7 +95,8 @@ Income RAW child
 - Saat ini `storeId` adalah selector scope untuk satu admin, **bukan** otorisasi tenant antar-user.
 - Jika nanti ada credential/user berbeda, wajib tambahkan identity session dan ownership check `store.owner_user_id` sebelum release multi-user.
 - `clear_store` hanya dapat menghapus data operasional store yang dipilih dan dikonfirmasi.
-- Clear tidak menyentuh Master SKU shared.
+- Clear store tidak menyentuh Master SKU shared.
+- Tombol reset global `clear_shared_sku` untuk Master SKU shared sudah ditambahkan di working tree, tetapi belum commit/push/deploy. Saat release nanti, ia tidak membutuhkan `storeId`, menghapus child `sku_master_raw` sebelum parent `sku_report_imports`, dan tidak menghapus Order.all atau Income.
 
 ---
 
@@ -233,7 +234,8 @@ webapp/test/income-raw-import.test.mjs
 ```
 
 - UI mengikat confirmation dan completion ke store yang sama.
-- Jangan memanggil endpoint clear untuk smoke test atau eksperimen.
+- Working tree menambahkan tombol merah terpisah **Reset Master SKU Shared** dengan confirmation kedua. Aksi ini belum dideploy; saat release akan berlaku global untuk seluruh toko, menghapus `sku_master_raw` lalu `sku_report_imports`, dan tidak menyentuh Order.all atau Income.
+- Jangan memanggil endpoint clear/reset untuk smoke test atau eksperimen.
 
 ### API penting
 

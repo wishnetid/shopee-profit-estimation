@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { RowDataPacket } from 'mysql2/promise';
 import { getConnection } from '@/lib/db';
 import { requireStoreId } from '../../../../lib/store';
 
@@ -70,8 +71,40 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ success: false, error: 'Malformed JSON.' }, { status: 400 });
   }
-  if (body.action !== 'clear_store' || body.confirmation !== true) {
-    return NextResponse.json({ success: false, error: 'Clear toko membutuhkan konfirmasi eksplisit.' }, { status: 400 });
+  if (body.confirmation !== true) {
+    return NextResponse.json({ success: false, error: 'Reset membutuhkan konfirmasi eksplisit.' }, { status: 400 });
+  }
+
+  if (body.action === 'clear_shared_sku') {
+    const conn = await getConnection();
+    try {
+      await conn.beginTransaction();
+      const [beforeRows] = await conn.execute<(RowDataPacket & { sku_import_count: number; sku_master_count: number })[]>(`
+        SELECT
+          (SELECT COUNT(*) FROM sku_report_imports) AS sku_import_count,
+          (SELECT COUNT(*) FROM sku_master_raw) AS sku_master_count
+      `);
+      const before = beforeRows[0];
+
+      await conn.execute('DELETE FROM sku_master_raw');
+      await conn.execute('DELETE FROM sku_report_imports');
+      await conn.commit();
+
+      return NextResponse.json({
+        success: true,
+        message: 'Master SKU shared berhasil di-reset untuk semua toko.',
+        removed: Object.fromEntries(Object.entries(before).map(([key, value]) => [key, Number(value)])),
+      });
+    } catch (error) {
+      await conn.rollback();
+      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Reset Master SKU shared gagal.' }, { status: 500 });
+    } finally {
+      conn.release();
+    }
+  }
+
+  if (body.action !== 'clear_store') {
+    return NextResponse.json({ success: false, error: 'Aksi reset tidak dikenali.' }, { status: 400 });
   }
   const storeCheck = await requireStoreId(body.storeId == null ? null : String(body.storeId));
   if (storeCheck.response) return storeCheck.response;

@@ -68,13 +68,33 @@ test('Settings API uses a non-reserved alias for row counts', () => {
   assert.doesNotMatch(source, /AS rows\b/);
 });
 
-test('Settings API exposes only store-scoped destructive behavior', () => {
+test('Settings API keeps store reset scoped and rejects unknown reset actions', () => {
   const source = fs.readFileSync(path.resolve(process.cwd(), 'app/api/settings/database/route.ts'), 'utf8');
   assert.match(source, /body\.action !== ['"]clear_store['"]/);
   assert.match(source, /DELETE FROM order_all WHERE store_id = \?/);
   assert.match(source, /DELETE FROM income_report_imports WHERE store_id = \?/);
+  assert.match(source, /Aksi reset tidak dikenali/);
   assert.doesNotMatch(source, /TRUNCATE TABLE/);
   assert.doesNotMatch(source, /clear_all/);
+});
+
+test('Settings API provides an explicit confirmed global Master SKU reset that deletes children before parents', () => {
+  const source = fs.readFileSync(path.resolve(process.cwd(), 'app/api/settings/database/route.ts'), 'utf8');
+  assert.match(source, /body\.action === ['"]clear_shared_sku['"]/);
+  assert.match(source, /DELETE FROM sku_master_raw/);
+  assert.match(source, /DELETE FROM sku_report_imports/);
+  assert.ok(source.indexOf('DELETE FROM sku_master_raw') < source.indexOf('DELETE FROM sku_report_imports'));
+  assert.match(source, /confirmation !== true/);
+});
+
+test('Settings UI gives Master SKU reset a separate global warning and explicit confirmation', () => {
+  const source = fs.readFileSync(path.resolve(process.cwd(), 'app/settings/page.tsx'), 'utf8');
+  assert.match(source, /Reset Master SKU Shared/);
+  assert.match(source, /seluruh toko/);
+  assert.match(source, /confirmedSharedSku/);
+  assert.match(source, /action: 'clear_shared_sku', confirmation: true/);
+  assert.match(source, /Ya, Reset Master SKU/);
+  assert.match(source, /onClick=\{\(\) => \{ setConfirmedSharedSku\(false\); setConfirmedStoreId\(storeId\); \}\}/);
 });
 
 test('mutation routes do not inherit the public read-mode bypass', () => {
