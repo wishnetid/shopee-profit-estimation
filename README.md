@@ -1,6 +1,6 @@
 # Shopee Profit Estimation
 
-**Last updated:** 2026-08-09 18:03 WIB
+**Last updated:** 2026-08-09 18:53 WIB
 
 **Production:** https://webapp-umber-five.vercel.app
 
@@ -8,9 +8,9 @@
 
 **Branch:** `master`
 
-**Release commit:** `d8faa04` — `docs: sync live import workflow state`
+**Code release commit:** `caf2d9f` — `fix(income): handle legacy aggregate fee breakdown`
 
-**Vercel production:** `dpl_9NLkNTAYCMJe3Q2nccx8a9mhUBPP` — `Ready`
+**Code verification deployment:** `dpl_7rbfVnZbRFPc9FMmGHWX95XUhHjo` — `Ready`
 
 > Baca file ini penuh sebelum menyentuh project. App production mengelola RAW **Order.all**, **Income**, **Master SKU shared**, dan **multi-toko**. Financial/profit final belum tersedia; jangan menyimpulkan profit dari data RAW yang ada.
 
@@ -178,6 +178,17 @@ income_shipping_fee_discrepancies_raw
 5. Parser mencari header berdasarkan nama field yang diperlukan, bukan posisi fixed.
 6. Header display duplikat memakai canonical key berbeda agar payload tidak tertimpa.
 7. Income boleh belum mempunyai pasangan `Order.all`; gunakan `LEFT JOIN`, bukan foreign key wajib ke order.
+
+### Variasi layout legacy fee
+
+- Bila header `Biaya Layanan` tersedia, nilainya adalah aggregate fee.
+- Breakdown yang dapat tampil bersamaan dan sudah tercakup dalam aggregate tersebut adalah:
+  - `Biaya Layanan Promo XTRA`
+  - `Biaya Layanan Gratis Ongkir XTRA (Kategori F)`
+  - `Biaya Gratis Ongkir XTRA - Ukuran Biasa (Kategori F)`
+- Breakdown tersebut tetap dipertahankan di `raw_payload`, tetapi tidak ikut dijumlahkan lagi dalam signed checksum `Penghasilan / Order`.
+- Parser hanya menerapkan pengecualian ini bila header aggregate `Biaya Layanan` ada. Layout non-aggregate tetap menjumlahkan komponen yang tersedia seperti source.
+- Gate `Summary 3. Total yang Dilepas` tetap wajib matched; mismatch tetap memblok import, bukan dibypass.
 
 ### Dua grain Penghasilan
 

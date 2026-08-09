@@ -1,6 +1,6 @@
 # NEXTAGENTS — Shopee Profit Estimation
 
-**Last updated:** 2026-08-09 18:03 WIB
+**Last updated:** 2026-08-09 18:53 WIB
 
 **Production:** https://webapp-umber-five.vercel.app
 
@@ -8,9 +8,9 @@
 
 **Branch:** `master`
 
-**Current release:** `d8faa04` — `docs: sync live import workflow state`
+**Code release:** `caf2d9f` — `fix(income): handle legacy aggregate fee breakdown`
 
-**Vercel production:** `dpl_9NLkNTAYCMJe3Q2nccx8a9mhUBPP` — `Ready`
+**Code verification deployment:** `dpl_7rbfVnZbRFPc9FMmGHWX95XUhHjo` — `Ready`
 
 > Mulai dengan membaca `README.md` penuh, lalu file ini. Jangan langsung coding, migration, import, clear, reset, atau hapus store. RAW Order.all, Income, Master SKU shared, serta multi-store sudah live. Profit final belum tersedia.
 
@@ -46,7 +46,7 @@ Master SKU
 - `DELETE /api/stores` menghapus store kosong dengan confirmation eksplisit.
 - Basic Auth berlaku untuk page dan API.
 - Profit legacy disengaja mengembalikan `503 PROFIT_NOT_READY`.
-- GitHub `master` dan Vercel Production memuat release `386d38b`.
+- GitHub `master` dan Vercel Production memuat source release `caf2d9f` untuk legacy aggregate-fee Income.
 
 ### Belum selesai
 
@@ -170,6 +170,9 @@ webapp/test/order-all-import.test.mjs
 - Summary hanya reconciliation metadata.
 - Adjustment/Shipping Fee Discrepancy tetap section terpisah.
 - Income dapat tidak mempunyai pasangan snapshot Order.all; jangan tambahkan FK wajib ke order.
+- Jika header aggregate `Biaya Layanan` ada, jangan ikut menjumlahkan breakdown legacy yang sudah tercakup di dalamnya: `Biaya Layanan Promo XTRA`, `Biaya Layanan Gratis Ongkir XTRA (Kategori F)`, dan `Biaya Gratis Ongkir XTRA - Ukuran Biasa (Kategori F)`.
+- Breakdown tersebut wajib tetap ada di `raw_payload`; pengecualian hanya berlaku untuk signed checksum aggregate layout. Non-aggregate layout tidak boleh berubah.
+- Gate reconciliation `Summary 3. Total yang Dilepas` tetap fail-closed. Mismatch tidak boleh dibypass.
 
 Files:
 
@@ -298,14 +301,15 @@ confirmation: true untuk clear/reset/hapus
 
 ## 7. Quality dan Runtime
 
-Quality gate release source `386d38b`:
+Quality gate source release `caf2d9f`:
 
 ```text
-npm test                                      PASS
+npm test                                      64/65 PASS; 1 live-fixture baseline gagal karena hanya satu store tersisa
 ./node_modules/.bin/tsc --noEmit ...          PASS
 npm run build                                 PASS
 git diff --check                              PASS
 Independent read-only review                  PASS
+Production preview-only Income Mei            200; reconciliation matched; database tidak berubah
 ```
 
 Production sudah membuktikan:
