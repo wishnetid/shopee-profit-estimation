@@ -44,6 +44,21 @@ export async function getConnection() {
   return getPool().getConnection();
 }
 
+export async function withTransaction<T>(callback: (connection: mysql.PoolConnection) => Promise<T>): Promise<T> {
+  const connection = await getConnection();
+  try {
+    await connection.beginTransaction();
+    const result = await callback(connection);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
 export async function closePool() {
   if (pool) {
     await pool.end();

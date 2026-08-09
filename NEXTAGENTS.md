@@ -32,6 +32,29 @@
 
 **Batas penting:** jangan menganggap UI Profit lama atau table legacy sudah benar hanya karena masih ada di source.
 
+### Checkpoint lanjutan — multi-toko
+
+Database multi-toko sudah diterapkan live, sedangkan source implementation masih uncommitted dan belum dideploy. Backup code dan DB sudah dibuat sebelum perubahan.
+
+Yang sudah terpasang:
+
+- `users` + `stores` dengan empat toko aktif.
+- Scope `store_id` pada `order_all` dan `income_report_imports`.
+- Store-scoped unique keys dan foreign keys.
+- Active-store selector pada dashboard.
+- Scope pada read Order/Income, preview/import Order.all/Income, dan Settings.
+- Settings hanya boleh `clear_store` dengan `storeId` + konfirmasi eksplisit; SKU shared tidak disentuh.
+- Profit legacy API mengembalikan `503` dengan code `PROFIT_NOT_READY`; halaman Profit menjelaskan kenapa angka ditahan.
+- Test live read-only multi-toko ditambahkan pada `webapp/test/multi-store.test.mjs`.
+
+Yang masih menjadi gate:
+
+- Source belum commit/push/deploy; production masih memakai deployment lama.
+- Endpoint smoke test lokal/production untuk dua toko belum selesai.
+- Mode akses ditetapkan single-admin: satu Basic Auth dashboard mengelola semua toko; multi-user tenant authorization belum menjadi target fase ini.
+- `npm run lint` masih gagal pada baseline project; build dan typecheck sudah lulus.
+- `schema.sql`, README, dan handoff perlu diperlakukan sebagai dokumentasi sinkron, bukan pengganti DDL live.
+
 ---
 
 ## 2. Opening Procedure Wajib
@@ -137,8 +160,7 @@ webapp/test/income-raw-import.test.mjs
 ### Legacy yang jangan dipakai
 
 - `income_penghasilan` bukan kontrak RAW aktif.
-- Helper `previewIncome()` dan `importIncome()` legacy masih ada dalam `webapp/app/api/upload/route.ts`, tetapi jalur runtime Income yang benar memakai `parseIncomePackage()` dan `importIncomePackage()`.
-- Jangan memperluas atau memperbaiki helper legacy sebagai bagian feature baru; lakukan penghapusan/refactor hanya setelah dibahas.
+- Jalur runtime Income memakai `parseIncomePackage()` dan `importIncomePackage()`; helper writer Income legacy sudah dihapus dari `webapp/app/api/upload/route.ts`.
 
 ---
 
@@ -189,8 +211,8 @@ Setiap row combined Income membawa `income_report_import_id`, `source_file`, `re
 ## 6. Access dan Security State
 
 - Environment source default: Basic Auth aktif.
-- `DASHBOARD_AUTH_ENABLED=false` adalah public mode sementara dan melewati Basic Auth untuk page/API termasuk mutation route; same-origin/file/schema/transaction guard tetap aktif.
-- Audit production terakhir menunjukkan URL dapat diakses tanpa Basic Auth. Perlakukan ini sebagai temporary public mode.
+- Public bypass tidak dipakai. Proxy dan mutation route selalu membutuhkan Basic Auth.
+- `DASHBOARD_AUTH_ENABLED` bukan switch akses aktif pada source saat ini.
 - Environment lokal dapat berbeda dengan Vercel production. Jangan menyimpulkan mode production dari `.env.local` saja.
 - Jangan mengubah `DASHBOARD_AUTH_ENABLED`, credential DB, atau credential Basic Auth tanpa persetujuan eksplisit user.
 - Credential historis tetap perlu dirotasi via cPanel lalu diperbarui ke `.env.local` dan Vercel pada sesi terpisah yang disetujui user.

@@ -88,7 +88,7 @@ function normalizeSearchTerms(value) {
     .filter(Boolean);
 }
 
-function buildIncomeQueryPlan({ section = 'penghasilan', view = 'Order', search = '', sort = 'report_period_from', direction = 'desc' } = {}) {
+function buildIncomeQueryPlan({ section = 'penghasilan', view = 'Order', search = '', sort = 'report_period_from', direction = 'desc', storeId = null } = {}) {
   const config = SECTION_CONFIG[section];
   if (!config) throw new Error('Invalid Income section.');
   if (section === 'penghasilan' && !VALID_VIEWS.has(view)) throw new Error('Invalid Income view.');
@@ -104,6 +104,11 @@ function buildIncomeQueryPlan({ section = 'penghasilan', view = 'Order', search 
 
   const filters = [];
   const params = [];
+  if (storeId !== null && storeId !== undefined) {
+    if (!Number.isSafeInteger(Number(storeId)) || Number(storeId) <= 0) throw new Error('storeId is invalid.');
+    filters.push('i.store_id = ?');
+    params.push(Number(storeId));
+  }
   if (section === 'penghasilan') {
     filters.push('r.lihat_berdasarkan = ?');
     params.push(view);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import DataTable from '@/components/DataTable';
 
 const SKU_COLUMNS = [
@@ -16,8 +16,9 @@ export default function SKUPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [importId, setImportId] = useState('');
+  const requestSequence = useRef(0);
 
-  const load = async (
+  const load = useCallback(async (
     page = 1,
     limit = 50,
     search: string[] = [],
@@ -25,6 +26,7 @@ export default function SKUPage() {
     sortDirection?: 'asc' | 'desc',
     nextImportId = importId,
   ) => {
+    const requestId = ++requestSequence.current;
     setLoading(true);
     setError('');
     try {
@@ -37,17 +39,24 @@ export default function SKUPage() {
       }
       const response = await fetch(`/api/sku?${params}`);
       const result = await response.json();
+      if (requestId !== requestSequence.current) return;
       if (!response.ok) throw new Error(result.error || 'Gagal memuat SKU RAW.');
       setPayload(result);
       if (result.selectedImport && !nextImportId) setImportId(String(result.selectedImport.id));
     } catch (err: any) {
-      setError(err.message || 'Gagal memuat SKU RAW.');
+      if (requestId === requestSequence.current) setError(err.message || 'Gagal memuat SKU RAW.');
     } finally {
-      setLoading(false);
+      if (requestId === requestSequence.current) setLoading(false);
     }
-  };
+  }, [importId]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      requestSequence.current += 1;
+    };
+  }, [load]);
 
   const selectImport = (nextImportId: string) => {
     setImportId(nextImportId);
@@ -61,7 +70,7 @@ export default function SKUPage() {
     <div className="p-4 lg:p-8">
       <div className="mb-4 lg:mb-6">
         <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 mb-1">SKU Master RAW</h1>
-        <p className="text-sm text-slate-600">Paket master SKU disimpan apa adanya. Mapping HPP dan kalkulasi profit belum diterapkan.</p>
+        <p className="text-sm text-slate-600">Master SKU shared untuk semua toko. Mapping HPP dan kalkulasi profit belum diterapkan.</p>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">

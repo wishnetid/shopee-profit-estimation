@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createConnection, Connection } from 'mysql2/promise';
 import * as XLSX from 'xlsx';
+import { requireStoreId } from '../../../lib/store';
 
 // Shared with node:test regression tests. The raw Shopee export uses IDR dot-thousands strings.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -37,14 +38,12 @@ const {
 };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const {
-  isDashboardAuthEnabled,
+  isMutationAuthorized,
   isSameOriginMutation,
-  isValidBasicAuthorization,
   validateUploadFile,
 } = require('../../../lib/dashboard-auth.js') as {
-  isDashboardAuthEnabled: (env?: NodeJS.ProcessEnv) => boolean;
+  isMutationAuthorized: (authorization: string | null, env?: NodeJS.ProcessEnv) => boolean;
   isSameOriginMutation: (origin: string | null, expectedOrigin: string) => boolean;
-  isValidBasicAuthorization: (authorization: string | null, username: string | undefined, password: string | undefined) => boolean;
   validateUploadFile: (file: { name: string; size: number; type: string } | null) => { valid: boolean; error: string | null };
 };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -62,8 +61,8 @@ const {
   importIncomePackage,
 } = require('../../../lib/income-raw-db.js') as {
   buildIncomePreview: (parsed: any, existingImport: any) => any;
-  findExistingIncomeImport: (conn: Connection, sha256: string) => Promise<any>;
-  importIncomePackage: (conn: Connection, parsed: any) => Promise<any>;
+  findExistingIncomeImport: (conn: Connection, storeId: number, sha256: string) => Promise<any>;
+  importIncomePackage: (conn: Connection, parsed: any, storeId: number) => Promise<any>;
 };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const {
@@ -273,7 +272,7 @@ function extractOrderKeys(workbook: XLSX.WorkBook): string[][] {
 }
 
 // Check which keys exist in DB, return full rows for overlap comparison
-async function fetchExistingRows(conn: Connection, keys: string[][], table: string, keyCols: string[], selectCols: string[]): Promise<Map<string, any>> {
+async function fetchExistingRows(conn: Connection, keys: string[][], table: string, keyCols: string[], selectCols: string[], extraWhere = '', extraParams: unknown[] = []): Promise<Map<string, any>> {
   const existing = new Map<string, any>();
   if (keys.length === 0) return existing;
 
@@ -282,8 +281,8 @@ async function fetchExistingRows(conn: Connection, keys: string[][], table: stri
     const placeholders = batch.map(() => `(${keyCols.map(() => '?').join(',')})`).join(',');
     const flatParams = batch.flat();
     const [rows] = await conn.query(
-      `SELECT ${selectCols.join(',')} FROM ${table} WHERE (${keyCols.join(',')}) IN (${placeholders})`,
-      flatParams
+      `SELECT ${selectCols.join(',')} FROM ${table} WHERE (${keyCols.join(',')}) IN (${placeholders}) ${extraWhere ? `AND ${extraWhere}` : ''}`,
+      [...flatParams, ...extraParams]
     ) as any[];
     for (const row of rows) {
       const key = keyCols.map(c => row[c]).join('||');
@@ -296,6 +295,7 @@ async function fetchExistingRows(conn: Connection, keys: string[][], table: stri
 async function previewOrderAll(
   workbook: XLSX.WorkBook,
   conn: Connection,
+  storeId: number,
   sourceSnapshotAt: string,
   sourceSnapshotFile: string,
 ) {
@@ -328,6 +328,8 @@ async function previewOrderAll(
     'order_all',
     ['no_pesanan', 'nomor_referensi_sku', 'nama_variasi'],
     [...ORDER_COLS, 'source_snapshot_at', 'source_snapshot_file'],
+    'store_id = ?',
+    [storeId],
   );
 
   let newCount = 0;
@@ -419,7 +421,7 @@ async function previewOrderAll(
   };
 }
 
-async function previewIncome(workbook: XLSX.WorkBook, conn: Connection) {
+async function previewIncome(workbook: XLSX.WorkBook, conn: Connection, storeId: number) {
   let sheetName = workbook.SheetNames.find(n => n.toLowerCase().includes('penghasilan'));
   if (!sheetName) sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
@@ -454,7 +456,15 @@ async function previewIncome(workbook: XLSX.WorkBook, conn: Connection) {
     return [sanitize(obj['No. Pesanan'])];
   }).filter(k => k[0]);
 
-  const dbRows = await fetchExistingRows(conn, allKeys, 'income_penghasilan', ['no_pesanan'], ['no_pesanan']);
+  const dbRows = await fetchExistingRows(
+    conn,
+    allKeys,
+    'income_penghasilan_raw',
+    ['no_pesanan'],
+    ['no_pesanan'],
+    'income_report_import_id IN (SELECT id FROM income_report_imports WHERE store_id = ?)',
+    [storeId],
+  );
   let newCount = 0;
   let existingCount = 0;
   for (const k of allKeys) {
@@ -477,14 +487,15 @@ async function handlePreview(
   workbook: XLSX.WorkBook,
   reportType: string,
   conn: Connection,
+  storeId: number,
   sourceSnapshotAt: string | null,
   sourceSnapshotFile: string,
 ) {
   switch (reportType) {
     case 'order_all':
       if (!sourceSnapshotAt) throw new Error('Waktu snapshot wajib diisi untuk Order.all');
-      return previewOrderAll(workbook, conn, sourceSnapshotAt, sourceSnapshotFile);
-    case 'income': return previewIncome(workbook, conn);
+      return previewOrderAll(workbook, conn, storeId, sourceSnapshotAt, sourceSnapshotFile);
+    case 'income': return previewIncome(workbook, conn, storeId);
     default: return null;
   }
 }
@@ -576,6 +587,7 @@ function extractOrderRow(row: any): any[] {
 async function importOrderAll(
   workbook: XLSX.WorkBook,
   conn: Connection,
+  storeId: number,
   sourceSnapshotAt: string,
   sourceSnapshotFile: string,
 ) {
@@ -584,11 +596,11 @@ async function importOrderAll(
 
   const sheet = workbook.Sheets[sheetName];
   const data = XLSX.utils.sheet_to_json(sheet) as any[];
-  const insertCols = [...ORDER_COLS, 'source_snapshot_at', 'source_snapshot_file'];
+  const insertCols = ['store_id', ...ORDER_COLS, 'source_snapshot_at', 'source_snapshot_file'];
   const placeholders = insertCols.map(() => '?').join(',');
   const cols = insertCols.join(',');
   const updateAssignments = insertCols
-    .filter(column => !['no_pesanan', 'nomor_referensi_sku', 'nama_variasi'].includes(column))
+    .filter(column => !['store_id', 'no_pesanan', 'nomor_referensi_sku', 'nama_variasi'].includes(column))
     .map(column => `${column}=VALUES(${column})`)
     .join(',\n           ');
   let newInserted = 0;
@@ -626,6 +638,8 @@ async function importOrderAll(
         'order_all',
         ['no_pesanan', 'nomor_referensi_sku', 'nama_variasi'],
         [...ORDER_COLS, 'source_snapshot_at', 'source_snapshot_file'],
+        'store_id = ?',
+        [storeId],
       );
 
       const valuesToWrite: unknown[][] = [];
@@ -634,7 +648,7 @@ async function importOrderAll(
         const existing = existingRows.get(key);
 
         if (!existing) {
-          valuesToWrite.push([...item.values, sourceSnapshotAt, sourceSnapshotFile]);
+          valuesToWrite.push([storeId, ...item.values, sourceSnapshotAt, sourceSnapshotFile]);
           newInserted++;
           continue;
         }
@@ -659,7 +673,7 @@ async function importOrderAll(
         const snapshotFile = writesProvenance
           ? sourceSnapshotFile
           : existing.source_snapshot_file;
-        valuesToWrite.push([...resolvedValues, snapshotAt, snapshotFile]);
+        valuesToWrite.push([storeId, ...resolvedValues, snapshotAt, snapshotFile]);
         updatedCount++;
       }
 
@@ -691,90 +705,6 @@ async function importOrderAll(
   }
 }
 
-const INCOME_COLS = [
-  'no_pesanan','lihat_berdasarkan',
-  'waktu_pesanan_dibuat','tanggal_dana_dilepaskan',
-  'harga_produk','ongkir_dibayar_pembeli',
-  'ongkos_kirim_ke_jasa_kirim','gratis_ongkir_dari_shopee',
-  'biaya_administrasi','biaya_proses_pesanan',
-  'biaya_gratis_ongkir_xtra','biaya_layanan_promo_xtra',
-  'biaya_lainnya','jumlah_dibayar_pembeli',
-  'metode_pembayaran_pembeli','username_pembeli'
-];
-
-async function importIncome(workbook: XLSX.WorkBook, conn: Connection) {
-  let sheetName = workbook.SheetNames.find(n => n.toLowerCase().includes('penghasilan'));
-  if (!sheetName) sheetName = workbook.SheetNames[0];
-
-  const sheet = workbook.Sheets[sheetName];
-  const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-
-  let headerIdx = -1;
-  for (let i = 0; i < Math.min(data.length, 10); i++) {
-    if (data[i] && String(data[i][0] || '').includes('No. Pesanan')) {
-      headerIdx = i;
-      break;
-    }
-  }
-  if (headerIdx === -1) return { inserted: 0, errors: 0 };
-
-  const headers = data[headerIdx];
-  const rows = data.slice(headerIdx + 1);
-
-  const placeholders = INCOME_COLS.map(() => '?').join(',');
-  const cols = INCOME_COLS.join(',');
-  let inserted = 0;
-  let errors = 0;
-  let batch: any[][] = [];
-
-  for (const row of rows) {
-    const rowData: any = {};
-    headers.forEach((h: string, idx: number) => {
-      if (h) rowData[String(h).trim()] = row[idx];
-    });
-    if (String(rowData['Lihat berdasarkan'] || '').trim() !== 'Order') continue;
-
-    batch.push([
-      sanitize(rowData['No. Pesanan']),
-      sanitize(rowData['Lihat berdasarkan']),
-      sanitizeDatetime(rowData['Waktu Pesanan Dibuat']),
-      sanitizeDatetime(rowData['Tanggal Dana Dilepaskan']),
-      sanitizeDecimal(rowData['Harga Produk']),
-      sanitizeDecimal(rowData['Ongkir Dibayar Pembeli']),
-      sanitizeDecimal(rowData['Ongkos Kirim yang Dibayarkan ke Jasa Kirim']),
-      sanitizeDecimal(rowData['Gratis Ongkir dari Shopee']),
-      sanitizeDecimal(rowData['Biaya Administrasi']),
-      sanitizeDecimal(rowData['Biaya Proses Pesanan']),
-      sanitizeDecimal(rowData['Biaya Gratis Ongkir XTRA - Ukuran Biasa (Kategori F)']),
-      sanitizeDecimal(rowData['Biaya Layanan Promo XTRA']),
-      sanitizeDecimal(rowData['Biaya Lainnya']),
-      sanitizeDecimal(rowData['Jumlah Dibayar Pembeli']),
-      sanitize(rowData['Metode pembayaran pembeli']),
-      sanitize(rowData['Username (Pembeli)']),
-    ]);
-
-    if (batch.length >= BATCH_SIZE) {
-      try {
-        const vp = batch.map(() => `(${placeholders})`).join(',');
-        const [res] = await conn.query(`INSERT INTO income_penghasilan (${cols}) VALUES ${vp}`, batch.flat()) as any;
-        inserted += res.affectedRows || 0;
-      } catch { errors++; }
-      batch = [];
-    }
-  }
-
-  if (batch.length > 0) {
-    try {
-      const vp = batch.map(() => `(${placeholders})`).join(',');
-      const [res] = await conn.query(`INSERT INTO income_penghasilan (${cols}) VALUES ${vp}`, batch.flat()) as any;
-      inserted += res.affectedRows || 0;
-    } catch { errors++; }
-  }
-
-  await conn.commit();
-  return { inserted, errors };
-}
-
 // ─── HANDLER ───────────────────────────────────────────
 
 function unauthorizedResponse() {
@@ -787,22 +717,15 @@ function unauthorizedResponse() {
 export async function POST(request: NextRequest) {
   let conn: Connection | null = null;
   try {
-    const { DASHBOARD_BASIC_AUTH_USER, DASHBOARD_BASIC_AUTH_PASSWORD } = process.env;
-    if (isDashboardAuthEnabled()) {
-      if (!DASHBOARD_BASIC_AUTH_USER || !DASHBOARD_BASIC_AUTH_PASSWORD) {
-        return NextResponse.json({ error: 'Dashboard authentication is not configured.' }, { status: 503 });
-      }
-      if (!isValidBasicAuthorization(
-        request.headers.get('authorization'),
-        DASHBOARD_BASIC_AUTH_USER,
-        DASHBOARD_BASIC_AUTH_PASSWORD,
-      )) return unauthorizedResponse();
-    }
+    if (!isMutationAuthorized(request.headers.get('authorization'))) return unauthorizedResponse();
     if (!isSameOriginMutation(request.headers.get('origin'), request.nextUrl.origin)) {
       return NextResponse.json({ error: 'Cross-origin request rejected.' }, { status: 403 });
     }
 
     const formData = await request.formData();
+    const storeCheck = await requireStoreId(typeof formData.get('storeId') === 'string' ? String(formData.get('storeId')) : null);
+    if (storeCheck.response) return storeCheck.response;
+    const storeId = storeCheck.storeId as number;
     const fileEntry = formData.get('file');
     const action = formData.get('action') as string || 'preview';
     if (!(fileEntry instanceof File)) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
@@ -842,7 +765,7 @@ export async function POST(request: NextRequest) {
       conn = await getConnection();
       if (reportType === 'income') {
         const parsed = parseIncomePackage(workbook, sourceSnapshotFile, computeSha256(Buffer.from(buffer)));
-        const existingImport = await findExistingIncomeImport(conn, parsed.sha256);
+        const existingImport = await findExistingIncomeImport(conn, storeId, parsed.sha256);
         const preview = buildIncomePreview(parsed, existingImport);
         if (!preview.valid) return NextResponse.json({ error: 'Income package ditolak.', ...preview }, { status: 400 });
         return NextResponse.json({ success: true, action: 'preview', reportType: reportName, ...preview });
@@ -854,7 +777,7 @@ export async function POST(request: NextRequest) {
         if (!preview.valid) return NextResponse.json({ error: 'SKU RAW package ditolak.', ...preview }, { status: 400 });
         return NextResponse.json({ success: true, action: 'preview', reportType: reportName, ...preview });
       }
-      const preview = await handlePreview(workbook, reportType, conn, sourceSnapshotAt, sourceSnapshotFile);
+      const preview = await handlePreview(workbook, reportType, conn, storeId, sourceSnapshotAt, sourceSnapshotFile);
       if (!preview) return NextResponse.json({ error: 'Cannot parse file for preview.' }, { status: 400 });
       return NextResponse.json({
         success: true,
@@ -878,12 +801,13 @@ export async function POST(request: NextRequest) {
 
     switch (reportType) {
       case 'order_all':
-        result = await importOrderAll(workbook, conn, sourceSnapshotAt!, sourceSnapshotFile);
+        result = await importOrderAll(workbook, conn, storeId, sourceSnapshotAt!, sourceSnapshotFile);
         break;
       case 'income':
         result = await importIncomePackage(
           conn,
           parseIncomePackage(workbook, sourceSnapshotFile, computeSha256(Buffer.from(buffer))),
+          storeId,
         );
         break;
       case 'master':

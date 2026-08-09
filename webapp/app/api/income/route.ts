@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createConnection } from 'mysql2/promise';
+import { requireStoreId } from '../../../lib/store';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { parsePagination } = require('../../../lib/pagination.js') as {
+  parsePagination: (page: string | null, limit: string | null) => { page: number; limit: number; error: string | null };
+};
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { buildIncomeQueryPlan } = require('../../../lib/income-query.js') as {
   buildIncomeQueryPlan: (options?: Record<string, unknown>) => {
@@ -21,13 +26,17 @@ async function getConnection() {
 }
 
 export async function GET(request: NextRequest) {
+  const storeCheck = await requireStoreId(request.nextUrl.searchParams.get('storeId'));
+  if (storeCheck.response) return storeCheck.response;
+  const storeId = storeCheck.storeId as number;
   const conn = await getConnection();
   try {
     const sp = request.nextUrl.searchParams;
     const section = sp.get('section') || 'penghasilan';
     const view = sp.get('view') || 'Order';
-    const page = Math.max(1, Number(sp.get('page') || 1));
-    const limit = Math.min(100, Math.max(5, Number(sp.get('limit') || 50)));
+    const pagination = parsePagination(sp.get('page'), sp.get('limit'));
+    if (pagination.error) return NextResponse.json({ error: pagination.error }, { status: 400 });
+    const { page, limit } = pagination;
     const search = (sp.get('search') || '').trim();
     const sort = sp.get('sort') || 'report_period_from';
     const direction = sp.get('direction') || 'desc';
@@ -35,15 +44,31 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid Income query.' }, { status: 400 });
     }
 
-    const [imports] = await conn.query(`SELECT id, source_file, source_sha256, report_period_from, report_period_to, summary_payload, summary_total_yang_dilepas, reconciliation_order_signed_total, reconciliation_difference, reconciliation_status, warnings_payload, imported_at FROM income_report_imports ORDER BY imported_at DESC, id DESC`) as any;
+    const [imports] = await conn.query(
+      `SELECT id, store_id, source_file, source_sha256, report_period_from, report_period_to,
+              summary_payload, summary_total_yang_dilepas, reconciliation_order_signed_total,
+              reconciliation_difference, reconciliation_status, warnings_payload, imported_at
+       FROM income_report_imports
+       WHERE store_id = ?
+       ORDER BY imported_at DESC, id DESC`,
+      [storeId],
+    ) as any;
     const importRows = imports as any[];
-    const plan = buildIncomeQueryPlan({ section, view, search, sort, direction });
+    const plan = buildIncomeQueryPlan({ section, view, search, sort, direction, storeId });
     const offset = (page - 1) * limit;
     const fromClause = `${plan.table} r INNER JOIN income_report_imports i ON i.id = r.income_report_import_id`;
-    const [rows] = await conn.query(`SELECT ${plan.selectSql} FROM ${fromClause} ${plan.whereSql} ORDER BY ${plan.orderSql}, r.id DESC LIMIT ? OFFSET ?`, [...plan.params, limit, offset]) as any;
-    const [[count]] = await conn.query(`SELECT COUNT(*) AS total FROM ${fromClause} ${plan.whereSql}`, plan.params) as any;
+    const [rows] = await conn.query(
+      `SELECT ${plan.selectSql} FROM ${fromClause} ${plan.whereSql}
+       ORDER BY ${plan.orderSql}, r.id DESC LIMIT ? OFFSET ?`,
+      [...plan.params, limit, offset],
+    ) as any;
+    const [[count]] = await conn.query(
+      `SELECT COUNT(*) AS total FROM ${fromClause} ${plan.whereSql}`,
+      plan.params,
+    ) as any;
     return NextResponse.json({
       success: true,
+      storeId,
       imports: importRows,
       packageCount: importRows.length,
       selectedImport: null,

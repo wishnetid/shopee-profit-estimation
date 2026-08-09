@@ -40,6 +40,48 @@
 - Validasi atau refactor halaman/route Profit lama.
 - Rotasi credential DB yang pernah muncul pada riwayat source lama.
 
+### 1A. Checkpoint lanjutan — multi-toko
+
+Perubahan multi-toko sudah diterapkan pada database live, tetapi source code masih berada di working tree dan belum di-commit, push, atau di-deploy ke Vercel.
+
+**Database live — diverifikasi 2026-08-09 04:00 WIB:**
+
+- Tabel `users` dan `stores` tersedia.
+- Store tersedia: `TACTICALIZED`, `TACTICALITY`, `TACTICALIST`, `TACTICALUXE`.
+- `order_all.store_id` dan `income_report_imports.store_id` wajib terisi serta memiliki foreign key ke `stores`.
+- Unique Order.all: `(store_id, no_pesanan, nomor_referensi_sku, nama_variasi)`.
+- Unique Income package: `(store_id, source_sha256)`.
+- Child Income mewarisi scope dari `income_report_imports`.
+- SKU Master tetap shared/global: `sku_report_imports` dan `sku_master_raw` tidak memakai `store_id`.
+
+> Angka live dapat berubah. Untuk angka saat ini, query database langsung; jangan mengandalkan angka dokumentasi.
+
+**Source yang sudah wired di working tree:**
+
+- `StoreProvider` + active-store selector pada shell dashboard.
+- `/api/orders`, `/api/income`, `/api/upload`, dan `/api/settings/database` menerima serta memvalidasi `storeId`.
+- Preview/import Order.all dan Income membatasi duplicate check serta query ke toko aktif.
+- Settings hanya memiliki operasi `clear_store`; operasi global `clear_all`/`clear_table` sudah dihapus dari kontrak.
+- Halaman Profit dan kedua route Profit legacy dinonaktifkan dengan status `PROFIT_NOT_READY` sampai kontrak Balance, HPP, return/refund, dan alokasi disetujui.
+
+**Belum aman untuk production:**
+
+- Regression test multi-toko baru berjalan lokal; production endpoint belum diuji dengan source baru.
+- `schema.sql` dan handoff perlu tetap dibaca bersama DDL live; file desain bukan migration otomatis.
+- Mode akses adalah single-admin: satu Basic Auth dashboard mengelola semua toko; belum ada multi-user tenant authorization.
+- Source multi-toko belum dideploy. Production masih berada pada deployment lama.
+
+**Verification lokal terakhir:**
+
+```text
+npm test                         PASS — 56 tests
+./node_modules/.bin/tsc ...      PASS
+npm run build                    PASS
+npm run lint                     FAIL — baseline lint project, bukan blocker build/typecheck
+```
+
+`npm run lint` masih menemukan error legacy di banyak file (`any`, `require()`, dan React hook rule). Guard baru sudah lolos build/typecheck; lint baseline tetap belum PASS.
+
 ---
 
 ## 2. Workflow Wajib
@@ -185,7 +227,7 @@ income_shipping_fee_discrepancies_raw
 - Table `income_penghasilan` adalah artefak legacy dan bukan kontrak Income RAW.
 - Route/halaman Profit lama belum tervalidasi terhadap fondasi RAW baru.
 - `webapp/database/schema.sql` dan `webapp/scripts/setup-db.js` tidak boleh dipercaya tanpa membandingkan DDL live.
-- Ada helper Income legacy dalam `webapp/app/api/upload/route.ts`; jalur runtime Income yang benar menggunakan `parseIncomePackage()` dan `importIncomePackage()`. Jangan memperluas helper legacy itu.
+- Jalur runtime Income menggunakan `parseIncomePackage()` dan `importIncomePackage()`; helper writer Income legacy sudah dihapus dari route upload.
 
 ---
 
@@ -268,8 +310,8 @@ DASHBOARD_AUTH_ENABLED
 - Local development memakai `webapp/.env.local`.
 - Production memakai Vercel Production Environment Variables.
 - Source default adalah protected Basic Auth.
-- `DASHBOARD_AUTH_ENABLED=false` adalah mode public sementara yang juga melewati pemeriksaan Basic Auth di mutating route; same-origin, schema, transaction, dan file guard tetap berlaku.
-- Audit production terakhir menunjukkan endpoint dapat dibuka tanpa Basic Auth. Ini harus diperlakukan sebagai **temporary public mode** sampai user memutuskan mengaktifkan proteksi lagi.
+- Mode public bypass tidak dipakai. Proxy dan semua mutation route selalu membutuhkan Basic Auth.
+- `DASHBOARD_AUTH_ENABLED` bukan lagi switch akses aktif; jangan menambah bypass public tanpa audit keamanan dan persetujuan eksplisit.
 - Jangan mengubah mode access atau credential tanpa persetujuan eksplisit user.
 
 ### Raw data dan Git
@@ -336,7 +378,14 @@ Jika Basic Auth sudah diaktifkan lagi, gunakan credential environment lokal tanp
 
 ## 9. Langkah Berikutnya
 
-Income lintas package sudah diimplementasikan dan lolos test/typecheck/build. Pilihan report berikutnya perlu diputuskan bersama user.
+Income lintas package dan fondasi multi-toko sudah diimplementasikan lokal dan lolos test/typecheck/build. Source belum dideploy. Sebelum memilih report finansial berikutnya, selesaikan release gate multi-toko:
+
+1. Review diff multi-toko dan hasil audit independen.
+2. Uji endpoint lokal dengan minimal dua `storeId` tanpa mutation.
+3. Sinkronkan schema/handoff dengan DDL live.
+4. User memutuskan kapan commit, push, dan deploy.
+
+Setelah release gate selesai, pilihan report berikutnya perlu diputuskan bersama user.
 
 Urutan yang direkomendasikan:
 

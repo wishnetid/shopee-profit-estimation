@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import DataTable from '@/components/DataTable';
+import { useStore } from '@/components/StoreContext';
 
 type Section = 'penghasilan' | 'adjustment' | 'shipping';
 type View = 'Order' | 'Sku';
@@ -61,13 +62,15 @@ const SORT_MAP: Record<string, string> = {
 };
 
 export default function IncomePage() {
+  const { storeId, activeStore } = useStore();
   const [section, setSection] = useState<Section>('penghasilan');
   const [view, setView] = useState<View>('Order');
   const [payload, setPayload] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const requestSequence = useRef(0);
 
-  const load = async (
+  const load = useCallback(async (
     nextSection = section,
     nextView = view,
     page = 1,
@@ -76,21 +79,38 @@ export default function IncomePage() {
     sort = 'report_period_from',
     direction: 'asc' | 'desc' = 'desc',
   ) => {
+    const requestId = ++requestSequence.current;
     setLoading(true); setError('');
     try {
-      const params = new URLSearchParams({ section: nextSection, view: nextView, page: String(page), limit: String(limit), sort, direction });
+      if (!storeId) { setPayload(null); setLoading(false); return; }
+      const params = new URLSearchParams({ storeId, section: nextSection, view: nextView, page: String(page), limit: String(limit), sort, direction });
       if (search) params.set('search', search);
       const res = await fetch(`/api/income?${params}`);
       const data = await res.json();
+      if (requestId !== requestSequence.current) return;
       if (!res.ok) throw new Error(data.error || 'Gagal memuat Income RAW.');
       setPayload(data);
-    } catch (err: any) { setError(err.message || 'Gagal memuat Income RAW.'); }
-    finally { setLoading(false); }
-  };
+    } catch (err: any) {
+      if (requestId === requestSequence.current) setError(err.message || 'Gagal memuat Income RAW.');
+    } finally {
+      if (requestId === requestSequence.current) setLoading(false);
+    }
+  }, [section, storeId, view]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setPayload(null);
+      setError('');
+      void load();
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      requestSequence.current += 1;
+    };
+  }, [load]);
   const rows = payload?.data || [];
   const columns = COLUMNS[section];
+  const isCurrentStoreData = String(payload?.storeId || '') === storeId;
 
   const selectSection = (next: Section) => { setSection(next); load(next, view); };
   const selectView = (next: View) => { setView(next); load(section, next); };
@@ -99,7 +119,7 @@ export default function IncomePage() {
     <div className="p-4 lg:p-8">
       <div className="mb-5">
         <h1 className="text-2xl lg:text-3xl font-bold text-slate-900">Income RAW</h1>
-        <p className="text-sm text-slate-600 mt-1">Paket report berkala. Nilai disimpan bertanda asli, tanpa kalkulasi profit.</p>
+        <p className="text-sm text-slate-600 mt-1">Paket report toko {activeStore?.store_name || 'aktif'}. Nilai disimpan bertanda asli, tanpa kalkulasi profit.</p>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
@@ -122,9 +142,9 @@ export default function IncomePage() {
       {section === 'penghasilan' && <div className="flex gap-2 mb-4"><button onClick={() => selectView('Order')} className={`px-3 py-1.5 rounded-lg text-sm ${view === 'Order' ? 'bg-purple-600 text-white' : 'border border-purple-300 text-purple-700 bg-white'}`}>Per Pesanan</button><button onClick={() => selectView('Sku')} className={`px-3 py-1.5 rounded-lg text-sm ${view === 'Sku' ? 'bg-purple-600 text-white' : 'border border-purple-300 text-purple-700 bg-white'}`}>Per SKU</button></div>}
 
       {error && <div className="p-3 mb-4 text-sm rounded-lg bg-red-50 border border-red-200 text-red-700">{error}</div>}
-      {loading && !payload ? <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-sm text-slate-500">Memuat Income RAW...</div> : (
+      {loading ? <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-sm text-slate-500">Memuat Income RAW...</div> : error ? null : !isCurrentStoreData ? <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-sm text-slate-500">Memuat Income RAW...</div> : (
         <DataTable
-          key={`${section}-${view}`}
+          key={`${storeId}-${section}-${view}`}
           columns={columns as unknown as { key: string; label: string }[]}
           data={rows}
           totalRows={payload?.total || 0}

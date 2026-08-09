@@ -1,21 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getConnection } from '@/lib/db';
+import { requireStoreId } from '../../../../lib/store';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const {
-  isDashboardAuthEnabled,
+  isMutationAuthorized,
   isSameOriginMutation,
-  isValidBasicAuthorization,
 } = require('../../../../lib/dashboard-auth.js') as {
-  isDashboardAuthEnabled: (env?: NodeJS.ProcessEnv) => boolean;
+  isMutationAuthorized: (authorization: string | null, env?: NodeJS.ProcessEnv) => boolean;
   isSameOriginMutation: (origin: string | null, expectedOrigin: string) => boolean;
-  isValidBasicAuthorization: (authorization: string | null, username: string | undefined, password: string | undefined) => boolean;
 };
-
-async function listTables(conn: Awaited<ReturnType<typeof getConnection>>) {
-  const [tables] = await conn.execute('SHOW TABLES') as any[];
-  return tables.map((row: Record<string, unknown>) => String(Object.values(row)[0]));
-}
 
 function unauthorizedResponse() {
   return NextResponse.json(
@@ -25,77 +19,94 @@ function unauthorizedResponse() {
 }
 
 function isAuthorized(request: NextRequest) {
-  if (!isDashboardAuthEnabled()) return true;
-  return isValidBasicAuthorization(
-    request.headers.get('authorization'),
-    process.env.DASHBOARD_BASIC_AUTH_USER,
-    process.env.DASHBOARD_BASIC_AUTH_PASSWORD,
-  );
+  return isMutationAuthorized(request.headers.get('authorization'));
 }
 
-export async function GET() {
-  let conn: Awaited<ReturnType<typeof getConnection>> | null = null;
+export async function GET(request: NextRequest) {
+  const storeCheck = await requireStoreId(request.nextUrl.searchParams.get('storeId'));
+  if (storeCheck.response) return storeCheck.response;
+  const storeId = storeCheck.storeId as number;
+  const conn = await getConnection();
   try {
-    conn = await getConnection();
-    const tableNames = await listTables(conn);
-    const result: Array<{ name: string; rows: number }> = [];
-    for (const tableName of tableNames) {
-      const [countResult] = await conn.execute(`SELECT COUNT(*) as cnt FROM \`${tableName}\``) as any[];
-      result.push({ name: tableName, rows: countResult[0].cnt });
-    }
-    return NextResponse.json({ success: true, tables: result });
+    const [storeRows] = await conn.execute(
+      'SELECT id, store_name, store_slug FROM stores WHERE id = ? LIMIT 1',
+      [storeId],
+    ) as any;
+    const [counts] = await conn.execute(`
+      SELECT 'order_all' AS name, COUNT(*) AS row_count, 'store' AS scope FROM order_all WHERE store_id = ?
+      UNION ALL
+      SELECT 'income_report_imports', COUNT(*), 'store' FROM income_report_imports WHERE store_id = ?
+      UNION ALL
+      SELECT 'income_penghasilan_raw', COUNT(*), 'store'
+        FROM income_penghasilan_raw r JOIN income_report_imports i ON i.id = r.income_report_import_id WHERE i.store_id = ?
+      UNION ALL
+      SELECT 'income_adjustments_raw', COUNT(*), 'store'
+        FROM income_adjustments_raw r JOIN income_report_imports i ON i.id = r.income_report_import_id WHERE i.store_id = ?
+      UNION ALL
+      SELECT 'income_shipping_fee_discrepancies_raw', COUNT(*), 'store'
+        FROM income_shipping_fee_discrepancies_raw r JOIN income_report_imports i ON i.id = r.income_report_import_id WHERE i.store_id = ?
+      UNION ALL
+      SELECT 'sku_report_imports', COUNT(*), 'shared' FROM sku_report_imports
+      UNION ALL
+      SELECT 'sku_master_raw', COUNT(*), 'shared' FROM sku_master_raw
+    `, [storeId, storeId, storeId, storeId, storeId]) as any;
+    return NextResponse.json({ success: true, store: storeRows[0], tables: counts.map((row: any) => ({ name: row.name, rows: Number(row.row_count), scope: row.scope })) });
   } catch {
     return NextResponse.json({ success: false, error: 'Database request failed.' }, { status: 500 });
   } finally {
-    conn?.release();
+    conn.release();
   }
 }
 
 export async function POST(request: NextRequest) {
-  let conn: Awaited<ReturnType<typeof getConnection>> | null = null;
+  if (!isAuthorized(request)) return unauthorizedResponse();
+  if (!isSameOriginMutation(request.headers.get('origin'), request.nextUrl.origin)) {
+    return NextResponse.json({ success: false, error: 'Cross-origin request rejected.' }, { status: 403 });
+  }
+
+  let body: { action?: string; storeId?: unknown; confirmation?: boolean };
   try {
-    if (!isAuthorized(request)) return unauthorizedResponse();
-    if (!isSameOriginMutation(request.headers.get('origin'), request.nextUrl.origin)) {
-      return NextResponse.json({ success: false, error: 'Cross-origin request rejected.' }, { status: 403 });
-    }
+    body = await request.json() as { action?: string; storeId?: unknown; confirmation?: boolean };
+  } catch {
+    return NextResponse.json({ success: false, error: 'Malformed JSON.' }, { status: 400 });
+  }
+  if (body.action !== 'clear_store' || body.confirmation !== true) {
+    return NextResponse.json({ success: false, error: 'Clear toko membutuhkan konfirmasi eksplisit.' }, { status: 400 });
+  }
+  const storeCheck = await requireStoreId(body.storeId == null ? null : String(body.storeId));
+  if (storeCheck.response) return storeCheck.response;
+  const storeId = storeCheck.storeId as number;
+  const conn = await getConnection();
 
-    const { action, table } = await request.json() as { action?: string; table?: string };
-    if (action !== 'clear_table' && action !== 'clear_all') {
-      return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
-    }
-
-    conn = await getConnection();
-    const tableNames: string[] = await listTables(conn);
-    const targets: string[] = action === 'clear_all' ? tableNames : [table || ''];
-    if (targets.some((target) => !tableNames.includes(target))) {
-      return NextResponse.json({ success: false, error: 'Invalid table' }, { status: 400 });
-    }
-
-    const results: Array<{ table: string; rowsRemoved: number }> = [];
+  try {
     await conn.beginTransaction();
-    try {
-      await conn.execute('SET FOREIGN_KEY_CHECKS = 0');
-      for (const target of targets) {
-        const [before] = await conn.execute(`SELECT COUNT(*) as cnt FROM \`${target}\``) as any[];
-        await conn.execute(`TRUNCATE TABLE \`${target}\``);
-        results.push({ table: target, rowsRemoved: before[0].cnt });
-      }
-      await conn.execute('SET FOREIGN_KEY_CHECKS = 1');
-      await conn.commit();
-    } catch (error) {
-      await conn.rollback();
-      throw error;
-    }
+    const [beforeRows] = await conn.execute(`
+      SELECT
+        (SELECT COUNT(*) FROM order_all WHERE store_id = ?) AS order_count,
+        (SELECT COUNT(*) FROM income_report_imports WHERE store_id = ?) AS income_package_count,
+        (SELECT COUNT(*) FROM income_penghasilan_raw r JOIN income_report_imports i ON i.id = r.income_report_import_id WHERE i.store_id = ?) AS income_penghasilan_count,
+        (SELECT COUNT(*) FROM income_adjustments_raw r JOIN income_report_imports i ON i.id = r.income_report_import_id WHERE i.store_id = ?) AS income_adjustment_count,
+        (SELECT COUNT(*) FROM income_shipping_fee_discrepancies_raw r JOIN income_report_imports i ON i.id = r.income_report_import_id WHERE i.store_id = ?) AS income_shipping_count
+    `, [storeId, storeId, storeId, storeId, storeId]) as any;
+    const before = beforeRows[0];
+
+    await conn.execute('DELETE FROM income_penghasilan_raw WHERE income_report_import_id IN (SELECT id FROM income_report_imports WHERE store_id = ?)', [storeId]);
+    await conn.execute('DELETE FROM income_adjustments_raw WHERE income_report_import_id IN (SELECT id FROM income_report_imports WHERE store_id = ?)', [storeId]);
+    await conn.execute('DELETE FROM income_shipping_fee_discrepancies_raw WHERE income_report_import_id IN (SELECT id FROM income_report_imports WHERE store_id = ?)', [storeId]);
+    await conn.execute('DELETE FROM income_report_imports WHERE store_id = ?', [storeId]);
+    await conn.execute('DELETE FROM order_all WHERE store_id = ?', [storeId]);
+    await conn.commit();
 
     return NextResponse.json({
       success: true,
-      message: action === 'clear_all' ? `All tables cleared (${results.length} tables)` : `Table "${results[0].table}" cleared (${results[0].rowsRemoved} rows removed)`,
-      results,
-      rowsRemoved: action === 'clear_table' ? results[0].rowsRemoved : undefined,
+      message: `Data operasional toko berhasil di-clear. Master SKU shared tetap aman.`,
+      storeId,
+      removed: Object.fromEntries(Object.entries(before).map(([key, value]) => [key, Number(value)])),
     });
-  } catch {
-    return NextResponse.json({ success: false, error: 'Database request failed.' }, { status: 500 });
+  } catch (error) {
+    await conn.rollback();
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Clear toko gagal.' }, { status: 500 });
   } finally {
-    conn?.release();
+    conn.release();
   }
 }

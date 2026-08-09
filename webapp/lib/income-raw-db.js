@@ -49,10 +49,10 @@ function buildIncomePreview(parsed, existingImport) {
   };
 }
 
-async function findExistingIncomeImport(conn, sha256) {
+async function findExistingIncomeImport(conn, storeId, sha256) {
   const [rows] = await conn.query(
-    'SELECT id, source_file, source_sha256, imported_at FROM income_report_imports WHERE source_sha256 = ? LIMIT 1',
-    [sha256],
+    'SELECT id, store_id, source_file, source_sha256, imported_at FROM income_report_imports WHERE store_id = ? AND source_sha256 = ? LIMIT 1',
+    [storeId, sha256],
   );
   return rows[0] || null;
 }
@@ -67,20 +67,21 @@ async function insertRows(conn, table, columns, rows) {
   return result.affectedRows || 0;
 }
 
-async function importIncomePackage(conn, parsed) {
+async function importIncomePackage(conn, parsed, storeId) {
   if (!parsed.valid) throw new Error('Income package belum valid dan tidak boleh di-import.');
   await conn.beginTransaction();
   try {
-    const existing = await findExistingIncomeImport(conn, parsed.sha256);
+    const existing = await findExistingIncomeImport(conn, storeId, parsed.sha256);
     if (existing) {
       await conn.rollback();
       return { duplicate: true, importId: existing.id, inserted: { penghasilan: 0, adjustment: 0, shippingFeeDiscrepancy: 0 } };
     }
     const [parent] = await conn.query(
       `INSERT INTO income_report_imports
-       (source_file, source_sha256, report_period_from, report_period_to, summary_payload, summary_total_yang_dilepas, reconciliation_order_signed_total, reconciliation_difference, reconciliation_status, warnings_payload)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (store_id, source_file, source_sha256, report_period_from, report_period_to, summary_payload, summary_total_yang_dilepas, reconciliation_order_signed_total, reconciliation_difference, reconciliation_status, warnings_payload)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        storeId,
         parsed.sourceFile,
         parsed.sha256,
         toDate(parsed.reportPeriod.from),

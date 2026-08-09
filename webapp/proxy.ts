@@ -27,9 +27,6 @@ function isAuthorized(request: NextRequest) {
 }
 
 export function proxy(request: NextRequest) {
-  if (String(process.env.DASHBOARD_AUTH_ENABLED ?? 'true').trim().toLowerCase() === 'false') {
-    return NextResponse.next();
-  }
   if (isAuthorized(request)) return NextResponse.next();
 
   if (request.nextUrl.pathname.startsWith('/api/')) {

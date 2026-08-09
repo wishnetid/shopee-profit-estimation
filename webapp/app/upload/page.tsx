@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Eye, ArrowLeft, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import { useStore } from '@/components/StoreContext';
 
 type Step = 'select' | 'preview' | 'done';
 
@@ -62,8 +63,10 @@ interface ImportResult {
 }
 
 export default function UploadPage() {
+  const { storeId, activeStore } = useStore();
   const [step, setStep] = useState<Step>('select');
   const [preview, setPreview] = useState<PreviewData | null>(null);
+  const [previewStoreId, setPreviewStoreId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +76,27 @@ export default function UploadPage() {
   const [showDiff, setShowDiff] = useState(true);
   const [sourceSnapshotAt, setSourceSnapshotAt] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const previewRequestRef = useRef(0);
+  const importRequestRef = useRef(0);
+
+  useEffect(() => {
+    previewRequestRef.current += 1;
+    importRequestRef.current += 1;
+    const timer = window.setTimeout(() => {
+      setStep('select');
+      setPreview(null);
+      setPreviewStoreId(null);
+      setImporting(false);
+      setResult(null);
+      setError(null);
+      setSelectedFile(null);
+      setChecking(false);
+      setShowDiff(true);
+      setSourceSnapshotAt('');
+      if (fileRef.current) fileRef.current.value = '';
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [storeId]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -95,9 +119,12 @@ export default function UploadPage() {
   };
 
   const pickFile = async (file: File) => {
+    if (!storeId) { setError('Pilih toko aktif terlebih dahulu.'); return; }
+    const selectedStoreId = storeId;
+    const requestId = ++previewRequestRef.current;
     const ext = file.name.toLowerCase().split('.').pop();
-    if (!['xlsx', 'xls', 'csv'].includes(ext || '')) {
-      setError('Format file tidak didukung. Gunakan .xlsx, .xls, atau .csv');
+    if (!['xlsx', 'xls'].includes(ext || '')) {
+      setError('Format file tidak didukung. Gunakan .xlsx atau .xls');
       return;
     }
     setSelectedFile(file);
@@ -107,6 +134,7 @@ export default function UploadPage() {
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('storeId', selectedStoreId);
     formData.append('action', 'preview');
     formData.append('source_snapshot_at', sourceSnapshotAt);
     formData.append('source_snapshot_file', file.name);
@@ -114,12 +142,14 @@ export default function UploadPage() {
     try {
       const res = await fetch('/api/upload', { method: 'POST', body: formData });
       const data = await res.json();
+      if (requestId !== previewRequestRef.current || selectedStoreId !== storeId) return;
       if (!res.ok) {
         setError(data.error || 'Gagal memproses file');
         setStep('select');
         setChecking(false);
         return;
       }
+      setPreviewStoreId(selectedStoreId);
       setPreview({
         fileName: file.name,
         fileSize: file.size,
@@ -148,22 +178,35 @@ export default function UploadPage() {
         sections: data.sections,
       });
     } catch (err: any) {
-      setError(err.message);
-      setStep('select');
+      if (requestId === previewRequestRef.current && selectedStoreId === storeId) {
+        setError(err.message);
+        setStep('select');
+      }
     }
-    setChecking(false);
+    if (requestId === previewRequestRef.current && selectedStoreId === storeId) setChecking(false);
   };
 
   const changeCount = preview?.safeUpdateRows || 0;
   const canImport = !!preview && (preview.canImport ?? (preview.newRows > 0 || changeCount > 0));
 
   const handleImport = async () => {
-    if (!selectedFile || !preview || !canImport) return;
+    if (!selectedFile || !preview || !canImport || !previewStoreId) return;
+    if (previewStoreId !== storeId) {
+      setError('Toko aktif berubah. Preview dibatalkan; pilih file lagi untuk toko aktif.');
+      setStep('select');
+      setPreview(null);
+      setPreviewStoreId(null);
+      setSelectedFile(null);
+      return;
+    }
+    const targetStoreId = previewStoreId;
+    const requestId = ++importRequestRef.current;
     setImporting(true);
     setError(null);
 
     const formData = new FormData();
     formData.append('file', selectedFile);
+    formData.append('storeId', previewStoreId);
     formData.append('action', 'import');
     formData.append('source_snapshot_at', sourceSnapshotAt);
     formData.append('source_snapshot_file', selectedFile.name);
@@ -171,9 +214,9 @@ export default function UploadPage() {
     try {
       const res = await fetch('/api/upload', { method: 'POST', body: formData });
       const data = await res.json();
+      if (requestId !== importRequestRef.current || targetStoreId !== storeId) return;
       if (!res.ok) {
         setError(data.error || 'Import gagal');
-        setImporting(false);
         return;
       }
       setResult({
@@ -186,9 +229,9 @@ export default function UploadPage() {
       });
       setStep('done');
     } catch (err: any) {
-      setError(err.message);
+      if (requestId === importRequestRef.current && targetStoreId === storeId) setError(err.message);
     }
-    setImporting(false);
+    if (requestId === importRequestRef.current && targetStoreId === storeId) setImporting(false);
   };
 
   const reset = () => {
@@ -211,7 +254,7 @@ export default function UploadPage() {
       <div className="p-4 lg:p-8">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 mb-1">Upload Manager</h1>
-          <p className="text-sm text-slate-600 mb-6">Upload file Order.all, Income, atau Master SKU</p>
+          <p className="text-sm text-slate-600 mb-6">Upload file Order.all atau Income untuk toko {activeStore?.store_name || 'aktif'}. Master SKU shared untuk semua toko.</p>
 
           <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg p-4">
             <label htmlFor="source-snapshot-at" className="block text-sm font-semibold text-amber-900 mb-1">
@@ -241,7 +284,7 @@ export default function UploadPage() {
             <h3 className="text-base lg:text-lg font-semibold text-slate-900 mb-1">Drag & Drop File</h3>
             <p className="text-sm text-slate-500 mb-3">atau pilih file</p>
             <label className="inline-block px-5 py-2.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 cursor-pointer transition-colors">
-              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileSelect} className="hidden" />
+              <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={handleFileSelect} className="hidden" />
               Pilih File
             </label>
           </div>
@@ -288,7 +331,7 @@ export default function UploadPage() {
           )}
 
           {/* File Info + DB Status */}
-          {preview && !checking && (
+          {preview && previewStoreId === storeId && !checking && (
             <>
               <div className="bg-white border border-slate-200 rounded-lg p-4 mb-4">
                 <div className="flex items-center gap-3">

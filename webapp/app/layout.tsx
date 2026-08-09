@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import Link from 'next/link';
 import { Upload, ShoppingCart, DollarSign, Package, BarChart3, Settings } from 'lucide-react';
+import { StoreProvider, StoreSwitcher } from '@/components/StoreContext';
 
 export const metadata: Metadata = {
   title: 'Shopee Profit Estimation',
@@ -22,6 +23,7 @@ export default function RootLayout({
   return (
     <html lang="id">
       <body className="antialiased">
+        <StoreProvider>
         <div className="flex h-screen bg-slate-50">
           {/* Desktop Sidebar */}
           <aside className="hidden lg:flex lg:flex-col w-64 bg-white border-r border-slate-200 flex-shrink-0">
@@ -62,6 +64,7 @@ export default function RootLayout({
 
           {/* Main Content */}
           <main className="flex-1 overflow-auto pb-20 lg:pb-0">
+            <StoreSwitcher />
             {children}
           </main>
 
@@ -77,6 +80,7 @@ export default function RootLayout({
             </div>
           </nav>
         </div>
+        </StoreProvider>
       </body>
     </html>
   );

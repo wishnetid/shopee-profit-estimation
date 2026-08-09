@@ -1,39 +1,54 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import DataTable from '@/components/DataTable';
+import { useState, useEffect, useRef } from 'react';
 import { ShoppingCart, DollarSign, Package, TrendingUp } from 'lucide-react';
+import { useStore } from '@/components/StoreContext';
 
 export default function HomePage() {
+  const { storeId, activeStore } = useStore();
   const [stats, setStats] = useState({ orders: 0, income: 0, sku: 0 });
   const [loading, setLoading] = useState(true);
+  const requestSequence = useRef(0);
 
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const [ordersRes, incomeRes, skuRes] = await Promise.all([
-          fetch('/api/orders?limit=1'),
-          fetch('/api/income?limit=1'),
-          fetch('/api/sku?limit=1'),
-        ]);
-        const [orders, income, sku] = await Promise.all([
-          ordersRes.json(),
-          incomeRes.json(),
-          skuRes.json(),
-        ]);
-        setStats({
-          orders: orders.total || 0,
-          income: income.total || 0,
-          sku: sku.total || 0,
-        });
-      } catch (e) {
-        console.error('Failed to fetch stats:', e);
-      } finally {
+    const timer = window.setTimeout(() => {
+      const requestId = ++requestSequence.current;
+      if (!storeId) {
+        setStats({ orders: 0, income: 0, sku: 0 });
         setLoading(false);
+        return;
       }
+      const fetchStats = async () => {
+        try {
+          const [ordersRes, incomeRes, skuRes] = await Promise.all([
+            fetch(`/api/orders?storeId=${storeId}&limit=1`),
+            fetch(`/api/income?storeId=${storeId}&limit=1`),
+            fetch('/api/sku?limit=1'),
+          ]);
+          const [orders, income, sku] = await Promise.all([
+            ordersRes.json(),
+            incomeRes.json(),
+            skuRes.json(),
+          ]);
+          if (requestId !== requestSequence.current) return;
+          setStats({
+            orders: orders.total || 0,
+            income: income.total || 0,
+            sku: sku.total || 0,
+          });
+        } catch (e) {
+          if (requestId === requestSequence.current) console.error('Failed to fetch stats:', e);
+        } finally {
+          if (requestId === requestSequence.current) setLoading(false);
+        }
+      };
+      void fetchStats();
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      requestSequence.current += 1;
     };
-    fetchStats();
-  }, []);
+  }, [storeId]);
 
   return (
     <div className="p-4 lg:p-8">
@@ -42,7 +57,7 @@ export default function HomePage() {
           Shopee Profit Estimation
         </h1>
         <p className="text-sm lg:text-base text-slate-600 mb-6 lg:mb-8">
-          Upload dan kelola data Order.all, Income, dan Master SKU
+          Toko {activeStore?.store_name || 'aktif'} · kelola data Order.all, Income, dan Master SKU
         </p>
 
         {/* Quick Stats */}

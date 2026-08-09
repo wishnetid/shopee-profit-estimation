@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import dashboardAuth from '../lib/dashboard-auth.js';
 
 const {
-  isDashboardAuthEnabled,
+  hasDashboardCredentials,
+  isMutationAuthorized,
   isSameOriginMutation,
   isValidBasicAuthorization,
   validateUploadFile,
@@ -14,10 +15,17 @@ function basic(username, password) {
   return `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
 }
 
-test('isDashboardAuthEnabled defaults to protected and supports an explicit temporary disable switch', () => {
-  assert.equal(isDashboardAuthEnabled({}), true);
-  assert.equal(isDashboardAuthEnabled({ DASHBOARD_AUTH_ENABLED: 'true' }), true);
-  assert.equal(isDashboardAuthEnabled({ DASHBOARD_AUTH_ENABLED: 'false' }), false);
+test('mutation authorization remains required when read-only auth is disabled', () => {
+  const env = {
+    DASHBOARD_AUTH_ENABLED: 'false',
+    DASHBOARD_BASIC_AUTH_USER: 'yogaimawan',
+    DASHBOARD_BASIC_AUTH_PASSWORD: 'password-rahasia',
+  };
+  assert.equal(hasDashboardCredentials(env), true);
+  assert.equal(isMutationAuthorized(basic('yogaimawan', 'password-rahasia'), env), true);
+  assert.equal(isMutationAuthorized(null, env), false);
+  assert.equal(isMutationAuthorized(basic('yogaimawan', 'salah'), env), false);
+  assert.equal(isMutationAuthorized(basic('yogaimawan', 'password-rahasia'), {}), false);
 });
 
 test('isValidBasicAuthorization accepts matching username and password', () => {

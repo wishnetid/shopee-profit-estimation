@@ -35,10 +35,15 @@ function hasDashboardCredentials(env = process.env) {
   return Boolean(env.DASHBOARD_BASIC_AUTH_USER && env.DASHBOARD_BASIC_AUTH_PASSWORD);
 }
 
-// Defaults to protected. Set DASHBOARD_AUTH_ENABLED=false only for the approved
-// temporary public-production mode; restoring true re-enables Basic Auth.
-function isDashboardAuthEnabled(env = process.env) {
-  return String(env.DASHBOARD_AUTH_ENABLED ?? 'true').trim().toLowerCase() !== 'false';
+// Public mode applies only to read-only dashboard access. Mutations always
+// require configured Basic Auth, including when DASHBOARD_AUTH_ENABLED=false.
+function isMutationAuthorized(authorization, env = process.env) {
+  if (!hasDashboardCredentials(env)) return false;
+  return isValidBasicAuthorization(
+    authorization,
+    env.DASHBOARD_BASIC_AUTH_USER,
+    env.DASHBOARD_BASIC_AUTH_PASSWORD,
+  );
 }
 
 function isSameOriginMutation(origin, expectedOrigin) {
@@ -67,7 +72,7 @@ function validateUploadFile(file) {
 
 module.exports = {
   hasDashboardCredentials,
-  isDashboardAuthEnabled,
+  isMutationAuthorized,
   isSameOriginMutation,
   isValidBasicAuthorization,
   validateUploadFile,
