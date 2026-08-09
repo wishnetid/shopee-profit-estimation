@@ -8,9 +8,9 @@
 
 **Branch:** `master`
 
-**Current release:** `d143899` — `feat(multistore): scope dashboard data by store`
+**Current release:** `add3501` — `feat(settings): add shared SKU reset control`
 
-**Vercel production:** `dpl_5ELAu1nmb9MLUKk9ByZjLberBtHU` — `Ready`
+**Vercel production:** `dpl_BnuP6YxYMebS3KHt4neNJcUBRQs6` — `Ready`
 
 > Mulai dengan membaca `README.md` penuh, lalu file ini. Jangan langsung coding, migration, import, clear, atau mengubah Vercel/DB. RAW Order.all, Income, dan multi-store sudah release. Profit final belum tersedia.
 
@@ -26,10 +26,11 @@
 - Child Income membaca scope melalui parent `income_report_imports`.
 - Master SKU tetap shared/global.
 - Orders, Income, Upload, Settings, dan Dashboard mengikuti active store.
-- Release production saat ini hanya memiliki `clear_store` untuk data operasional store aktif. Working tree menambahkan tombol merah `clear_shared_sku` untuk reset Master SKU global; belum commit/push/deploy.
+- Production memiliki `clear_store` untuk data operasional store aktif dan `clear_shared_sku` untuk reset Master SKU global.
+- Working tree menambahkan `DELETE /api/stores` dan UI **Hapus Toko Aktif**; belum commit/push/deploy.
 - Basic Auth berlaku untuk page dan API.
 - Profit legacy disengaja mengembalikan `503 PROFIT_NOT_READY`.
-- GitHub `master` dan Vercel Production sudah memuat release `d143899`.
+- GitHub `master` dan Vercel Production sudah memuat release `add3501`.
 
 ### Belum selesai
 
@@ -170,7 +171,8 @@ webapp/test/income-raw-import.test.mjs
 - Shared semua store.
 - Tidak memakai `store_id`.
 - Tidak ikut `clear_store`.
-- Working tree menambahkan aksi global `clear_shared_sku` dengan confirmation eksplisit; sebelum release, child `sku_master_raw` wajib dihapus sebelum parent `sku_report_imports`.
+- `clear_shared_sku` memakai confirmation eksplisit; child `sku_master_raw` dihapus sebelum parent `sku_report_imports`.
+- Working tree menambahkan hapus store dengan confirmation eksplisit. Backend wajib menolak store terakhir dan store yang masih memiliki Order.all atau Income; Master SKU shared tidak ikut dihapus.
 - Halaman `/sku` tidak perlu active-store scope kecuali produk memutuskan override SKU per store pada fase lain.
 
 ---

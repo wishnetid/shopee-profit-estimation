@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { RowDataPacket } from 'mysql2/promise';
 import { getConnection, getPool, withTransaction } from '@/lib/db';
+import { requireStoreId } from '../../../lib/store';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const {
@@ -84,6 +86,59 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Pembuatan toko gagal.';
     return NextResponse.json({ error: /Duplicate entry/i.test(message) ? 'Slug toko sudah dipakai.' : message }, { status: /Duplicate entry/i.test(message) ? 409 : 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  if (!isMutationAuthorized(request.headers.get('authorization'))) {
+    return NextResponse.json({ error: 'Authentication required.' }, { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="Shopee Profit Estimation"' } });
+  }
+  if (!isSameOriginMutation(request.headers.get('origin'), request.nextUrl.origin)) {
+    return NextResponse.json({ error: 'Cross-origin request rejected.' }, { status: 403 });
+  }
+
+  let body: { storeId?: unknown; confirmation?: boolean };
+  try {
+    body = await request.json() as { storeId?: unknown; confirmation?: boolean };
+  } catch {
+    return NextResponse.json({ error: 'Malformed JSON.' }, { status: 400 });
+  }
+  if (body.confirmation !== true) {
+    return NextResponse.json({ error: 'Hapus toko membutuhkan konfirmasi eksplisit.' }, { status: 400 });
+  }
+  const storeCheck = await requireStoreId(body.storeId == null ? null : String(body.storeId));
+  if (storeCheck.response) return storeCheck.response;
+  const storeId = storeCheck.storeId as number;
+  const conn = await getConnection();
+  try {
+    await conn.beginTransaction();
+    const [lockedStores] = await conn.query<RowDataPacket[]>('SELECT id FROM stores FOR UPDATE');
+    if (lockedStores.length <= 1) {
+      await conn.rollback();
+      return NextResponse.json({ error: 'Tidak dapat menghapus toko terakhir.' }, { status: 400 });
+    }
+    const [[target]] = await conn.query<(RowDataPacket & { store_name: string })[]>('SELECT store_name FROM stores WHERE id = ? FOR UPDATE', [storeId]);
+    if (!target) {
+      await conn.rollback();
+      return NextResponse.json({ error: 'Store tidak ditemukan.' }, { status: 404 });
+    }
+    const [[usage]] = await conn.query<(RowDataPacket & { order_count: number; income_package_count: number })[]>(`
+      SELECT
+        (SELECT COUNT(*) AS order_count FROM order_all WHERE store_id = ?) AS order_count,
+        (SELECT COUNT(*) AS income_package_count FROM income_report_imports WHERE store_id = ?) AS income_package_count
+    `, [storeId, storeId]);
+    if (Number(usage.order_count) > 0 || Number(usage.income_package_count) > 0) {
+      await conn.rollback();
+      return NextResponse.json({ error: 'Clear data toko terlebih dahulu sebelum menghapus toko.' }, { status: 409 });
+    }
+    await conn.execute('DELETE FROM stores WHERE id = ?', [storeId]);
+    await conn.commit();
+    return NextResponse.json({ success: true, storeId, storeName: target.store_name, message: `Toko ${target.store_name} berhasil dihapus.` });
+  } catch (error) {
+    await conn.rollback();
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Hapus toko gagal.' }, { status: 500 });
+  } finally {
+    conn.release();
   }
 }
 

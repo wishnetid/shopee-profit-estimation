@@ -97,6 +97,31 @@ test('Settings UI gives Master SKU reset a separate global warning and explicit 
   assert.match(source, /onClick=\{\(\) => \{ setConfirmedSharedSku\(false\); setConfirmedStoreId\(storeId\); \}\}/);
 });
 
+test('Store deletion requires explicit confirmation, refuses the last store and non-empty scopes, then deletes only the selected store', () => {
+  const route = fs.readFileSync(path.resolve(process.cwd(), 'app/api/stores/route.ts'), 'utf8');
+  assert.match(route, /export async function DELETE/);
+  assert.match(route, /body\.confirmation !== true/);
+  assert.match(route, /requireStoreId/);
+  assert.match(route, /SELECT id FROM stores FOR UPDATE/);
+  assert.match(route, /Tidak dapat menghapus toko terakhir/);
+  assert.match(route, /SELECT COUNT\(\*\) AS order_count FROM order_all WHERE store_id = \?/);
+  assert.match(route, /SELECT COUNT\(\*\) AS income_package_count FROM income_report_imports WHERE store_id = \?/);
+  assert.match(route, /Clear data toko terlebih dahulu/);
+  assert.match(route, /DELETE FROM stores WHERE id = \?/);
+  assert.match(route, /isMutationAuthorized/);
+  assert.match(route, /isSameOriginMutation/);
+});
+
+test('Settings UI separates delete-store confirmation and refreshes the global selector after success', () => {
+  const page = fs.readFileSync(path.resolve(process.cwd(), 'app/settings/page.tsx'), 'utf8');
+  assert.match(page, /Hapus Toko Aktif/);
+  assert.match(page, /confirmedDeleteStoreId/);
+  assert.match(page, /method: 'DELETE'/);
+  assert.match(page, /confirmation: true/);
+  assert.match(page, /await refreshStores\(\)/);
+  assert.match(page, /Tidak bisa dihapus bila hanya tersisa satu toko/);
+});
+
 test('mutation routes do not inherit the public read-mode bypass', () => {
   const settings = fs.readFileSync(path.resolve(process.cwd(), 'app/api/settings/database/route.ts'), 'utf8');
   const upload = fs.readFileSync(path.resolve(process.cwd(), 'app/api/upload/route.ts'), 'utf8');

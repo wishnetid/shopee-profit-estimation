@@ -96,7 +96,8 @@ Income RAW child
 - Jika nanti ada credential/user berbeda, wajib tambahkan identity session dan ownership check `store.owner_user_id` sebelum release multi-user.
 - `clear_store` hanya dapat menghapus data operasional store yang dipilih dan dikonfirmasi.
 - Clear store tidak menyentuh Master SKU shared.
-- Tombol reset global `clear_shared_sku` untuk Master SKU shared sudah ditambahkan di working tree, tetapi belum commit/push/deploy. Saat release nanti, ia tidak membutuhkan `storeId`, menghapus child `sku_master_raw` sebelum parent `sku_report_imports`, dan tidak menghapus Order.all atau Income.
+- `clear_shared_sku` adalah reset global terpisah untuk Master SKU shared; tidak membutuhkan `storeId`, menghapus child `sku_master_raw` sebelum parent `sku_report_imports`, dan tidak menghapus Order.all atau Income.
+- Working tree menambahkan `DELETE /api/stores` dan tombol **Hapus Toko Aktif**. Saat release, hapus toko hanya boleh untuk store kosong, tidak boleh menghapus store terakhir, dan tidak menyentuh Master SKU shared.
 
 ---
 
@@ -234,8 +235,9 @@ webapp/test/income-raw-import.test.mjs
 ```
 
 - UI mengikat confirmation dan completion ke store yang sama.
-- Working tree menambahkan tombol merah terpisah **Reset Master SKU Shared** dengan confirmation kedua. Aksi ini belum dideploy; saat release akan berlaku global untuk seluruh toko, menghapus `sku_master_raw` lalu `sku_report_imports`, dan tidak menyentuh Order.all atau Income.
-- Jangan memanggil endpoint clear/reset untuk smoke test atau eksperimen.
+- Tombol merah terpisah **Reset Master SKU Shared** memakai confirmation kedua, berlaku global untuk seluruh toko, menghapus `sku_master_raw` lalu `sku_report_imports`, dan tidak menyentuh Order.all atau Income.
+- Working tree juga menambahkan **Hapus Toko Aktif** dengan confirmation kedua. Backend menolak store yang masih memiliki Order.all/Income dan store terakhir; setelah sukses selector direfresh ke store tersisa.
+- Jangan memanggil endpoint clear/reset/hapus untuk smoke test atau eksperimen.
 
 ### API penting
 
@@ -243,6 +245,7 @@ webapp/test/income-raw-import.test.mjs
 GET  /api/health
 GET  /api/stores
 POST /api/stores
+DELETE /api/stores
 GET  /api/orders?storeId=<id>
 GET  /api/income?storeId=<id>
 GET  /api/sku
