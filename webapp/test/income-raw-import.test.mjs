@@ -129,6 +129,36 @@ test('parseIncomePackage reconciles the legacy June layout without double-counti
   assert.equal(parsed.reconciliation.summaryTotal, parsed.reconciliation.orderSignedTotal);
 });
 
+test('parseIncomePackage excludes every legacy Biaya Layanan breakdown from the signed checksum', () => {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['Dari', '2026-05-01'],
+    ['ke', '2026-05-31'],
+    ['3. Total yang Dilepas', 70],
+  ]), 'Summary');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    [
+      'No. Pesanan',
+      'Lihat berdasarkan',
+      'Harga Produk',
+      'Biaya Layanan',
+      'Biaya Layanan Promo XTRA',
+      'Biaya Layanan Gratis Ongkir XTRA (Kategori F)',
+      'Biaya Gratis Ongkir XTRA - Ukuran Biasa (Kategori F)',
+      'PPh 22',
+    ],
+    ['ORDER-1', 'Order', 100, -30, -10, -5, -15, 0],
+    ['ORDER-1', 'Sku', 100, -30, -10, -5, -15, 0],
+  ]), 'Penghasilan');
+
+  const parsed = parseIncomePackage(workbook, 'legacy-three-breakdowns.xlsx', 'sha-legacy-three-breakdowns');
+
+  assert.equal(parsed.valid, true);
+  assert.equal(parsed.reconciliation.status, 'matched');
+  assert.equal(parsed.reconciliation.summaryTotal, 70);
+  assert.equal(parsed.reconciliation.orderSignedTotal, 70);
+});
+
 test('parseIncomePackage marks optional Adjustment and Shipping Fee Discrepancy as absent instead of silently dropping them', () => {
   const parsed = parseIncomePackage(
     readWorkbook('Income.sudah dilepas.id.20260801_20260808.xlsx'),

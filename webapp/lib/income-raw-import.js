@@ -1,6 +1,12 @@
 const crypto = require('node:crypto');
 const XLSX = require('xlsx');
 
+const AGGREGATE_SERVICE_FEE_BREAKDOWN_LABELS = new Set([
+  'Biaya Layanan Promo XTRA',
+  'Biaya Layanan Gratis Ongkir XTRA (Kategori F)',
+  'Biaya Gratis Ongkir XTRA - Ukuran Biasa (Kategori F)',
+]);
+
 function normalizeText(value) {
   return String(value ?? '').trim();
 }
@@ -132,10 +138,7 @@ function parsePenghasilan(rows, errors) {
     // XTRA/Premium breakdowns; adding both would double-count the same fee.
     for (let index = Math.max(0, start); index <= end && index < row.length; index += 1) {
       const label = headers[index].label;
-      if (usesAggregateServiceFee && (
-        label === 'Biaya Layanan Promo XTRA'
-        || label === 'Biaya Gratis Ongkir XTRA - Ukuran Biasa (Kategori F)'
-      )) continue;
+      if (usesAggregateServiceFee && AGGREGATE_SERVICE_FEE_BREAKDOWN_LABELS.has(label)) continue;
       const amount = parseSignedNumber(row[index]);
       if (amount !== null) signedTotal += amount;
     }
