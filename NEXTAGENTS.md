@@ -1,6 +1,6 @@
 # NEXTAGENTS — Shopee Profit Estimation
 
-**Last updated:** 2026-08-09 14:22 WIB
+**Last updated:** 2026-08-09 17:17 WIB
 
 **Production:** https://webapp-umber-five.vercel.app
 
@@ -8,46 +8,66 @@
 
 **Branch:** `master`
 
-**Current release:** `add3501` — `feat(settings): add shared SKU reset control`
+**Current release:** `386d38b` — `feat(stores): add guarded store deletion`
 
-**Vercel production:** `dpl_BnuP6YxYMebS3KHt4neNJcUBRQs6` — `Ready`
+**Vercel production:** `dpl_Fzidwmaeoixhne3vJkg2YZFQq1LZ` — `Ready`
 
-> Mulai dengan membaca `README.md` penuh, lalu file ini. Jangan langsung coding, migration, import, clear, atau mengubah Vercel/DB. RAW Order.all, Income, dan multi-store sudah release. Profit final belum tersedia.
+> Mulai dengan membaca `README.md` penuh, lalu file ini. Jangan langsung coding, migration, import, clear, reset, atau hapus store. RAW Order.all, Income, Master SKU shared, serta multi-store sudah live. Profit final belum tersedia.
 
 ---
 
-## 1. Handoff Ringkas
+## 1. Handoff Operasional
+
+### Production state saat dokumentasi diperbarui
+
+```text
+Store aktif yang tersisa
+  TACTICALIZED
+  TACTICALITY
+
+TACTICALIZED
+  Order.all sudah terisi
+  Income RAW package sudah terisi
+  Package Income terakhir memakai reconciliation matched
+
+TACTICALITY
+  Order.all sudah terisi
+  Income RAW package sudah terisi
+
+Master SKU
+  shared/global; tidak dimiliki store tertentu
+```
+
+> Jangan gunakan angka row dalam dokumen ini sebagai kebenaran saat ini. Untuk kondisi live terbaru, cek `/api/stores` dan `/api/settings/database?storeId=<id>` dengan Basic Auth.
 
 ### Selesai dan live
 
 - Multi-store **single-admin** dengan selector store global.
-- Store: `TACTICALIZED`, `TACTICALITY`, `TACTICALIST`, `TACTICALUXE`.
-- `order_all` dan `income_report_imports` sudah store-scoped.
-- Child Income membaca scope melalui parent `income_report_imports`.
+- `order_all` dan `income_report_imports` store-scoped.
+- Income child RAW mewarisi scope melalui parent `income_report_imports`.
 - Master SKU tetap shared/global.
-- Orders, Income, Upload, Settings, dan Dashboard mengikuti active store.
-- Production memiliki `clear_store` untuk data operasional store aktif dan `clear_shared_sku` untuk reset Master SKU global.
-- Working tree menambahkan `DELETE /api/stores` dan UI **Hapus Toko Aktif**; belum commit/push/deploy.
+- Orders, Income, Upload, Settings, dan Dashboard mengikuti store aktif.
+- `clear_store` menghapus data operasional satu store saja.
+- `clear_shared_sku` mereset Master SKU global dengan confirmation eksplisit.
+- `DELETE /api/stores` menghapus store kosong dengan confirmation eksplisit.
 - Basic Auth berlaku untuk page dan API.
 - Profit legacy disengaja mengembalikan `503 PROFIT_NOT_READY`.
-- GitHub `master` dan Vercel Production sudah memuat release `add3501`.
+- GitHub `master` dan Vercel Production memuat release `386d38b`.
 
 ### Belum selesai
 
-- Preview workbook real pada endpoint production setelah release `d143899`.
-- Import real ke store kosong belum dilakukan.
 - Balance Transaction RAW.
 - Return/refund, failed delivery, cancellation.
-- HPP final, ads, net payout, actual profit, dan estimation profit.
-- Multi-user authorization: `storeId` sekarang selector scope satu admin, bukan ownership boundary per user.
+- HPP final, ads, net payout, actual profit, estimation profit.
+- Multi-user ownership authorization per store.
 - Baseline lint cleanup.
 
 ### Jangan salah simpulkan
 
-- Production deployment sudah `Ready`; bukan staging/local-only.
-- API smoke production sudah lulus untuk auth, store list, isolation store kosong, invalid pagination, invalid SKU import ID, dan Profit guard.
-- Upload preview real **belum** dieksekusi setelah release. Jangan menyebut upload production final sebelum test itu.
-- Tidak ada clear, import, atau migration apply saat release multi-store.
+- Production sudah Ready dan menerima import operasional yang telah dilakukan user.
+- Income package selalu scope per store; jangan membaca package satu store sebagai data global.
+- Master SKU memang global/shared, bukan per-store.
+- Profit belum dapat dipakai sebagai angka bisnis.
 
 ---
 
@@ -63,7 +83,7 @@ cd /home/yogaimawan/Dokumentasi/shopee_profit_estimation
 git status --short
 ```
 
-Expected user artifacts yang boleh tetap untracked:
+Artifacts user yang boleh tetap untracked:
 
 ```text
 NEXTAGENTS.md.backup-20260809-044404
@@ -76,13 +96,13 @@ data_sample/Income.sudah dilepas.id.20260801_20260808.xlsx
 Rules:
 
 - Jangan `git add -A` atau `git commit -am`.
-- Jangan commit `.env.local`, workbook, Archive, atau backup tanpa instruksi eksplisit user.
-- Jangan overwrite change user yang belum commit.
-- Backup docs release terakhir tersimpan di:
+- Jangan commit `.env.local`, workbook, `Archive/`, atau backup tanpa instruksi eksplisit user.
+- Jangan overwrite perubahan user yang belum commit.
+- Backup sebelum sinkronisasi docs state live:
 
 ```text
-Archive/docs-backups/README.md.pre-current-state-20260809-142212
-Archive/docs-backups/NEXTAGENTS.md.pre-current-state-20260809-142212
+Archive/docs-backups/README.md.pre-live-import-flow-20260809-171741
+Archive/docs-backups/NEXTAGENTS.md.pre-live-import-flow-20260809-171741
 ```
 
 ---
@@ -116,14 +136,14 @@ Income RAW child
 
 ### Authorization boundary
 
-- Basic Auth saat ini mewakili satu admin yang sah mengelola semua store.
-- Endpoint memvalidasi format serta eksistensi `storeId`.
+- Basic Auth sekarang mewakili satu admin yang sah mengelola semua store.
+- Endpoint memvalidasi format dan eksistensi `storeId`.
 - Jangan mengklaim isolation antar-user/tenant.
-- Sebelum membuat user/credential per store, implement identity session dan server-side ownership check terhadap `stores.owner_user_id` pada seluruh read/mutation route.
+- Sebelum ada user/credential per store, implement identity session dan server-side ownership check terhadap `stores.owner_user_id` pada seluruh read/mutation route.
 
 ---
 
-## 4. Kontrak Aktif
+## 4. Kontrak RAW Aktif
 
 ### Order.all
 
@@ -132,10 +152,10 @@ Satu row = satu item/variasi pesanan
 ```
 
 - Current-state merge, bukan ledger append.
-- Snapshot/export timestamp wajib untuk mengendalikan freshness.
+- Snapshot/export timestamp wajib mengendalikan freshness.
 - Status tidak boleh mundur.
 - Field populated tidak boleh overwritten oleh blank/masked/older snapshot.
-- Duplicate composite key di dalam workbook ditolak sebelum import.
+- Duplicate composite key di workbook ditolak sebelum import.
 - Import transaction: satu kegagalan membatalkan seluruh batch.
 
 Files:
@@ -148,12 +168,13 @@ webapp/test/order-all-import.test.mjs
 
 ### Income
 
-- Satu workbook = satu RAW package/provenance untuk satu store.
+- Satu workbook = satu RAW package/provenance pada store aktif.
 - Exact SHA-256 duplicate hanya berlaku dalam store yang sama.
-- Overlap periode dengan file berbeda tetap diimport sebagai package RAW terpisah.
+- Overlap periode dengan file berbeda tetap package RAW terpisah.
 - `Penghasilan Order` dan `Penghasilan Sku` tidak boleh dijumlahkan bersama.
 - Summary hanya reconciliation metadata.
 - Adjustment/Shipping Fee Discrepancy tetap section terpisah.
+- Income dapat tidak mempunyai pasangan snapshot Order.all; jangan tambahkan FK wajib ke order.
 
 Files:
 
@@ -170,14 +191,67 @@ webapp/test/income-raw-import.test.mjs
 
 - Shared semua store.
 - Tidak memakai `store_id`.
-- Tidak ikut `clear_store`.
-- `clear_shared_sku` memakai confirmation eksplisit; child `sku_master_raw` dihapus sebelum parent `sku_report_imports`.
-- Working tree menambahkan hapus store dengan confirmation eksplisit. Backend wajib menolak store terakhir dan store yang masih memiliki Order.all atau Income; Master SKU shared tidak ikut dihapus.
-- Halaman `/sku` tidak perlu active-store scope kecuali produk memutuskan override SKU per store pada fase lain.
+- Tidak ikut `clear_store` atau hapus store.
+- `clear_shared_sku` menghapus child `sku_master_raw` sebelum parent `sku_report_imports` dan membutuhkan confirmation eksplisit.
+- `/sku` tidak memerlukan active-store scope kecuali produk memutuskan SKU override per store pada fase lain.
 
 ---
 
-## 5. UI/API Contract yang Harus Dijaga
+## 5. Flow Operasional yang Wajib Dipertahankan
+
+### Import Order.all
+
+```text
+Pilih store aktif
+→ /upload
+→ isi waktu snapshot/export
+→ pilih Order.all
+→ preview
+→ cek target store + kategori perubahan
+→ import bila benar
+→ verifikasi /orders + /settings store yang sama
+```
+
+Jika ada beberapa snapshot, urutkan dari lebih lama ke lebih baru.
+
+### Import Income
+
+```text
+Pilih store aktif
+→ /upload
+→ pilih workbook Income
+→ preview
+→ cek target store, file, periode, section, reconciliation
+→ import bila reconciliation matched
+→ verifikasi /income + /settings store yang sama
+```
+
+- Jangan menganggap overlap periode sebagai duplicate.
+- Jangan import otomatis hanya karena file ditemukan di `data_sample/`.
+- Jangan pindah store selama preview/import berlangsung; UI sengaja membatalkan state lama jika selector berubah.
+
+### Management destructive
+
+```text
+Clear Data Toko Aktif
+  Menghapus Order.all + Income store aktif.
+  Tidak menghapus store record atau Master SKU.
+
+Reset Master SKU Shared
+  Menghapus Master SKU global saja.
+  Tidak menghapus store, Order.all, Income.
+
+Hapus Toko Aktif
+  Hanya untuk store kosong.
+  Ditolak bila store terakhir.
+  Tidak menghapus Master SKU shared.
+```
+
+Setiap aksi memakai confirmation kedua. Jangan panggil endpoint mutasi untuk smoke test.
+
+---
+
+## 6. UI/API Contract yang Harus Dijaga
 
 ### Halaman
 
@@ -186,140 +260,108 @@ webapp/test/income-raw-import.test.mjs
 /orders    Order.all store aktif
 /income    Income RAW store aktif
 /sku       Master SKU shared
-/settings  Database management store aktif
-/profit    Informational guard, belum ada angka profit
+/settings  Database management + destructive controls terjaga
+/profit    Informational guard; belum ada angka profit
 ```
 
 ### Race/stale guard
 
-Sudah diimplementasikan. Jangan regress:
+Jangan regress:
 
-- Orders/Income/Settings tidak boleh menampilkan payload store lama di bawah label store baru.
-- Upload membatalkan preview/import state pada saat `storeId` berubah.
+- Orders/Income/Settings tidak menampilkan payload store lama di bawah label store baru.
+- Upload membatalkan preview/import state jika `storeId` berubah.
 - Preview dan import terikat ke `previewStoreId`.
-- Settings confirmation clear dan completion/fetch terikat ke store yang dikonfirmasi.
+- Confirmation clear/hapus dan completion/fetch terikat store yang dikonfirmasi.
+- Hapus store memanggil `refreshStores()`; StoreContext memilih store tersisa jika selected ID sudah tidak ada.
 - SKU request mengabaikan response stale.
 
-### Pagination/input guard
-
-- `page`, `limit`, dan `importId` diparse strict.
-- Nilai pecahan, malformed, non-positif, atau offset unsafe harus `400`.
-- Jangan mengembalikan `500` untuk malformed JSON body pada mutation Store/Settings.
-
-### Upload
+### API
 
 ```text
-POST /api/upload
-action=preview  Preview only; jangan dimaksudkan write DB
-action=import   Mutasi database; hanya setelah user approve
+GET    /api/health
+GET    /api/stores
+POST   /api/stores
+DELETE /api/stores
+GET    /api/orders?storeId=<id>
+GET    /api/income?storeId=<id>
+GET    /api/sku
+POST   /api/upload
+GET    /api/settings/database?storeId=<id>
+POST   /api/settings/database
 ```
 
-- Client hanya menerima `.xlsx`/`.xls`.
-- Preview/import mengirim `storeId`.
-- Untuk Order.all, `source_snapshot_at` wajib diisi UI.
-- Test preview production memakai `action=preview` masih tertunda; user sudah menyediakan source di `data_sample/`.
-- Jangan menjalankan import otomatis hanya karena preview lulus.
+Mutation contract umum:
 
-### Settings destructive route
-
-```json
-{
-  "action": "clear_store",
-  "storeId": 1,
-  "confirmation": true
-}
+```text
+Basic Auth wajib
+same-origin wajib
+JSON valid wajib
+confirmation: true untuk clear/reset/hapus
 ```
-
-- Tidak ada lagi `clear_table` atau `clear_all` pada kontrak baru.
-- Jangan gunakan endpoint ini untuk test, smoke, atau cleanup.
 
 ---
 
-## 6. Access, Deployment, dan Runtime
+## 7. Quality dan Runtime
 
-### Production
-
-```text
-Canonical alias: https://webapp-umber-five.vercel.app
-Project: wishnet-s-projects/webapp
-Project ID: prj_WdCpV0HGeTzPpreRDIuZqI6i00IJ
-Root Directory: webapp
-Current deployment: dpl_5ELAu1nmb9MLUKk9ByZjLberBtHU
-```
-
-Vercel aliases current deployment:
+Quality gate release source `386d38b`:
 
 ```text
-https://webapp-umber-five.vercel.app
-https://webapp-wishnet-s-projects.vercel.app
-https://webapp-git-master-wishnet-s-projects.vercel.app
-```
-
-### Security
-
-- Basic Auth wajib untuk page/API.
-- Mutation juga memeriksa Basic Auth dan same-origin.
-- `DASHBOARD_AUTH_ENABLED` bukan public bypass switch aktif.
-- Jangan ubah env Vercel atau credential tanpa persetujuan eksplisit user.
-- DB credential harus tetap hanya di server-side environment.
-
----
-
-## 7. Quality Gate yang Sudah Lulus
-
-Pada release `d143899`:
-
-```text
-npm test                                      60/60 PASS
+npm test                                      PASS
 ./node_modules/.bin/tsc --noEmit ...          PASS
 npm run build                                 PASS
 git diff --check                              PASS
 Independent read-only review                  PASS
 ```
 
-Production smoke sudah membuktikan:
+Production sudah membuktikan:
 
 ```text
-Tanpa Basic Auth                              401
-/api/stores dengan Auth                       200
-Orders + Income store kosong                  200 / isolated empty result
-Pagination unsafe                             400
+Basic Auth guard                              401 tanpa credential
+Store list dan Settings                       scoped + readable dengan credential
+Pagination invalid/unsafe                     400
 SKU importId invalid                          400
-Profit route                                 503 PROFIT_NOT_READY
+Profit legacy                                 503 PROFIT_NOT_READY
+Clear/reset/delete                            confirmation dan boundary guard aktif
+Income package                                tersimpan/terisolasi per store
+Master SKU                                   tetap shared setelah clear/hapus store
 ```
 
-`npm run lint` belum PASS karena baseline legacy yang masih berisi `any`, `require()`, dan React hook rule. Jangan mengklaim lint hijau atau mencampurkannya dengan build/typecheck PASS.
+`npm run lint` belum PASS karena baseline legacy (`any`, `require()`, React hook rule). Jangan mengklaim lint hijau atau menyamakan lint dengan build/typecheck.
 
 ---
 
 ## 8. Opening Procedure Jika Akan Ubah Kode
 
 1. Baca `README.md` penuh.
-2. Jalankan `git status --short` dan pastikan artifacts user tidak disentuh.
-3. Baca `webapp/AGENTS.md` dan dokumentasi Next.js lokal yang relevan sebelum mengubah source Next.
-4. Audit source dan DDL live read-only sebelum mengubah schema/migration.
-5. Jika report baru: berhenti di fase analisa lalu diskusi. Jangan langsung coding.
-6. Jika import real: preview dulu, laporkan hasil, tunggu persetujuan import.
-7. Setelah perubahan source: test, TypeScript, build, `git diff --check`, review independen fresh, baru commit/deploy bila user mengizinkan.
+2. Cek `git status --short`; jangan sentuh artifacts user.
+3. Baca `webapp/AGENTS.md` serta dokumentasi Next.js lokal sebelum mengubah source Next.
+4. Audit source dan DDL live read-only sebelum schema/migration.
+5. Jika report baru: berhenti pada analisa lalu diskusi. Jangan langsung coding.
+6. Jika import real: preview dulu, laporkan hasil, tunggu approval import.
+7. Setelah source berubah: test, TypeScript, build, `git diff --check`, independent review fresh, baru commit/deploy bila user mengizinkan.
 
 ---
 
-## 9. Next Scope — Harus Diskusi Dulu
+## 9. Next Scope — Diskusi Dulu
 
-Urutan rekomendasi:
+1. **Balance Transaction**
+   - Sheet/header, grain, tipe transaksi, sign, `No. Pesanan`, duplicate policy.
+   - Bedakan settlement, adjustment, refund, dan biaya iklan dengan bukti source.
 
-1. Preview real production memakai satu workbook yang user sediakan.
-2. Analisa Balance Transaction: sheet/header, grain, tipe transaksi, sign, `No. Pesanan`, duplicate policy.
-3. Analisa return/refund, failed delivery, cancellation terhadap Order.all/Income/Balance.
-4. Diskusi financial layer: Income Order, Income Sku, HPP, ads, return, settlement.
-5. Baru bangun actual profit dan estimation profit.
+2. **Return/refund, failed delivery, cancellation**
+   - Cocokkan dengan Order.all, Income, dan Balance.
+   - Jangan menyederhanakan menjadi satu status linear tanpa report finansial.
+
+3. **Financial layer**
+   - Diskusikan Income Order, Income Sku, HPP, ads, return, settlement, serta alokasi item.
+   - Baru bangun actual profit dan estimation profit.
 
 ## 10. Larangan Keras
 
 - Jangan clear/truncate/reimport DB tanpa backup tervalidasi dan approval eksplisit.
 - Jangan auto-import workbook dari `data_sample/`.
 - Jangan commit `.env.local`, raw customer report, Archive, atau backup.
-- Jangan menghitung `Penghasilan Order` dan `Penghasilan Sku` bersamaan.
-- Jangan membuat profit dari `Order.all` saja.
+- Jangan menghitung Penghasilan Order dan Penghasilan Sku bersamaan.
+- Jangan membuat profit dari Order.all saja.
 - Jangan memperlakukan `schema.sql` sebagai DDL live tanpa audit.
-- Jangan mengubah security/config production demi meredam warning kosmetik.
+- Jangan mengubah security/config production demi warning kosmetik.

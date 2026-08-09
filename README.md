@@ -1,6 +1,6 @@
 # Shopee Profit Estimation
 
-**Last updated:** 2026-08-09 14:22 WIB
+**Last updated:** 2026-08-09 17:17 WIB
 
 **Production:** https://webapp-umber-five.vercel.app
 
@@ -8,48 +8,49 @@
 
 **Branch:** `master`
 
-**Release commit:** `d143899` — `feat(multistore): scope dashboard data by store`
+**Release commit:** `386d38b` — `feat(stores): add guarded store deletion`
 
-**Vercel production:** `dpl_5ELAu1nmb9MLUKk9ByZjLberBtHU` — `Ready`
+**Vercel production:** `dpl_Fzidwmaeoixhne3vJkg2YZFQq1LZ` — `Ready`
 
-> Baca file ini penuh sebelum menyentuh project. App sudah production untuk fondasi RAW **Order.all**, **Income**, dan manajemen **multi-toko**. Final profit belum tersedia dan tidak boleh diinferensikan dari data RAW saat ini.
+> Baca file ini penuh sebelum menyentuh project. App production mengelola RAW **Order.all**, **Income**, **Master SKU shared**, dan **multi-toko**. Financial/profit final belum tersedia; jangan menyimpulkan profit dari data RAW yang ada.
 
 ---
 
-## 1. Status Saat Ini
+## 1. Kondisi Operasional Saat Ini
 
-### Sudah live
+### Live dan sudah dipakai
 
 1. **Multi-toko single-admin**
-   - Store aktif dikelola lewat selector global.
-   - Store tersedia: `TACTICALIZED`, `TACTICALITY`, `TACTICALIST`, `TACTICALUXE`.
-   - Satu Basic Auth dashboard mengelola seluruh store.
-   - Ini **bukan** desain multi-user/tenant authorization.
+   - Selector global menentukan store aktif untuk Orders, Income, Upload, dan Settings.
+   - Store yang tersisa saat dokumentasi ini diperbarui: `TACTICALIZED` dan `TACTICALITY`.
+   - Satu Basic Auth dashboard mengelola semua store.
+   - Ini bukan model multi-user atau tenant authorization.
 
 2. **Order.all RAW current-state per item**
    - Source of truth: `order_all`.
    - Satu row berarti satu item/variasi dalam pesanan.
-   - Import snapshot baru di-merge konservatif; bukan append ledger.
+   - Snapshot baru di-merge secara konservatif, bukan ditambahkan sebagai ledger histori.
 
-3. **Income RAW package berkala**
-   - Satu workbook disimpan sebagai satu package report/provenance.
-   - Child RAW dipisahkan untuk `Penghasilan`, `Adjustment`, dan `Shipping Fee Discrepancy`.
-   - Workbook overlap tidak otomatis dianggap duplicate bisnis.
+3. **Income RAW package per store**
+   - Satu workbook Income disimpan sebagai satu package/provenance.
+   - TACTICALITY dan TACTICALIZED masing-masing telah memiliki package Income tersendiri.
+   - Package Income TACTICALIZED terbaru yang diverifikasi memakai periode report sesuai metadata package dan memiliki reconciliation `matched`.
+   - Data package tidak bocor lintas store.
 
 4. **Master SKU shared**
    - `sku_report_imports` dan `sku_master_raw` berlaku lintas semua store.
-   - Master SKU tidak ikut terhapus oleh clear data store.
+   - Master SKU tidak ikut clear data store atau hapus store.
 
 5. **Aplikasi production**
    - Next.js App Router di Vercel.
-   - MySQL cPanel diakses server-side.
-   - Basic Auth diwajibkan untuk page dan API.
+   - MySQL cPanel hanya diakses server-side.
+   - Basic Auth wajib pada page dan API.
 
 ### Belum tersedia — jangan diasumsikan valid
 
 - Balance Transaction RAW.
 - Return/refund, failed delivery, dan cancellation terhadap settlement finansial.
-- Mapping HPP final dan alokasi order-level ke item-level.
+- Mapping HPP final serta alokasi order-level ke item-level.
 - Biaya iklan.
 - Financial layer: net payout, actual profit, dan estimation profit.
 - Multi-user ownership authorization per store.
@@ -60,7 +61,7 @@ Route dan halaman Profit sengaja mengembalikan:
 503 PROFIT_NOT_READY
 ```
 
-Itu adalah guard produk, bukan gangguan deployment.
+Itu adalah product guard, bukan masalah deployment.
 
 ---
 
@@ -68,12 +69,22 @@ Itu adalah guard produk, bukan gangguan deployment.
 
 ### Scope data
 
-| Kelas | Tabel | Aturan |
-|---|---|---|
-| Store-scoped current state | `order_all` | Setiap row wajib memiliki `store_id`. |
-| Store-scoped package parent | `income_report_imports` | Setiap package wajib memiliki `store_id`. |
-| Child inherit parent scope | `income_penghasilan_raw`, `income_adjustments_raw`, `income_shipping_fee_discrepancies_raw` | Scope diperoleh melalui parent Income package. |
-| Shared master | `sku_report_imports`, `sku_master_raw` | Tidak menggunakan `store_id`; dipakai seluruh store. |
+```text
+Store-scoped current state
+  order_all
+
+Store-scoped package parent
+  income_report_imports
+
+Child yang mewarisi scope Income parent
+  income_penghasilan_raw
+  income_adjustments_raw
+  income_shipping_fee_discrepancies_raw
+
+Shared master lintas semua store
+  sku_report_imports
+  sku_master_raw
+```
 
 ### Identity aktif
 
@@ -90,14 +101,11 @@ Income RAW child
 
 ### Boundary operasi
 
-- Orders, Income, preview upload, import upload, dan Settings selalu membawa `storeId`.
-- Server memvalidasi format dan keberadaan `storeId`.
-- Saat ini `storeId` adalah selector scope untuk satu admin, **bukan** otorisasi tenant antar-user.
-- Jika nanti ada credential/user berbeda, wajib tambahkan identity session dan ownership check `store.owner_user_id` sebelum release multi-user.
-- `clear_store` hanya dapat menghapus data operasional store yang dipilih dan dikonfirmasi.
-- Clear store tidak menyentuh Master SKU shared.
-- `clear_shared_sku` adalah reset global terpisah untuk Master SKU shared; tidak membutuhkan `storeId`, menghapus child `sku_master_raw` sebelum parent `sku_report_imports`, dan tidak menghapus Order.all atau Income.
-- Working tree menambahkan `DELETE /api/stores` dan tombol **Hapus Toko Aktif**. Saat release, hapus toko hanya boleh untuk store kosong, tidak boleh menghapus store terakhir, dan tidak menyentuh Master SKU shared.
+- Orders, Income, preview upload, import upload, dan Settings selalu memakai `storeId`.
+- Server memvalidasi format dan eksistensi `storeId`.
+- Saat ini `storeId` adalah selector scope satu admin, bukan otorisasi tenant antar-user.
+- Sebelum membuat credential/user per store, wajib tambahkan identity session dan ownership check `stores.owner_user_id` pada seluruh read/mutation route.
+- Pindah store membatalkan state request/preview/confirmation lama supaya data toko A tidak tampil atau tertindak sebagai toko B.
 
 ---
 
@@ -111,15 +119,15 @@ Satu row = satu item/variasi pesanan
 ```
 
 - `no_pesanan` tidak cukup sebagai key karena satu pesanan dapat berisi beberapa item/variasi.
-- `total_pembayaran` adalah nominal order-level dan dapat muncul pada beberapa item row. Jangan menjumlahkannya langsung di grain item.
+- `total_pembayaran` adalah nominal order-level dan dapat muncul di beberapa item row. Jangan dijumlahkan langsung pada grain item.
 - Quantity, SKU, variasi, returned quantity, dan HPP nantinya berada pada grain item.
 
 ### Aturan snapshot
 
 - Import adalah merge current-state, bukan histori append.
-- Operator mengisi waktu snapshot/export dari Shopee.
+- Operator wajib mengisi waktu snapshot/export dari Shopee.
 - Provenance memakai `source_snapshot_at` dan `source_snapshot_file`.
-- Snapshot lama tidak boleh menimpa state terbaru.
+- Snapshot lebih lama tidak boleh menimpa state terbaru.
 - Status tidak boleh bergerak mundur.
 - Nilai populated tidak boleh turun menjadi kosong atau tersamarkan seperti `******`.
 - Konflik populated value ditahan bila freshness belum terbukti.
@@ -167,9 +175,9 @@ income_shipping_fee_discrepancies_raw
 2. File berbeda dengan periode overlap tetap disimpan sebagai RAW package terpisah.
 3. Semua parent dan child section satu workbook di-import dalam satu transaction.
 4. Summary `Total yang Dilepas` harus cocok dengan signed total `Penghasilan` view `Order`; mismatch memblok import.
-5. Parser menemukan header dari nama field yang dibutuhkan, bukan posisi fixed.
-6. Header display duplikat memiliki canonical key berbeda supaya payload tidak tertimpa.
-7. Income boleh belum memiliki pasangan `Order.all`; gunakan `LEFT JOIN`, bukan foreign key wajib ke order.
+5. Parser mencari header berdasarkan nama field yang diperlukan, bukan posisi fixed.
+6. Header display duplikat memakai canonical key berbeda agar payload tidak tertimpa.
+7. Income boleh belum mempunyai pasangan `Order.all`; gunakan `LEFT JOIN`, bukan foreign key wajib ke order.
 
 ### Dua grain Penghasilan
 
@@ -197,61 +205,120 @@ webapp/test/income-raw-import.test.mjs
 
 ---
 
-## 5. UI dan API Operasional
+## 5. Flow Operasional Upload
+
+### Order.all
+
+```text
+Pilih store aktif
+→ buka /upload
+→ isi waktu snapshot/export dari Shopee
+→ pilih workbook Order.all
+→ tunggu preview
+→ cek target store, row baru/update/identik/guarded
+→ Import hanya bila preview sudah benar
+→ cek /orders dan /settings pada store tersebut
+```
+
+Import beberapa snapshot Order.all dilakukan dari snapshot lebih lama ke terbaru agar operator mudah membaca perubahan dan guard freshness bekerja sesuai urutan source.
+
+### Income
+
+```text
+Pilih store aktif
+→ buka /upload
+→ pilih workbook Income
+→ tunggu preview
+→ cek target store, nama file, periode, sections, dan reconciliation
+→ Import hanya bila reconciliation matched dan preview benar
+→ cek /income dan /settings pada store tersebut
+```
+
+- Overlap periode tidak otomatis berarti duplicate.
+- Exact file/hash untuk store yang sama akan menjadi no-op.
+- Jangan memilih store lain di tengah preview/import; UI akan membatalkan state lama untuk mencegah lintas-scope.
+
+### Master SKU shared
+
+```text
+Pilih /upload
+→ pilih master.xlsx
+→ preview
+→ import satu kali
+→ cek /sku atau Settings
+```
+
+Master SKU berlaku untuk semua store. Jangan import ulang per store kecuali source Master SKU memang berubah.
+
+---
+
+## 6. Settings dan Aksi Destruktif
+
+### Clear Data Toko Aktif
+
+```text
+Scope: hanya store aktif
+Terhapus: Order.all dan seluruh package/child Income milik store tersebut
+Aman: store record dan Master SKU shared tetap ada
+```
+
+- Confirmation terikat store yang dipilih.
+- Pindah store membatalkan confirmation.
+- Jangan clear hanya untuk eksperimen; backup dan persetujuan user diperlukan.
+
+### Reset Master SKU Shared
+
+```text
+Scope: global semua store
+Terhapus: sku_master_raw lalu sku_report_imports
+Aman: stores, Order.all, Income tetap ada
+```
+
+- Aksi memakai confirmation kedua.
+- Child SKU dihapus sebelum parent SKU karena FK `RESTRICT`.
+- Gunakan hanya bila seluruh Master SKU memang ingin diganti.
+
+### Hapus Toko Aktif
+
+```text
+Scope: satu record store
+Syarat: bukan store terakhir; Order.all dan Income store harus sudah kosong
+Aman: Master SKU shared tidak ikut terhapus
+```
+
+- Aksi memakai confirmation kedua.
+- Server menolak store yang masih memiliki Order.all atau Income package.
+- Server menolak penghapusan store terakhir.
+- Setelah sukses, selector global refresh dan berpindah ke store yang tersisa.
+
+---
+
+## 7. UI dan API
 
 ### Halaman
 
 ```text
-/upload    Preview/import Order.all, Income, dan Master SKU
-/orders    Baca Order.all untuk store aktif
-/income    Baca package Income RAW untuk store aktif
+/upload    Preview/import Order.all, Income, Master SKU
+/orders    Baca Order.all store aktif
+/income    Baca Income RAW package store aktif
 /sku       Baca Master SKU shared
-/settings  Baca dan clear data operasional store aktif
-/profit    Guard informasi; perhitungan belum tersedia
+/settings  Database management, clear/reset/hapus terjaga
+/profit    Informational guard; perhitungan belum tersedia
 ```
-
-### Upload Manager
-
-- Menerima `.xlsx` dan `.xls`.
-- Auto-detect report `Order.all`, `Income`, atau Master SKU.
-- Preview dan import mengikat target store pada saat preview dibuat.
-- Pindah store membatalkan preview/import state lama agar hasil dari store lama tidak muncul di store baru.
-- Import harus dilakukan dari hasil preview yang masih sesuai dengan store aktif.
-- Preview memakai endpoint `POST /api/upload` dengan `action=preview`; import memakai `action=import`.
-
-> Belum ada preview workbook production menggunakan file real setelah release `d143899`. Jangan klaim jalur upload production final sebelum preview nyata dilakukan. Preview tidak dimaksudkan menulis DB; import tetap mutasi dan membutuhkan persetujuan eksplisit user.
-
-### Settings
-
-- `GET /api/settings/database?storeId=<id>` menampilkan tabel scoped dan shared.
-- Clear memakai `POST /api/settings/database` dengan:
-
-```json
-{
-  "action": "clear_store",
-  "storeId": 1,
-  "confirmation": true
-}
-```
-
-- UI mengikat confirmation dan completion ke store yang sama.
-- Tombol merah terpisah **Reset Master SKU Shared** memakai confirmation kedua, berlaku global untuk seluruh toko, menghapus `sku_master_raw` lalu `sku_report_imports`, dan tidak menyentuh Order.all atau Income.
-- Working tree juga menambahkan **Hapus Toko Aktif** dengan confirmation kedua. Backend menolak store yang masih memiliki Order.all/Income dan store terakhir; setelah sukses selector direfresh ke store tersisa.
-- Jangan memanggil endpoint clear/reset/hapus untuk smoke test atau eksperimen.
 
 ### API penting
 
 ```text
-GET  /api/health
-GET  /api/stores
-POST /api/stores
+GET    /api/health
+GET    /api/stores
+POST   /api/stores
 DELETE /api/stores
-GET  /api/orders?storeId=<id>
-GET  /api/income?storeId=<id>
-GET  /api/sku
-POST /api/upload
-GET  /api/settings/database?storeId=<id>
-POST /api/settings/database
+GET    /api/orders?storeId=<id>
+GET    /api/income?storeId=<id>
+GET    /api/sku
+POST   /api/upload
+GET    /api/settings/database?storeId=<id>
+POST   /api/settings/database
 ```
 
 `GET /api/income` mendukung:
@@ -268,7 +335,7 @@ direction = asc | desc
 
 ---
 
-## 6. Access dan Security
+## 8. Access dan Security
 
 Environment names:
 
@@ -285,57 +352,60 @@ DASHBOARD_AUTH_ENABLED
 
 - `.env.local` hanya untuk local; credential tidak boleh masuk Git atau dokumentasi.
 - Vercel Production Environment Variables menjadi runtime production.
-- Source sekarang protected-by-default dan tidak menyediakan bypass public.
-- `DASHBOARD_AUTH_ENABLED` bukan switch akses publik aktif; jangan membuat bypass tanpa security audit dan persetujuan eksplisit.
+- Source protected-by-default dan tidak menyediakan bypass public.
+- `DASHBOARD_AUTH_ENABLED` bukan switch akses publik aktif.
 - Page dan API memerlukan Basic Auth.
-- Mutation route tambahan memvalidasi Basic Auth dan same-origin request.
-- Rotasi credential DB historis adalah pekerjaan terpisah, tidak termasuk release multi-store ini.
+- Mutation route juga memvalidasi same-origin request.
+- Jangan ubah environment/credential tanpa persetujuan eksplisit user.
 
 ---
 
-## 7. Quality Gate Release `d143899`
+## 9. Verifikasi yang Sudah Terbukti
 
-Lulus pada source release:
+Release source terakhir sebelum data operasional masuk:
 
 ```text
-npm test                                      60/60 PASS
+npm test                                      PASS
 ./node_modules/.bin/tsc --noEmit ...          PASS
 npm run build                                 PASS
 git diff --check                              PASS
 Independent read-only review                  PASS
 ```
 
-Production smoke yang sudah lulus:
+Production behavior yang sudah terverifikasi:
 
 ```text
-GET / tanpa Basic Auth                         401
-GET /api/stores dengan Basic Auth              200
-Orders/Income pada store kosong                200 dengan data terisolasi
-Pagination offset overflow                    400
-SKU importId invalid                           400
-Profit legacy                                  503 PROFIT_NOT_READY
+Tanpa Basic Auth                              401
+/api/stores dengan Auth                       200
+Pagination invalid/unsafe                     400
+SKU importId invalid                          400
+Profit legacy                                 503 PROFIT_NOT_READY
+Store clear/reset/delete                      guarded confirmation + scope checks
+Income TACTICALITY dan TACTICALIZED           terisolasi per store
+Income TACTICALIZED latest package            reconciliation matched
+Master SKU                                   tetap shared setelah clear/hapus store
 ```
 
-`npm run lint` masih memiliki baseline legacy (`any`, `require()`, React hook rule). Jangan menyebut lint sebagai PASS. Itu tidak membatalkan build/typecheck/review release ini dan perlu backlog khusus.
+`npm run lint` masih memiliki baseline legacy (`any`, `require()`, React hook rule). Jangan menyebut lint sebagai PASS atau mencampurkannya dengan build/typecheck PASS.
 
 ---
 
-## 8. Git dan Raw Reports
+## 10. Git dan Raw Reports
 
 - Jangan gunakan `git add -A` atau `git commit -am`.
-- Commit hanya file source/test/docs yang memang scope task.
+- Commit hanya file source/test/docs yang scope task.
 - `Archive/`, backup dokumentasi, `.env.local`, dan raw workbook tidak boleh di-commit tanpa instruksi eksplisit user.
-- Workbook Income yang masih untracked di `data_sample/` adalah data kerja user dan harus dibiarkan utuh.
-- Backup dokumentasi sebelum update terakhir:
+- Workbook Income untracked di `data_sample/` adalah data kerja user dan harus dibiarkan utuh.
+- Backup dokumentasi sebelum sinkronisasi ini:
 
 ```text
-Archive/docs-backups/README.md.pre-current-state-20260809-142212
-Archive/docs-backups/NEXTAGENTS.md.pre-current-state-20260809-142212
+Archive/docs-backups/README.md.pre-live-import-flow-20260809-171741
+Archive/docs-backups/NEXTAGENTS.md.pre-live-import-flow-20260809-171741
 ```
 
 ---
 
-## 9. Workflow Wajib
+## 11. Workflow Wajib
 
 ```text
 Report → Analisa struktur → Diskusi → Coding → Test → Deploy → Endpoint test nyata
@@ -343,33 +413,29 @@ Report → Analisa struktur → Diskusi → Coding → Test → Deploy → Endpo
 
 Aturan utama:
 
-1. Jangan coding report baru sebelum struktur seluruh report dianalisa.
+1. Jangan coding report baru sebelum struktur report dianalisa penuh.
 2. Jangan membangun profit dari `Order.all` saja.
-3. Jangan menghapus, clear, truncate, atau re-import DB tanpa backup tervalidasi dan persetujuan eksplisit.
+3. Jangan clear, truncate, atau re-import DB tanpa backup tervalidasi dan persetujuan eksplisit.
 4. Jangan menyamakan overlap export dengan duplicate bisnis.
 5. Dokumentasi business rule harus logic-only: field, key, pattern, dan rule; bukan statistik sample atau posisi Excel.
-6. Inspeksi DDL live read-only sebelum migration; `schema.sql` adalah dokumentasi sinkron, bukan pengganti database production.
+6. Audit DDL live read-only sebelum migration; `schema.sql` bukan pengganti database production.
 
 ---
 
-## 10. Next Scope — Diskusi Dulu
+## 12. Next Scope — Diskusi Dulu
 
 Prioritas rekomendasi, belum menjadi instruksi implementasi:
 
-1. **Preview production memakai workbook real**
-   - Jalankan `action=preview` pada satu file Order.all atau Income.
-   - Verifikasi report detection, target store, summary preview, dan tidak ada write DB.
-
-2. **Balance Transaction**
+1. **Balance Transaction**
    - Inventaris sheet/header.
    - Tentukan grain, tipe transaksi, tanda nominal, lokasi `No. Pesanan`, dan duplicate policy.
-   - Bedakan settlement, adjustment, refund, dan biaya iklan berdasarkan bukti source.
+   - Bedakan settlement, adjustment, refund, dan biaya iklan dari bukti source.
 
-3. **Return/refund, failed delivery, cancellation**
+2. **Return/refund, failed delivery, cancellation**
    - Cocokkan dengan Order.all, Income, dan Balance.
-   - Jangan menyederhanakan sebagai status linear tanpa report finansial.
+   - Jangan menyederhanakan sebagai status linear tanpa bukti report finansial.
 
-4. **Financial layer**
+3. **Financial layer**
    - Diskusikan relasi order header, item, Income Order, Income Sku, HPP, iklan, dan return.
    - Baru desain actual profit dan estimation profit.
 
