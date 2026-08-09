@@ -1,6 +1,6 @@
 # NEXTAGENTS — Shopee Profit Estimation
 
-**Last updated:** 2026-08-09 17:17 WIB
+**Last updated:** 2026-08-09 18:03 WIB
 
 **Production:** https://webapp-umber-five.vercel.app
 
@@ -8,9 +8,9 @@
 
 **Branch:** `master`
 
-**Current release:** `386d38b` — `feat(stores): add guarded store deletion`
+**Current release:** `d8faa04` — `docs: sync live import workflow state`
 
-**Vercel production:** `dpl_Fzidwmaeoixhne3vJkg2YZFQq1LZ` — `Ready`
+**Vercel production:** `dpl_9NLkNTAYCMJe3Q2nccx8a9mhUBPP` — `Ready`
 
 > Mulai dengan membaca `README.md` penuh, lalu file ini. Jangan langsung coding, migration, import, clear, reset, atau hapus store. RAW Order.all, Income, Master SKU shared, serta multi-store sudah live. Profit final belum tersedia.
 
@@ -23,16 +23,10 @@
 ```text
 Store aktif yang tersisa
   TACTICALIZED
-  TACTICALITY
 
 TACTICALIZED
   Order.all sudah terisi
-  Income RAW package sudah terisi
-  Package Income terakhir memakai reconciliation matched
-
-TACTICALITY
-  Order.all sudah terisi
-  Income RAW package sudah terisi
+  Tidak ada Income RAW package pada state live saat ini
 
 Master SKU
   shared/global; tidak dimiliki store tertentu
@@ -66,6 +60,7 @@ Master SKU
 
 - Production sudah Ready dan menerima import operasional yang telah dilakukan user.
 - Income package selalu scope per store; jangan membaca package satu store sebagai data global.
+- State live dapat berubah sesudah clear/hapus store; query API production sebelum membuat klaim count/package.
 - Master SKU memang global/shared, bukan per-store.
 - Profit belum dapat dipakai sebagai angka bisnis.
 
@@ -101,8 +96,8 @@ Rules:
 - Backup sebelum sinkronisasi docs state live:
 
 ```text
-Archive/docs-backups/README.md.pre-live-import-flow-20260809-171741
-Archive/docs-backups/NEXTAGENTS.md.pre-live-import-flow-20260809-171741
+Archive/docs-backups/README.md.pre-live-state-correction-20260809-180312
+Archive/docs-backups/NEXTAGENTS.md.pre-live-state-correction-20260809-180312
 ```
 
 ---

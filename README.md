@@ -1,6 +1,6 @@
 # Shopee Profit Estimation
 
-**Last updated:** 2026-08-09 17:17 WIB
+**Last updated:** 2026-08-09 18:03 WIB
 
 **Production:** https://webapp-umber-five.vercel.app
 
@@ -8,9 +8,9 @@
 
 **Branch:** `master`
 
-**Release commit:** `386d38b` — `feat(stores): add guarded store deletion`
+**Release commit:** `d8faa04` — `docs: sync live import workflow state`
 
-**Vercel production:** `dpl_Fzidwmaeoixhne3vJkg2YZFQq1LZ` — `Ready`
+**Vercel production:** `dpl_9NLkNTAYCMJe3Q2nccx8a9mhUBPP` — `Ready`
 
 > Baca file ini penuh sebelum menyentuh project. App production mengelola RAW **Order.all**, **Income**, **Master SKU shared**, dan **multi-toko**. Financial/profit final belum tersedia; jangan menyimpulkan profit dari data RAW yang ada.
 
@@ -22,7 +22,7 @@
 
 1. **Multi-toko single-admin**
    - Selector global menentukan store aktif untuk Orders, Income, Upload, dan Settings.
-   - Store yang tersisa saat dokumentasi ini diperbarui: `TACTICALIZED` dan `TACTICALITY`.
+   - Store yang tersisa saat dokumentasi ini diperbarui: `TACTICALIZED`.
    - Satu Basic Auth dashboard mengelola semua store.
    - Ini bukan model multi-user atau tenant authorization.
 
@@ -33,9 +33,9 @@
 
 3. **Income RAW package per store**
    - Satu workbook Income disimpan sebagai satu package/provenance.
-   - TACTICALITY dan TACTICALIZED masing-masing telah memiliki package Income tersendiri.
-   - Package Income TACTICALIZED terbaru yang diverifikasi memakai periode report sesuai metadata package dan memiliki reconciliation `matched`.
-   - Data package tidak bocor lintas store.
+   - Saat dokumentasi ini diperbarui, tidak ada package Income live pada store yang tersisa.
+   - Package Income yang pernah diimport dapat dihapus melalui Clear Data Toko Aktif bersama data operasional store tersebut.
+   - Setiap package Income yang diimport selalu scope ke store aktif dan tidak bocor lintas store.
 
 4. **Master SKU shared**
    - `sku_report_imports` dan `sku_master_raw` berlaku lintas semua store.
@@ -381,8 +381,8 @@ Pagination invalid/unsafe                     400
 SKU importId invalid                          400
 Profit legacy                                 503 PROFIT_NOT_READY
 Store clear/reset/delete                      guarded confirmation + scope checks
-Income TACTICALITY dan TACTICALIZED           terisolasi per store
-Income TACTICALIZED latest package            reconciliation matched
+Income RAW                                  diisolasi per store saat diimport
+Current store live                            tidak memiliki package Income
 Master SKU                                   tetap shared setelah clear/hapus store
 ```
 
@@ -399,8 +399,8 @@ Master SKU                                   tetap shared setelah clear/hapus st
 - Backup dokumentasi sebelum sinkronisasi ini:
 
 ```text
-Archive/docs-backups/README.md.pre-live-import-flow-20260809-171741
-Archive/docs-backups/NEXTAGENTS.md.pre-live-import-flow-20260809-171741
+Archive/docs-backups/README.md.pre-live-state-correction-20260809-180312
+Archive/docs-backups/NEXTAGENTS.md.pre-live-state-correction-20260809-180312
 ```
 
 ---
