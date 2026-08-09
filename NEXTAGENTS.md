@@ -1,6 +1,6 @@
 # NEXTAGENTS — Shopee Profit Estimation
 
-**Last updated:** 2026-08-09 18:53 WIB
+**Last updated:** 2026-08-09 19:17 WIB
 
 **Production:** https://webapp-umber-five.vercel.app
 
@@ -26,7 +26,10 @@ Store aktif yang tersisa
 
 TACTICALIZED
   Order.all sudah terisi
-  Tidak ada Income RAW package pada state live saat ini
+  Income RAW package periode Mei 2026 sudah terimport
+  Reconciliation package: matched
+  Active child sections: Penghasilan / Order, Penghasilan / Sku, Adjustment
+  Shipping Fee Discrepancy tidak ada karena source sheet tidak tersedia
 
 Master SKU
   shared/global; tidak dimiliki store tertentu
@@ -47,6 +50,7 @@ Master SKU
 - Basic Auth berlaku untuk page dan API.
 - Profit legacy disengaja mengembalikan `503 PROFIT_NOT_READY`.
 - GitHub `master` dan Vercel Production memuat source release `caf2d9f` untuk legacy aggregate-fee Income.
+- Package Income Mei yang live sudah dibuktikan source-to-DB: parent SHA cocok, source-row identity aktif lengkap, dan tidak ada child orphan.
 
 ### Belum selesai
 
@@ -86,6 +90,7 @@ README.md.backup-20260809-044404
 data_sample/Income.sudah dilepas.id.20260601_20260630.xlsx
 data_sample/Income.sudah dilepas.id.20260701_20260731.xlsx
 data_sample/Income.sudah dilepas.id.20260801_20260808.xlsx
+data_sample/sample_all_store/
 ```
 
 Rules:
@@ -173,6 +178,7 @@ webapp/test/order-all-import.test.mjs
 - Jika header aggregate `Biaya Layanan` ada, jangan ikut menjumlahkan breakdown legacy yang sudah tercakup di dalamnya: `Biaya Layanan Promo XTRA`, `Biaya Layanan Gratis Ongkir XTRA (Kategori F)`, dan `Biaya Gratis Ongkir XTRA - Ukuran Biasa (Kategori F)`.
 - Breakdown tersebut wajib tetap ada di `raw_payload`; pengecualian hanya berlaku untuk signed checksum aggregate layout. Non-aggregate layout tidak boleh berubah.
 - Gate reconciliation `Summary 3. Total yang Dilepas` tetap fail-closed. Mismatch tidak boleh dibypass.
+- Status source-to-DB saat import terakhir hanya terbukti untuk kontrak RAW aktif. `Seller Fee` tetap audit-only dan belum dimaterialisasi sebagai child RAW transaksi.
 
 Files:
 
@@ -304,12 +310,14 @@ confirmation: true untuk clear/reset/hapus
 Quality gate source release `caf2d9f`:
 
 ```text
-npm test                                      64/65 PASS; 1 live-fixture baseline gagal karena hanya satu store tersisa
+Income regression suite                        16/16 PASS
+npm test                                      64/65 PASS; 1 live-fixture lama mengharuskan minimal dua store
 ./node_modules/.bin/tsc --noEmit ...          PASS
 npm run build                                 PASS
 git diff --check                              PASS
 Independent read-only review                  PASS
 Production preview-only Income Mei            200; reconciliation matched; database tidak berubah
+Post-import live DB/API audit                 parent SHA, source-row identity, child integrity PASS
 ```
 
 Production sudah membuktikan:
@@ -337,7 +345,8 @@ Master SKU                                   tetap shared setelah clear/hapus st
 4. Audit source dan DDL live read-only sebelum schema/migration.
 5. Jika report baru: berhenti pada analisa lalu diskusi. Jangan langsung coding.
 6. Jika import real: preview dulu, laporkan hasil, tunggu approval import.
-7. Setelah source berubah: test, TypeScript, build, `git diff --check`, independent review fresh, baru commit/deploy bila user mengizinkan.
+7. Sesudah import real, audit parent SHA, active-section source-row identity, reconciliation, orphan child, dan API production read-only sebelum menyebutnya lengkap.
+8. Setelah source berubah: test, TypeScript, build, `git diff --check`, independent review fresh, baru commit/deploy bila user mengizinkan.
 
 ---
 

@@ -1,6 +1,6 @@
 # Shopee Profit Estimation
 
-**Last updated:** 2026-08-09 18:53 WIB
+**Last updated:** 2026-08-09 19:17 WIB
 
 **Production:** https://webapp-umber-five.vercel.app
 
@@ -33,7 +33,10 @@
 
 3. **Income RAW package per store**
    - Satu workbook Income disimpan sebagai satu package/provenance.
-   - Saat dokumentasi ini diperbarui, tidak ada package Income live pada store yang tersisa.
+   - TACTICALIZED saat dokumentasi ini diperbarui memiliki satu package Income periode Mei 2026 dengan reconciliation `matched`.
+   - Kontrak RAW aktif menyimpan `Penghasilan` view `Order` dan `Sku`, serta `Adjustment` bila source menyediakannya.
+   - Tidak adanya sheet `Shipping Fee Discrepancy` pada source berarti tidak ada child RAW section yang diharapkan untuk package tersebut.
+   - `Seller Fee` tetap audit-only dan belum dimaterialisasi sebagai child RAW transaksi.
    - Package Income yang pernah diimport dapat dihapus melalui Clear Data Toko Aktif bersama data operasional store tersebut.
    - Setiap package Income yang diimport selalu scope ke store aktif dan tidak bocor lintas store.
 
@@ -189,6 +192,14 @@ income_shipping_fee_discrepancies_raw
 - Breakdown tersebut tetap dipertahankan di `raw_payload`, tetapi tidak ikut dijumlahkan lagi dalam signed checksum `Penghasilan / Order`.
 - Parser hanya menerapkan pengecualian ini bila header aggregate `Biaya Layanan` ada. Layout non-aggregate tetap menjumlahkan komponen yang tersedia seperti source.
 - Gate `Summary 3. Total yang Dilepas` tetap wajib matched; mismatch tetap memblok import, bukan dibypass.
+
+### Verifikasi source-to-DB setelah import
+
+- Cocokkan SHA-256 source dengan parent `income_report_imports` pada store target.
+- Bandingkan setiap `source_excel_row` dari `Penghasilan / Order`, `Penghasilan / Sku`, `Adjustment`, dan `Shipping Fee Discrepancy` yang aktif dengan child RAW package tersebut.
+- Pastikan tidak ada row child Income orphan dan reconciliation parent tetap `matched`.
+- Verifikasi baca ulang melalui `GET /api/income` serta `/api/settings/database` pada canonical production URL.
+- Status lengkap berarti lengkap untuk **kontrak RAW aktif**; `Seller Fee` belum boleh diklaim sebagai table transaksi yang diimport.
 
 ### Dua grain Penghasilan
 
@@ -373,14 +384,17 @@ DASHBOARD_AUTH_ENABLED
 
 ## 9. Verifikasi yang Sudah Terbukti
 
-Release source terakhir sebelum data operasional masuk:
+Code release Income legacy-fee:
 
 ```text
-npm test                                      PASS
+Income regression suite                        16/16 PASS
+npm test                                      64/65 PASS; satu live-fixture lama mengharuskan minimal dua store
 ./node_modules/.bin/tsc --noEmit ...          PASS
 npm run build                                 PASS
 git diff --check                              PASS
 Independent read-only review                  PASS
+Production preview-only Income Mei            200; reconciliation matched; database tidak berubah
+Post-import source-to-DB audit                parent hash, source-row identity, dan child integrity PASS
 ```
 
 Production behavior yang sudah terverifikasi:
@@ -393,7 +407,8 @@ SKU importId invalid                          400
 Profit legacy                                 503 PROFIT_NOT_READY
 Store clear/reset/delete                      guarded confirmation + scope checks
 Income RAW                                  diisolasi per store saat diimport
-Current store live                            tidak memiliki package Income
+TACTICALIZED Income Mei                       satu package; reconciliation matched
+Income RAW active-section identity            source-row parity dan tanpa orphan
 Master SKU                                   tetap shared setelah clear/hapus store
 ```
 
@@ -407,11 +422,14 @@ Master SKU                                   tetap shared setelah clear/hapus st
 - Commit hanya file source/test/docs yang scope task.
 - `Archive/`, backup dokumentasi, `.env.local`, dan raw workbook tidak boleh di-commit tanpa instruksi eksplisit user.
 - Workbook Income untracked di `data_sample/` adalah data kerja user dan harus dibiarkan utuh.
+- `data_sample/sample_all_store/` adalah fixture/raw report user; jangan dihapus, diubah, atau di-stage otomatis.
 - Backup dokumentasi sebelum sinkronisasi ini:
 
 ```text
 Archive/docs-backups/README.md.pre-live-state-correction-20260809-180312
 Archive/docs-backups/NEXTAGENTS.md.pre-live-state-correction-20260809-180312
+Archive/docs-backups/income-may-live-state-sync-20260809-191119/
+Archive/docs-backups/webapp-readme-live-sync-20260809-191551/
 ```
 
 ---
