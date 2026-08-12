@@ -8,11 +8,11 @@
 
 **Branch:** `master`
 
-**Code release:** `4e54c39` — `feat(upload): add reviewed bulk report queue`
+**Code release:** `c41c890` — `feat(profit): add gross estimation dashboard`
 
-**Last code verification deployment:** `dpl_8sVCM8uuL71w15UV3qmgmh3nPz4b` — `Ready`
+**Last code verification deployment:** `dpl_8pfdd8wtTBsjxsPAgn2DG3Z4cFBa` — `Ready`, Production
 
-> Mulai dengan membaca `README.md` penuh, lalu file ini. RAW Order.all, Income, Balance, order exceptions, Ads, dan Master SKU shared sudah live. Implementasi **Estimasi Kotor** sudah disetujui user dan dimulai pada checkpoint ini. Jangan migration, import, clear, reset, atau hapus store. Sampai quality gate dan deploy selesai, production tetap memakai guard `PROFIT_NOT_READY`.
+> Mulai dengan membaca `README.md` penuh, lalu file ini. RAW Order.all, Income, Balance, order exceptions, Ads, dan Master SKU shared sudah live. **Estimasi Kotor** sudah live di `/profit`; Profit Aktual tetap disengaja terkunci. Jangan migration, import, clear, reset, atau hapus store tanpa diskusi/approval.
 
 ---
 
@@ -45,15 +45,16 @@ Master SKU
 - `clear_shared_sku` mereset Master SKU global dengan confirmation eksplisit.
 - `DELETE /api/stores` menghapus store kosong dengan confirmation eksplisit.
 - Basic Auth berlaku untuk page dan API.
-- Route/API Profit yang sedang live masih disengaja mengembalikan `503 PROFIT_NOT_READY`; checkpoint ini belum berarti source atau production sudah berubah.
-- User sudah menyetujui implementasi **Estimasi Kotor** untuk monitoring Ads Spend harian. Scope ini bukan migration DB, bukan import, dan bukan perubahan RAW source.
-- Probe read-only membuktikan RAW dapat menghitung profit per-order aktual, kerugian cash settlement retur, serta estimasi kotor sebelum fee untuk order eligible.
-- GitHub `master` memuat baseline source release `4e54c39`; setiap commit dokumentasi harus dipush lalu deployment production baru diverifikasi sebelum state deployment disebut final.
+- `/profit` live sebagai **Profit & Estimasi**: tab **Estimasi Kotor** manual-load dan tab **Profit Aktual** terkunci.
+- `GET /api/profit-estimation` live, read-only, store-scoped. Ia menampilkan summary, daily aggregate, serta detail order paginated untuk monitoring Ads Spend.
+- Scope Estimasi Kotor bukan migration DB, bukan import, dan bukan perubahan RAW source.
+- Formula Estimasi Kotor: satu `Total Pembayaran` order dikurangi Σ(HPP × quantity). Bukan Profit Bersih.
+- Legacy `/api/profit-calculation` dan `/api/profit-calculation/summary` tetap `503 PROFIT_NOT_READY`; itu adalah boundary Profit Aktual.
+- GitHub `master` memuat release `c41c890`; canonical production deployment `dpl_8pfdd8wtTBsjxsPAgn2DG3Z4cFBa` sudah Ready dan smoke test production lulus.
 - Master SKU tetap shared/global. State Order/Income/RAW terbaru wajib dicek dari database read-only atau API production karena data operasional dapat berubah.
 
 ### Belum selesai
 
-- Implementasi UI/API **Estimasi Kotor per order dan per hari**. Kontrak sudah disetujui; lihat bagian 5A sebelum menyentuh source.
 - Profit aktual/confirmed per-order dan per hari dari settlement `Penghasilan / Order`.
 - Ads accounting layer dan alokasi biaya iklan ke order/item.
 - Biaya eksternal per order: packaging, tenaga kerja, dan biaya operasional lain.
@@ -224,13 +225,13 @@ Kerugian Cash Settlement Retur
 - Exclude packaging, tenaga kerja, dan ads sampai ada kontrak alokasi.
 - `Seller Fee` tetap audit-only; tidak ditambahkan ke `Penghasilan`.
 
-### 4A. Estimasi Kotor — checkpoint implementasi yang sudah disetujui
+### 4A. Estimasi Kotor — production release
 
-**Keputusan user:** gunakan satu menu existing `/profit`, dengan label navigasi **Profit & Estimasi**. Jangan menambah menu global baru karena navigasi mobile sudah padat dan domain finansial tidak boleh terpecah.
+**Keputusan user:** gunakan satu menu existing `/profit`, dengan label navigasi **Profit & Estimasi**. Tidak ada menu global baru karena navigasi mobile sudah padat dan domain finansial tidak boleh terpecah.
 
-**Status checkpoint:** implementasi source lokal dimulai sesudah backup dokumentasi terverifikasi. Production tetap mengembalikan `503 PROFIT_NOT_READY` sampai source selesai melewati test/review dan user memberi instruksi commit/deploy secara eksplisit.
+**Status release:** source `c41c890` sudah dipush ke GitHub `master`; deployment Production `dpl_8pfdd8wtTBsjxsPAgn2DG3Z4cFBa` sudah `Ready`. Smoke authenticated `/profit` dan `/api/profit-estimation` lulus. Hanya Profit Aktual yang tetap mengembalikan `503 PROFIT_NOT_READY` melalui route legacy.
 
-**Struktur UI yang harus dibangun:**
+**Struktur UI yang live:**
 
 ```text
 /profit  — Profit & Estimasi
@@ -312,25 +313,22 @@ GET /api/profit-estimation?storeId=<id>&dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD&pa
 - Response harus memisahkan daily aggregate, summary, order detail paginated, dan order HPP incomplete/review count.
 - Keep `/api/profit-calculation` dan `/api/profit-calculation/summary` sebagai `503 PROFIT_NOT_READY`; itu boundary Profit Aktual, bukan endpoint Estimasi Kotor.
 
-### TDD dan release boundary
+### Implementasi, review, dan release evidence
 
-1. Tulis `profit-estimation.test.mjs`, lalu jalankan sampai **RED** karena helper belum ada.
-2. Implement helper minimal sampai test **GREEN**; jangan menulis route/UI sebelum formula guard lulus.
-3. Tambahkan route/UI test dan jalankan regression suite, TypeScript no-emit, build, `git diff --check`, security scan, serta independent review baru.
-4. Jangan memakai `git add -A`, commit, push, atau deploy tanpa instruksi user berikutnya.
-5. Jangan memakai real upload/import untuk test fitur ini. Semua live evidence harus `GET` read-only.
+1. Test-first helper, route contract, dan UI contract sudah lulus; `npm test`: **105 pass, 0 fail, 2 skip** live-fixture lama.
+2. `npm run lint -- --quiet`, `npm run build`, serta `git diff --check` lulus sebelum release.
+3. Tiga independent review dilakukan. Review pertama menemukan omission RAW exception; review kedua memverifikasi fix tersebut; review final memverifikasi `returned_quantity > 0` juga menjadi `not_eligible`. Tidak ada issue high/medium tersisa.
+4. Source release `c41c890` dipush ke GitHub `master`; local `HEAD` dan `origin/master` sama.
+5. Deployment Production `dpl_8pfdd8wtTBsjxsPAgn2DG3Z4cFBa` Ready pada canonical alias.
+6. Smoke production dengan Basic Auth lulus: `/profit` `200`; `/api/profit-estimation` `200` dan menghasilkan summary/daily/order; tanggal invalid `400`; legacy `/api/profit-calculation` tetap `503 PROFIT_NOT_READY`; request tanpa Basic Auth ke `/profit` `401`.
+7. Tidak ada real upload/import/mutasi DB pada validasi Estimasi Kotor. Semua evidence live adalah `GET` read-only.
+8. Backup handoff sebelum release dan setelah production verification tersimpan di `Archive/docs-backups/` serta SHA-256 diverifikasi. Archive tidak di-stage.
 
-### Preflight evidence / blocker yang sudah diketahui
+### Runtime note
 
-- Canonical production API dengan Basic Auth sudah terbukti read-only untuk Orders, Ads, SKU, dan guard Profit.
-- Ads RAW memiliki event `Deduction for Product Ad`, `Isi Saldo`, dan `ROAS Protection Free Ads Credit Rebate`; klasifikasi di atas harus dipertahankan.
-- Direct cPanel MySQL dari VPS sempat menghasilkan `connect ETIMEDOUT`. Jangan menyimpulkan DB kosong atau rusak dari error itu; gunakan API production untuk observasi sampai koneksi direct berhasil kembali.
-- Backup sebelum checkpoint ini sudah byte-identik di `Archive/docs-backups/estimasi-kotor-pre-implementation-20260813-000922/NEXTAGENTS.md`. Artifact Archive tetap tidak boleh di-stage.
-- Implementasi lokal Estimasi Kotor sudah selesai dan belum commit/deploy. `npm test`: 105 pass, 0 fail, 2 skip live-fixture; `npm run lint -- --quiet`, `npm run build`, dan `git diff --check`: pass.
-- Smoke read-only memakai Windows OpenVPN SSH tunnel ke MariaDB membuktikan `GET /api/profit-estimation` menghasilkan order/daily/Ads hasil live; invalid calendar range menghasilkan `400`; legacy `/api/profit-calculation` tetap `503 PROFIT_NOT_READY`.
-- Independent review pertama menemukan current-state marker saja tidak cukup. Fix menggabungkan RAW Cancellation, Return/Refund, dan Failed Delivery per `store_id`; review kedua PASS. Bukti live: order `260804E8J5Q3UR` status `Telah Dikirim` dengan marker `Order.all` blank kini `not_eligible` karena `CANCELLATION_ATAU_RETURN_RAW`.
-- Follow-up review menandai `returned_quantity`. Audit live menemukan 83 order dengan nilai positif; semuanya saat ini juga punya marker return, tetapi guard eksplisit tetap ditambahkan: setiap `returned_quantity > 0` menjadi `not_eligible` dengan reason `RETURNED_QUANTITY_POSITIF`.
-- Server/tunnel test lokal sudah ditutup. Source belum commit, push, atau deploy; production tetap release baseline dan `/profit` belum memuat UI Estimasi Kotor sampai user mengizinkan release.
+- Canonical production API dengan Basic Auth adalah sumber state live. Jangan memakai summary/count dokumen ini sebagai fakta yang tidak berubah.
+- Direct cPanel MySQL dari VPS bisa `ETIMEDOUT`; Windows OpenVPN SSH bridge pernah terbukti sebagai jalur read-only alternatif. Jangan mengubah config jaringan/database hanya untuk test Estimasi Kotor.
+- Ads RAW memiliki event `Deduction for Product Ad`, `Isi Saldo`, dan `ROAS Protection Free Ads Credit Rebate`; klasifikasi kontrak di atas harus dipertahankan.
 
 ---
 
