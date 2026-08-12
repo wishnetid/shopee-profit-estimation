@@ -58,7 +58,7 @@ export default function RootLayout({
                 Ads RAW
               </NavLink>
               <NavLink href="/profit" icon={BarChart3}>
-                Profit
+                Profit & Estimasi
               </NavLink>
               <NavLink href="/settings" icon={Settings}>
                 Settings
@@ -87,7 +87,7 @@ export default function RootLayout({
               <MobileNavLink href="/balance" icon={WalletCards} label="Balance" />
               <MobileNavLink href="/exceptions" icon={CircleAlert} label="Exception" />
               <MobileNavLink href="/ads" icon={Megaphone} label="Ads" />
-              <MobileNavLink href="/profit" icon={BarChart3} label="Profit" />
+              <MobileNavLink href="/profit" icon={BarChart3} label="Estimasi" />
               <MobileNavLink href="/settings" icon={Settings} label="Setting" />
             </div>
           </nav>

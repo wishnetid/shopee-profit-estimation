@@ -1,6 +1,6 @@
 # NEXTAGENTS — Shopee Profit Estimation
 
-**Last updated:** 2026-08-12 WIB
+**Last updated:** 2026-08-13 WIB
 
 **Production:** https://webapp-umber-five.vercel.app
 
@@ -12,7 +12,7 @@
 
 **Last code verification deployment:** `dpl_8sVCM8uuL71w15UV3qmgmh3nPz4b` — `Ready`
 
-> Mulai dengan membaca `README.md` penuh, lalu file ini. Jangan langsung coding, migration, import, clear, reset, atau hapus store. RAW Order.all, Income, Balance, order exceptions, Ads, dan Master SKU shared sudah live. UI Profit belum tersedia, tetapi kelayakan kalkulasi per-order sudah dibuktikan read-only.
+> Mulai dengan membaca `README.md` penuh, lalu file ini. RAW Order.all, Income, Balance, order exceptions, Ads, dan Master SKU shared sudah live. Implementasi **Estimasi Kotor** sudah disetujui user dan dimulai pada checkpoint ini. Jangan migration, import, clear, reset, atau hapus store. Sampai quality gate dan deploy selesai, production tetap memakai guard `PROFIT_NOT_READY`.
 
 ---
 
@@ -45,14 +45,16 @@ Master SKU
 - `clear_shared_sku` mereset Master SKU global dengan confirmation eksplisit.
 - `DELETE /api/stores` menghapus store kosong dengan confirmation eksplisit.
 - Basic Auth berlaku untuk page dan API.
-- Profit legacy disengaja mengembalikan `503 PROFIT_NOT_READY`; belum ada UI/API profit yang dipublikasikan.
-- Probe read-only membuktikan raw data dapat menghitung profit per-order aktual, kerugian cash settlement retur, dan estimasi kotor sebelum fee untuk order belum settlement.
+- Route/API Profit yang sedang live masih disengaja mengembalikan `503 PROFIT_NOT_READY`; checkpoint ini belum berarti source atau production sudah berubah.
+- User sudah menyetujui implementasi **Estimasi Kotor** untuk monitoring Ads Spend harian. Scope ini bukan migration DB, bukan import, dan bukan perubahan RAW source.
+- Probe read-only membuktikan RAW dapat menghitung profit per-order aktual, kerugian cash settlement retur, serta estimasi kotor sebelum fee untuk order eligible.
 - GitHub `master` memuat baseline source release `4e54c39`; setiap commit dokumentasi harus dipush lalu deployment production baru diverifikasi sebelum state deployment disebut final.
 - Master SKU tetap shared/global. State Order/Income/RAW terbaru wajib dicek dari database read-only atau API production karena data operasional dapat berubah.
 
 ### Belum selesai
 
-- UI/API Profit per-order. Kontrak kalkulasi read-only sudah ada, tetapi belum boleh diubah menjadi feature produk tanpa diskusi/approval.
+- Implementasi UI/API **Estimasi Kotor per order dan per hari**. Kontrak sudah disetujui; lihat bagian 5A sebelum menyentuh source.
+- Profit aktual/confirmed per-order dan per hari dari settlement `Penghasilan / Order`.
 - Ads accounting layer dan alokasi biaya iklan ke order/item.
 - Biaya eksternal per order: packaging, tenaga kerja, dan biaya operasional lain.
 - QC stok return/refund untuk menentukan restock layak versus HPP yang menjadi kerugian.
@@ -65,7 +67,7 @@ Master SKU
 - Income package selalu scope per store; jangan membaca package satu store sebagai data global.
 - State live dapat berubah sesudah clear/hapus store; query API production sebelum membuat klaim count/package.
 - Master SKU memang global/shared, bukan per-store.
-- Profit belum dapat dipakai sebagai angka bisnis.
+- Estimasi Kotor bukan Profit Bersih dan tidak boleh dipasarkan sebagai angka laba final.
 
 ---
 
@@ -222,7 +224,113 @@ Kerugian Cash Settlement Retur
 - Exclude packaging, tenaga kerja, dan ads sampai ada kontrak alokasi.
 - `Seller Fee` tetap audit-only; tidak ditambahkan ke `Penghasilan`.
 
-Belum diimplementasikan: route/API/UI Profit. Jangan mengubah guard `PROFIT_NOT_READY` atau menambah kalkulasi baru tanpa diskusi dan approval.
+### 4A. Estimasi Kotor — checkpoint implementasi yang sudah disetujui
+
+**Keputusan user:** gunakan satu menu existing `/profit`, dengan label navigasi **Profit & Estimasi**. Jangan menambah menu global baru karena navigasi mobile sudah padat dan domain finansial tidak boleh terpecah.
+
+**Status checkpoint:** implementasi source lokal dimulai sesudah backup dokumentasi terverifikasi. Production tetap mengembalikan `503 PROFIT_NOT_READY` sampai source selesai melewati test/review dan user memberi instruksi commit/deploy secara eksplisit.
+
+**Struktur UI yang harus dibangun:**
+
+```text
+/profit  — Profit & Estimasi
+├─ Estimasi Kotor
+│  ├─ Ringkasan Harian
+│  └─ Per Order
+└─ Profit Aktual
+   └─ tetap terkunci / belum dihitung
+```
+
+Jangan membuat halaman Ads kedua untuk kalkulasi. `/ads` tetap halaman RAW/audit source.
+
+### Kontrak angka yang disetujui
+
+```text
+Estimasi Kotor Sebelum Fee & Ads per order
+= satu nilai Total Pembayaran order-level
+- Σ(HPP Master × jumlah item)
+
+Estimasi Kotor Harian
+= Σ Estimasi Kotor order eligible dan HPP-lengkap pada tanggal order
+
+Ads Spend Harian
+= Σ abs(Jumlah signed) untuk transaksi Ads
+  dengan deskripsi mulai "Deduction for Product Ad"
+  dan nilai signed negatif
+
+Sisa Estimasi Setelah Ads per hari
+= Estimasi Kotor Harian - Ads Spend Harian
+```
+
+Label UI wajib memakai istilah berikut, bukan `Profit Bersih`:
+
+```text
+Estimasi Kotor Sebelum Fee & Ads
+Ads Spend
+Sisa Estimasi Setelah Ads
+Profit Aktual — Belum Tersedia
+```
+
+`Sisa Estimasi Setelah Ads` adalah angka agregat hari/toko. Jangan mengalokasikan Ads Spend ke order atau item sampai ada relasi campaign/order yang terbukti.
+
+### Batas data dan safety rule
+
+1. **Order eligible** hanya memiliki status `Perlu Dikirim`, `Sedang Dikirim`, `Telah Dikirim`, atau `Selesai`.
+2. Exclude order jika `Alasan Pembatalan` atau `Status Pembatalan/ Pengembalian` pada `Order.all` memiliki nilai bisnis. Perlakukan kosong, `-`, `N/A`, dan `null` sebagai blank saja.
+3. Sebagai guard tambahan, exclude juga seluruh `no_pesanan` yang ada pada RAW Cancellation, Return/Refund, atau Failed Delivery untuk toko aktif, walaupun current-state `Order.all` masih `Selesai`/`Telah Dikirim` dan marker-nya blank. RAW exception dapat lebih baru dari snapshot current-state.
+4. `returned_quantity > 0` pada salah satu item membuat seluruh order `Tidak Eligible`. Ini guard fail-closed walaupun marker return belum muncul atau RAW exception belum terimport.
+5. Satu order dapat punya banyak item. `Total Pembayaran` adalah nilai order-level dan **tidak boleh dijumlahkan per item row**.
+6. Bila satu order mempunyai `Total Pembayaran` berbeda, tanggal order tidak valid/berbeda, quantity tidak valid, atau HPP item tidak lengkap/ambigu, tampilkan sebagai `Perlu Review` / `HPP Belum Lengkap` dan exclude dari total Estimasi Kotor.
+7. HPP missing/ambiguous tidak boleh diperlakukan sebagai Rp0.
+8. Mapping HPP memakai `Nomor Referensi SKU` lebih dulu, lalu `SKU Induk` fallback. Pada masing-masing field, cari `SKU1` dulu lalu `SKU2` dari **Master SKU import terbaru** seperti perilaku `/api/sku`.
+9. Alias Master SKU dengan HPP sama adalah satu mapping. Satu alias yang menghasilkan HPP berbeda adalah conflict; jangan pilih arbitrer dan jangan masukkan ke total.
+10. Tanggal order harian berasal dari kalender source `DATE(Waktu Pesanan Dibuat)` dalam WIB. Tanggal Ads memakai `transaction_date` source. Jangan group melalui parsing ISO UTC di browser karena bisa menggeser hari.
+11. Hanya `Deduction for Product Ad` bernilai negatif yang menjadi Ads Spend. `Isi Saldo` adalah top-up, `ROAS Protection Free Ads Credit Rebate` adalah kredit, dan transaksi Ads lain tidak boleh diam-diam dianggap spend.
+12. Jika export Ads periodik overlap, deduplicate hanya event dengan `sequence_number` nonblank serta fingerprint sama: tanggal source, deskripsi, nominal signed, dan catatan. Event tanpa `sequence_number` tidak boleh otomatis dicollapse; ia tetap dihitung agar transaksi sah tidak hilang. Return `adsDuplicateEventCount` untuk audit.
+13. Packaging, tenaga kerja, biaya operasional lain, Seller Fee, Income Order/Sku, settlement, return QC, dan refund final tetap di luar fase ini.
+
+### Target source dan test
+
+```text
+webapp/lib/profit-estimation.js                 pure grouping/mapping/formula logic
+webapp/test/profit-estimation.test.mjs          regression test logic terlebih dahulu
+webapp/app/api/profit-estimation/route.ts       GET read-only, store-scoped, dynamic
+webapp/app/profit/page.tsx                      UI tab Estimasi Kotor / Profit Aktual
+webapp/app/layout.tsx                           label nav Profit & Estimasi
+```
+
+Target API read-only:
+
+```text
+GET /api/profit-estimation?storeId=<id>&dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD&page=<n>&limit=<n>
+```
+
+- `storeId` wajib divalidasi memakai boundary existing `requireStoreId`.
+- `dateFrom` dan `dateTo` optional, harus kalender valid, dan `dateFrom <= dateTo`.
+- `page`/`limit` wajib dibatasi seperti endpoint existing.
+- Route tidak boleh melakukan INSERT/UPDATE/DELETE, migration, upload, atau mutation metadata.
+- Response harus memisahkan daily aggregate, summary, order detail paginated, dan order HPP incomplete/review count.
+- Keep `/api/profit-calculation` dan `/api/profit-calculation/summary` sebagai `503 PROFIT_NOT_READY`; itu boundary Profit Aktual, bukan endpoint Estimasi Kotor.
+
+### TDD dan release boundary
+
+1. Tulis `profit-estimation.test.mjs`, lalu jalankan sampai **RED** karena helper belum ada.
+2. Implement helper minimal sampai test **GREEN**; jangan menulis route/UI sebelum formula guard lulus.
+3. Tambahkan route/UI test dan jalankan regression suite, TypeScript no-emit, build, `git diff --check`, security scan, serta independent review baru.
+4. Jangan memakai `git add -A`, commit, push, atau deploy tanpa instruksi user berikutnya.
+5. Jangan memakai real upload/import untuk test fitur ini. Semua live evidence harus `GET` read-only.
+
+### Preflight evidence / blocker yang sudah diketahui
+
+- Canonical production API dengan Basic Auth sudah terbukti read-only untuk Orders, Ads, SKU, dan guard Profit.
+- Ads RAW memiliki event `Deduction for Product Ad`, `Isi Saldo`, dan `ROAS Protection Free Ads Credit Rebate`; klasifikasi di atas harus dipertahankan.
+- Direct cPanel MySQL dari VPS sempat menghasilkan `connect ETIMEDOUT`. Jangan menyimpulkan DB kosong atau rusak dari error itu; gunakan API production untuk observasi sampai koneksi direct berhasil kembali.
+- Backup sebelum checkpoint ini sudah byte-identik di `Archive/docs-backups/estimasi-kotor-pre-implementation-20260813-000922/NEXTAGENTS.md`. Artifact Archive tetap tidak boleh di-stage.
+- Implementasi lokal Estimasi Kotor sudah selesai dan belum commit/deploy. `npm test`: 105 pass, 0 fail, 2 skip live-fixture; `npm run lint -- --quiet`, `npm run build`, dan `git diff --check`: pass.
+- Smoke read-only memakai Windows OpenVPN SSH tunnel ke MariaDB membuktikan `GET /api/profit-estimation` menghasilkan order/daily/Ads hasil live; invalid calendar range menghasilkan `400`; legacy `/api/profit-calculation` tetap `503 PROFIT_NOT_READY`.
+- Independent review pertama menemukan current-state marker saja tidak cukup. Fix menggabungkan RAW Cancellation, Return/Refund, dan Failed Delivery per `store_id`; review kedua PASS. Bukti live: order `260804E8J5Q3UR` status `Telah Dikirim` dengan marker `Order.all` blank kini `not_eligible` karena `CANCELLATION_ATAU_RETURN_RAW`.
+- Follow-up review menandai `returned_quantity`. Audit live menemukan 83 order dengan nilai positif; semuanya saat ini juga punya marker return, tetapi guard eksplisit tetap ditambahkan: setiap `returned_quantity > 0` menjadi `not_eligible` dengan reason `RETURNED_QUANTITY_POSITIF`.
+- Server/tunnel test lokal sudah ditutup. Source belum commit, push, atau deploy; production tetap release baseline dan `/profit` belum memuat UI Estimasi Kotor sampai user mengizinkan release.
 
 ---
 
@@ -309,7 +417,7 @@ Setiap aksi memakai confirmation kedua. Jangan panggil endpoint mutasi untuk smo
 /income    Income RAW store aktif
 /sku       Master SKU shared
 /settings  Database management + destructive controls terjaga
-/profit    Informational guard; belum ada angka profit
+/profit    Profit & Estimasi: Estimasi Kotor manual-load; Profit Aktual tetap terkunci
 ```
 
 ### Race/stale guard
@@ -331,6 +439,7 @@ GET    /api/stores
 POST   /api/stores
 DELETE /api/stores
 GET    /api/orders?storeId=<id>
+GET    /api/profit-estimation?storeId=<id>&dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD&page=<n>&limit=<n>
 GET    /api/income?storeId=<id>
 GET    /api/sku
 POST   /api/upload
