@@ -90,7 +90,7 @@ async function main() {
   const conn = await createConnection({ host: DB_HOST, port: Number(DB_PORT || 3306), user: DB_USER, password: DB_PASSWORD, database: DB_NAME });
   try {
     const report = [];
-    for (const [name, ddl] of Object.entries(TABLES)) {
+    for (const name of Object.keys(TABLES)) {
       const [rows] = await conn.query('SHOW TABLES LIKE ?', [name]);
       report.push({ table: name, exists: rows.length > 0, action: rows.length ? 'unchanged' : apply ? 'create' : 'would_create' });
     }

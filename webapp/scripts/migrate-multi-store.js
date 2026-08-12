@@ -54,14 +54,6 @@ async function foreignKeyExists(conn, table, constraintName) {
   return Number(rows[0].count) > 0;
 }
 
-async function tableExists(conn, table) {
-  const [rows] = await conn.query(
-    `SELECT COUNT(*) AS count FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
-    [table],
-  );
-  return Number(rows[0].count) > 0;
-}
-
 async function count(conn, sql, params = []) {
   const [rows] = await conn.query(sql, params);
   return Number(rows[0].count ?? rows[0].rows ?? 0);

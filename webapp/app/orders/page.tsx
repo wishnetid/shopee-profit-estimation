@@ -17,7 +17,7 @@ const ORDER_COLUMNS = [
 
 export default function OrdersPage() {
   const { storeId, activeStore, loading: storeLoading } = useStore();
-  const [data, setData] = useState<any[]>([]);
+  const [data, setData] = useState<Record<string, unknown>[]>([]);
   const [totalRows, setTotalRows] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

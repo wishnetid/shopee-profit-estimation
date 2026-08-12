@@ -3,10 +3,10 @@ import type { RowDataPacket } from 'mysql2/promise';
 import { getConnection } from '@/lib/db';
 import { requireStoreId } from '../../../../lib/store';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const {
   isMutationAuthorized,
   isSameOriginMutation,
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 } = require('../../../../lib/dashboard-auth.js') as {
   isMutationAuthorized: (authorization: string | null, env?: NodeJS.ProcessEnv) => boolean;
   isSameOriginMutation: (origin: string | null, expectedOrigin: string) => boolean;
@@ -29,11 +29,11 @@ export async function GET(request: NextRequest) {
   const storeId = storeCheck.storeId as number;
   const conn = await getConnection();
   try {
-    const [storeRows] = await conn.execute(
+    const [storeRows] = await conn.execute<Array<RowDataPacket & { id: number; store_name: string; store_slug: string }>>(
       'SELECT id, store_name, store_slug FROM stores WHERE id = ? LIMIT 1',
       [storeId],
-    ) as any;
-    const [counts] = await conn.execute(`
+    );
+    const [counts] = await conn.execute<Array<RowDataPacket & { name: string; row_count: number; scope: string }>>(`
       SELECT 'order_all' AS name, COUNT(*) AS row_count, 'store' AS scope FROM order_all WHERE store_id = ?
       UNION ALL
       SELECT 'income_report_imports', COUNT(*), 'store' FROM income_report_imports WHERE store_id = ?
@@ -47,11 +47,25 @@ export async function GET(request: NextRequest) {
       SELECT 'income_shipping_fee_discrepancies_raw', COUNT(*), 'store'
         FROM income_shipping_fee_discrepancies_raw r JOIN income_report_imports i ON i.id = r.income_report_import_id WHERE i.store_id = ?
       UNION ALL
+      SELECT 'balance_report_imports', COUNT(*), 'store' FROM balance_report_imports WHERE store_id = ?
+      UNION ALL
+      SELECT 'balance_transactions_raw', COUNT(*), 'store' FROM balance_transactions_raw r JOIN balance_report_imports i ON i.id = r.balance_report_import_id WHERE i.store_id = ?
+      UNION ALL
+      SELECT 'order_cancellation_report_imports', COUNT(*), 'store' FROM order_cancellation_report_imports WHERE store_id = ?
+      UNION ALL
+      SELECT 'order_failed_delivery_report_imports', COUNT(*), 'store' FROM order_failed_delivery_report_imports WHERE store_id = ?
+      UNION ALL
+      SELECT 'order_return_refund_report_imports', COUNT(*), 'store' FROM order_return_refund_report_imports WHERE store_id = ?
+      UNION ALL
+      SELECT 'ads_report_imports', COUNT(*), 'store' FROM ads_report_imports WHERE store_id = ?
+      UNION ALL
+      SELECT 'ads_transactions_raw', COUNT(*), 'store' FROM ads_transactions_raw r JOIN ads_report_imports i ON i.id = r.ads_report_import_id WHERE i.store_id = ?
+      UNION ALL
       SELECT 'sku_report_imports', COUNT(*), 'shared' FROM sku_report_imports
       UNION ALL
       SELECT 'sku_master_raw', COUNT(*), 'shared' FROM sku_master_raw
-    `, [storeId, storeId, storeId, storeId, storeId]) as any;
-    return NextResponse.json({ success: true, store: storeRows[0], tables: counts.map((row: any) => ({ name: row.name, rows: Number(row.row_count), scope: row.scope })) });
+    `, [storeId, storeId, storeId, storeId, storeId, storeId, storeId, storeId, storeId, storeId, storeId, storeId]);
+    return NextResponse.json({ success: true, store: storeRows[0], tables: counts.map((row) => ({ name: row.name, rows: Number(row.row_count), scope: row.scope })) });
   } catch {
     return NextResponse.json({ success: false, error: 'Database request failed.' }, { status: 500 });
   } finally {
@@ -113,14 +127,14 @@ export async function POST(request: NextRequest) {
 
   try {
     await conn.beginTransaction();
-    const [beforeRows] = await conn.execute(`
+    const [beforeRows] = await conn.execute<Array<RowDataPacket & { order_count: number; income_package_count: number; income_penghasilan_count: number; income_adjustment_count: number; income_shipping_count: number }>>(`
       SELECT
         (SELECT COUNT(*) FROM order_all WHERE store_id = ?) AS order_count,
         (SELECT COUNT(*) FROM income_report_imports WHERE store_id = ?) AS income_package_count,
         (SELECT COUNT(*) FROM income_penghasilan_raw r JOIN income_report_imports i ON i.id = r.income_report_import_id WHERE i.store_id = ?) AS income_penghasilan_count,
         (SELECT COUNT(*) FROM income_adjustments_raw r JOIN income_report_imports i ON i.id = r.income_report_import_id WHERE i.store_id = ?) AS income_adjustment_count,
         (SELECT COUNT(*) FROM income_shipping_fee_discrepancies_raw r JOIN income_report_imports i ON i.id = r.income_report_import_id WHERE i.store_id = ?) AS income_shipping_count
-    `, [storeId, storeId, storeId, storeId, storeId]) as any;
+    `, [storeId, storeId, storeId, storeId, storeId]);
     const before = beforeRows[0];
 
     await conn.execute('DELETE FROM income_penghasilan_raw WHERE income_report_import_id IN (SELECT id FROM income_report_imports WHERE store_id = ?)', [storeId]);

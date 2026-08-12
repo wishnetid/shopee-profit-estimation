@@ -53,6 +53,7 @@ test('validateUploadFile permits only supported workbook types within the config
     validateUploadFile({ name: 'Order.all.xlsx', size: 1024, type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
     { valid: true, error: null },
   );
+  assert.equal(validateUploadFile({ name: 'tacticalized_adwords_bill.csv', size: 1024, type: 'text/csv' }).valid, true);
   assert.equal(validateUploadFile({ name: 'payload.exe', size: 1024, type: 'application/octet-stream' }).valid, false);
   assert.equal(validateUploadFile({ name: 'Order.all.xlsx', size: 11 * 1024 * 1024, type: '' }).valid, false);
 });

@@ -11,8 +11,22 @@ const SKU_COLUMNS = [
   { key: 'idproduk', label: 'IDPRODUK' },
 ];
 
+interface SkuImportSummary {
+  id: number;
+  source_file: string;
+  sheet_name: string;
+  source_sha256: string;
+}
+
+interface SkuPayload {
+  imports: SkuImportSummary[];
+  selectedImport: SkuImportSummary | null;
+  data: Record<string, unknown>[];
+  total: number;
+}
+
 export default function SKUPage() {
-  const [payload, setPayload] = useState<any>(null);
+  const [payload, setPayload] = useState<SkuPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [importId, setImportId] = useState('');
@@ -43,8 +57,8 @@ export default function SKUPage() {
       if (!response.ok) throw new Error(result.error || 'Gagal memuat SKU RAW.');
       setPayload(result);
       if (result.selectedImport && !nextImportId) setImportId(String(result.selectedImport.id));
-    } catch (err: any) {
-      if (requestId === requestSequence.current) setError(err.message || 'Gagal memuat SKU RAW.');
+    } catch (err: unknown) {
+      if (requestId === requestSequence.current) setError(err instanceof Error ? err.message : 'Gagal memuat SKU RAW.');
     } finally {
       if (requestId === requestSequence.current) setLoading(false);
     }
@@ -77,7 +91,7 @@ export default function SKUPage() {
         <label className="block text-xs font-semibold text-slate-600 mb-1.5">Paket SKU yang ditampilkan</label>
         <select value={importId} onChange={(event) => selectImport(event.target.value)} className="w-full max-w-2xl border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white">
           <option value="">Paket terbaru</option>
-          {(payload?.imports || []).map((item: any) => (
+          {(payload?.imports || []).map((item) => (
             <option key={item.id} value={item.id}>{item.source_file} · {item.sheet_name}</option>
           ))}
         </select>

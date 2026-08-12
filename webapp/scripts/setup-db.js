@@ -66,7 +66,7 @@ async function setupDatabase() {
     console.log('\n✅ Database setup complete!');
 
     // Test connection
-    const [rows] = await connection.execute('SELECT 1 AS test');
+    await connection.execute('SELECT 1 AS test');
     console.log('✓ Connection test passed');
 
     // Show tables

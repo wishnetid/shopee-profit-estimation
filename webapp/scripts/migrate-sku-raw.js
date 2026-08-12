@@ -54,7 +54,7 @@ async function main() {
   });
   try {
     const report = [];
-    for (const [table, ddl] of Object.entries(TABLES)) {
+    for (const table of Object.keys(TABLES)) {
       const [rows] = await conn.query('SHOW TABLES LIKE ?', [table]);
       report.push({ table, exists: rows.length > 0, action: rows.length ? 'unchanged' : apply ? 'create' : 'would_create' });
     }

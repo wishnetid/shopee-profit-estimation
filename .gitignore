@@ -44,3 +44,9 @@ test-db.js
 
 # Local recovery backups contain database and customer data
 Archive/
+webapp/backups/
+
+# Operator-provided sample exports are local test data, never release assets.
+data_sample/new_sample/
+data_sample/sample_all_store/
+data_sample/Income.sudah.dilepas.id.*.xlsx

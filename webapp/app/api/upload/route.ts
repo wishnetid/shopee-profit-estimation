@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { requireStoreId } from '../../../lib/store';
 
 // Shared with node:test regression tests. The raw Shopee export uses IDR dot-thousands strings.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+
 const {
   parseIdr,
   parseSnapshotAt,
@@ -36,7 +36,7 @@ const {
   };
   validateOrderAllHeaders: (headers: unknown[]) => { valid: boolean; missing: string[]; unexpected: string[] };
 };
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+
 const {
   isMutationAuthorized,
   isSameOriginMutation,
@@ -46,7 +46,7 @@ const {
   isSameOriginMutation: (origin: string | null, expectedOrigin: string) => boolean;
   validateUploadFile: (file: { name: string; size: number; type: string } | null) => { valid: boolean; error: string | null };
 };
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+
 const {
   computeSha256,
   parseIncomePackage,
@@ -54,7 +54,7 @@ const {
   computeSha256: (buffer: Buffer) => string;
   parseIncomePackage: (workbook: XLSX.WorkBook, sourceFile: string, sha256: string) => any;
 };
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+
 const {
   buildIncomePreview,
   findExistingIncomeImport,
@@ -64,13 +64,13 @@ const {
   findExistingIncomeImport: (conn: Connection, storeId: number, sha256: string) => Promise<any>;
   importIncomePackage: (conn: Connection, parsed: any, storeId: number) => Promise<any>;
 };
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+
 const {
   parseSkuRawPackage,
 } = require('../../../lib/sku-raw-import.js') as {
   parseSkuRawPackage: (workbook: XLSX.WorkBook, sourceFile: string, sha256: string) => any;
 };
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+
 const {
   buildSkuPreview,
   findExistingSkuImport,
@@ -79,6 +79,25 @@ const {
   buildSkuPreview: (parsed: any, existingImport: any) => any;
   findExistingSkuImport: (conn: Connection, sha256: string) => Promise<any>;
   importSkuRawPackage: (conn: Connection, parsed: any) => Promise<any>;
+};
+
+const { parseBalancePackage } = require('../../../lib/balance-raw-import.js') as { parseBalancePackage: (workbook: XLSX.WorkBook, sourceFile: string, sha256: string) => any };
+
+const { parseExceptionPackage } = require('../../../lib/exception-raw-import.js') as { parseExceptionPackage: (workbook: XLSX.WorkBook, sourceFile: string, sha256: string) => any };
+
+const { parseAdsPackage } = require('../../../lib/ads-raw-import.js') as { parseAdsPackage: (buffer: Buffer, sourceFile: string, sha256: string) => any };
+
+const { detectRawExpansionReportType } = require('../../../lib/raw-expansion-classifier.js') as { detectRawExpansionReportType: (input: { workbook?: XLSX.WorkBook; csvBuffer?: Buffer }) => string | null };
+
+const { buildRawPreview, findExistingRawImport, importRawPackage } = require('../../../lib/raw-expansion-db.js') as {
+  buildRawPreview: (parsed: any, reportType: string, existing: any) => any;
+  findExistingRawImport: (conn: Connection, reportType: string, storeId: number, sha256: string) => Promise<any>;
+  importRawPackage: (conn: Connection, parsed: any, reportType: string, storeId: number) => Promise<any>;
+};
+
+const { createPreviewTicket, verifyPreviewTicket } = require('../../../lib/upload-preview-ticket.js') as {
+  createPreviewTicket: (payload: { storeId: number; sha256: string; reportType: string }, secret: string) => string;
+  verifyPreviewTicket: (ticket: string | null, payload: { storeId: number; sha256: string; reportType: string }, secret: string) => { valid: boolean; error: string | null };
 };
 
 const BATCH_SIZE = 100;
@@ -162,6 +181,8 @@ function shouldWriteSnapshotProvenance(
 }
 
 function detectReportType(workbook: XLSX.WorkBook): string | null {
+  const rawExpansionType = detectRawExpansionReportType({ workbook });
+  if (rawExpansionType) return rawExpansionType;
   for (const name of workbook.SheetNames) {
     if (name.toLowerCase() === 'orders') {
       const sheet = workbook.Sheets[name];
@@ -169,16 +190,10 @@ function detectReportType(workbook: XLSX.WorkBook): string | null {
       if (data.length > 0 && validateOrderAllHeaders(data[0] || []).valid) return 'order_all';
     }
   }
+  for (const name of workbook.SheetNames) if (name.toLowerCase().includes('penghasilan')) return 'income';
   for (const name of workbook.SheetNames) {
-    if (name.toLowerCase().includes('penghasilan')) return 'income';
-  }
-  for (const name of workbook.SheetNames) {
-    const sheet = workbook.Sheets[name];
-    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-    if (data.length > 0) {
-      const headers = data[0].map((h: any) => String(h || '').toLowerCase());
-      if (headers.includes('sku1') && headers.includes('harga')) return 'master';
-    }
+    const data = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1 }) as any[][];
+    if (data.length > 0 && data[0].map((h: any) => String(h || '').toLowerCase()).includes('sku1') && data[0].map((h: any) => String(h || '').toLowerCase()).includes('harga')) return 'master';
   }
   return null;
 }
@@ -222,41 +237,27 @@ function validateOrderAllWorkbook(workbook: XLSX.WorkBook) {
   return { valid: true, error: null };
 }
 
+function previewTicketSecret(): string {
+  const secret = process.env.DASHBOARD_BASIC_AUTH_PASSWORD;
+  if (!secret) throw new Error('Preview ticket secret is unavailable.');
+  return secret;
+}
+
 function getReportName(type: string): string {
   switch (type) {
     case 'order_all': return 'Order.all';
     case 'income': return 'Income Penghasilan';
     case 'master': return 'SKU Master RAW';
+    case 'balance': return 'Balance RAW';
+    case 'order_cancellation': return 'Cancellation RAW';
+    case 'order_failed_delivery': return 'Failed Delivery RAW';
+    case 'order_return_refund': return 'Return/Refund RAW';
+    case 'ads_ledger': return 'Ads RAW';
     default: return type;
   }
 }
 
 // ─── PREVIEW ───────────────────────────────────────────
-
-// Status progression order — higher = more advanced
-const STATUS_ORDER: Record<string, number> = {
-  'Belum Bayar': 0,
-  'Perlu Dikirim': 1,
-  'Sedang Dikirim': 2,
-  'Telah Dikirim': 3,
-  'Selesai': 4,
-  'Batal': 4, // terminal state
-};
-
-function isRegression(oldStatus: string | null, newStatus: string | null): boolean {
-  if (!oldStatus || !newStatus) return false;
-  const oldRank = STATUS_ORDER[oldStatus];
-  const newRank = STATUS_ORDER[newStatus];
-  if (oldRank === undefined || newRank === undefined) return false;
-  return oldRank > newRank;
-}
-
-function isResiRegression(oldResi: any, newResi: any): boolean {
-  const oldStr = oldResi != null ? String(oldResi).trim() : '';
-  const newStr = newResi != null ? String(newResi).trim() : '';
-  // Regression: had resi but now null/empty
-  return oldStr !== '' && newStr === '';
-}
 
 // Extract composite keys from Excel for order_all
 function extractOrderKeys(workbook: XLSX.WorkBook): string[][] {
@@ -607,7 +608,7 @@ async function importOrderAll(
   let updatedCount = 0;
   let guardedRows = 0;
   let protectedFields = 0;
-  let errors = 0;
+  const errors = 0;
 
   const keyIdx = [
     ORDER_COLS.indexOf('no_pesanan'),
@@ -734,15 +735,18 @@ export async function POST(request: NextRequest) {
     const fileValidation = validateUploadFile(file);
     if (!fileValidation.valid) return NextResponse.json({ error: fileValidation.error }, { status: 400 });
 
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const reportType = detectReportType(workbook);
-    if (!reportType) return NextResponse.json({ error: 'Cannot detect report type.' }, { status: 400 });
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const isCsv = file.name.toLowerCase().endsWith('.csv');
+    const workbook = isCsv ? null : XLSX.read(buffer, { type: 'buffer' });
+    const reportType = isCsv
+      ? detectRawExpansionReportType({ csvBuffer: buffer })
+      : detectReportType(workbook as XLSX.WorkBook);
+    if (!reportType) return NextResponse.json({ error: 'Struktur report tidak dikenali.' }, { status: 400 });
     if (action !== 'preview' && action !== 'import') {
       return NextResponse.json({ error: 'Invalid upload action.' }, { status: 400 });
     }
     if (reportType === 'order_all') {
-      const workbookValidation = validateOrderAllWorkbook(workbook);
+      const workbookValidation = validateOrderAllWorkbook(workbook as XLSX.WorkBook);
       if (!workbookValidation.valid) {
         return NextResponse.json({ error: workbookValidation.error }, { status: 400 });
       }
@@ -764,20 +768,35 @@ export async function POST(request: NextRequest) {
     if (action === 'preview') {
       conn = await getConnection();
       if (reportType === 'income') {
-        const parsed = parseIncomePackage(workbook, sourceSnapshotFile, computeSha256(Buffer.from(buffer)));
+        const parsed = parseIncomePackage(workbook as XLSX.WorkBook, sourceSnapshotFile, computeSha256(buffer));
         const existingImport = await findExistingIncomeImport(conn, storeId, parsed.sha256);
         const preview = buildIncomePreview(parsed, existingImport);
         if (!preview.valid) return NextResponse.json({ error: 'Income package ditolak.', ...preview }, { status: 400 });
         return NextResponse.json({ success: true, action: 'preview', reportType: reportName, ...preview });
       }
       if (reportType === 'master') {
-        const parsed = parseSkuRawPackage(workbook, sourceSnapshotFile, computeSha256(Buffer.from(buffer)));
+        const parsed = parseSkuRawPackage(workbook as XLSX.WorkBook, sourceSnapshotFile, computeSha256(buffer));
         const existingImport = await findExistingSkuImport(conn, parsed.sha256);
         const preview = buildSkuPreview(parsed, existingImport);
         if (!preview.valid) return NextResponse.json({ error: 'SKU RAW package ditolak.', ...preview }, { status: 400 });
         return NextResponse.json({ success: true, action: 'preview', reportType: reportName, ...preview });
       }
-      const preview = await handlePreview(workbook, reportType, conn, storeId, sourceSnapshotAt, sourceSnapshotFile);
+      if (['balance', 'order_cancellation', 'order_failed_delivery', 'order_return_refund', 'ads_ledger'].includes(reportType)) {
+        const sha256 = computeSha256(buffer);
+        const parsed = reportType === 'balance'
+          ? parseBalancePackage(workbook as XLSX.WorkBook, sourceSnapshotFile, sha256)
+          : reportType === 'ads_ledger'
+            ? parseAdsPackage(buffer, sourceSnapshotFile, sha256)
+            : parseExceptionPackage(workbook as XLSX.WorkBook, sourceSnapshotFile, sha256);
+        const existingImport = await findExistingRawImport(conn, reportType, storeId, sha256);
+        const preview = buildRawPreview(parsed, reportType, existingImport);
+        if (!preview.valid) return NextResponse.json({ error: 'RAW package ditolak.', ...preview }, { status: 400 });
+        const previewTicket = preview.canImport
+          ? createPreviewTicket({ storeId, sha256, reportType }, previewTicketSecret())
+          : null;
+        return NextResponse.json({ success: true, action: 'preview', reportType: reportName, previewTicket, ...preview });
+      }
+      const preview = await handlePreview(workbook as XLSX.WorkBook, reportType, conn, storeId, sourceSnapshotAt, sourceSnapshotFile);
       if (!preview) return NextResponse.json({ error: 'Cannot parse file for preview.' }, { status: 400 });
       return NextResponse.json({
         success: true,
@@ -790,7 +809,7 @@ export async function POST(request: NextRequest) {
     // ── IMPORT ──
     let parsedSkuPackage: any = null;
     if (reportType === 'master') {
-      parsedSkuPackage = parseSkuRawPackage(workbook, sourceSnapshotFile, computeSha256(Buffer.from(buffer)));
+      parsedSkuPackage = parseSkuRawPackage(workbook as XLSX.WorkBook, sourceSnapshotFile, computeSha256(buffer));
       if (!parsedSkuPackage.valid) {
         return NextResponse.json({ error: 'SKU RAW package ditolak.', ...parsedSkuPackage }, { status: 400 });
       }
@@ -801,18 +820,34 @@ export async function POST(request: NextRequest) {
 
     switch (reportType) {
       case 'order_all':
-        result = await importOrderAll(workbook, conn, storeId, sourceSnapshotAt!, sourceSnapshotFile);
+        result = await importOrderAll(workbook as XLSX.WorkBook, conn, storeId, sourceSnapshotAt!, sourceSnapshotFile);
         break;
       case 'income':
-        result = await importIncomePackage(
-          conn,
-          parseIncomePackage(workbook, sourceSnapshotFile, computeSha256(Buffer.from(buffer))),
-          storeId,
-        );
+        result = await importIncomePackage(conn, parseIncomePackage(workbook as XLSX.WorkBook, sourceSnapshotFile, computeSha256(buffer)), storeId);
         break;
       case 'master':
         result = await importSkuRawPackage(conn, parsedSkuPackage);
         break;
+      case 'balance':
+      case 'order_cancellation':
+      case 'order_failed_delivery':
+      case 'order_return_refund':
+      case 'ads_ledger': {
+        const sha256 = computeSha256(buffer);
+        const parsed = reportType === 'balance'
+          ? parseBalancePackage(workbook as XLSX.WorkBook, sourceSnapshotFile, sha256)
+          : reportType === 'ads_ledger'
+            ? parseAdsPackage(buffer, sourceSnapshotFile, sha256)
+            : parseExceptionPackage(workbook as XLSX.WorkBook, sourceSnapshotFile, sha256);
+        const ticketCheck = verifyPreviewTicket(
+          typeof formData.get('preview_ticket') === 'string' ? String(formData.get('preview_ticket')) : null,
+          { storeId, sha256, reportType },
+          previewTicketSecret(),
+        );
+        if (!ticketCheck.valid) return NextResponse.json({ error: ticketCheck.error }, { status: 400 });
+        result = await importRawPackage(conn, parsed, reportType, storeId);
+        break;
+      }
     }
 
     let message = '';
@@ -826,6 +861,10 @@ export async function POST(request: NextRequest) {
       message = result.duplicate
         ? 'File SKU identik sudah pernah di-import. Tidak ada row RAW baru.'
         : `SKU RAW package #${result.importId} di-import: ${result.inserted} row.`;
+    } else if (['balance', 'order_cancellation', 'order_failed_delivery', 'order_return_refund', 'ads_ledger'].includes(reportType) && result.duplicate) {
+      message = `File ${reportName} identik sudah pernah di-import untuk toko ini. Tidak ada row RAW baru.`;
+    } else if (['balance', 'order_cancellation', 'order_failed_delivery', 'order_return_refund', 'ads_ledger'].includes(reportType)) {
+      message = `${reportName} RAW package #${result.importId} di-import: ${result.inserted} row.`;
     } else if (result.inserted > 0 && result.updated > 0) {
       message = `${result.inserted} baru, ${result.updated} di-update ke ${reportName}`;
     } else if (result.inserted > 0) {

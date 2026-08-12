@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import Link from 'next/link';
-import { Upload, ShoppingCart, DollarSign, Package, BarChart3, Settings } from 'lucide-react';
+import { Upload, ShoppingCart, DollarSign, Package, BarChart3, Settings, WalletCards, CircleAlert, Megaphone, type LucideIcon } from 'lucide-react';
 import { StoreProvider, StoreSwitcher } from '@/components/StoreContext';
 
 export const metadata: Metadata = {
@@ -48,6 +48,15 @@ export default function RootLayout({
               <NavLink href="/sku" icon={Package}>
                 SKU Master
               </NavLink>
+              <NavLink href="/balance" icon={WalletCards}>
+                Balance RAW
+              </NavLink>
+              <NavLink href="/exceptions" icon={CircleAlert}>
+                Order Exceptions
+              </NavLink>
+              <NavLink href="/ads" icon={Megaphone}>
+                Ads RAW
+              </NavLink>
               <NavLink href="/profit" icon={BarChart3}>
                 Profit
               </NavLink>
@@ -70,11 +79,14 @@ export default function RootLayout({
 
           {/* Mobile Bottom Nav */}
           <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-50 safe-area-pb">
-            <div className="flex justify-around items-center px-1 py-1">
+            <div className="flex items-center gap-1 overflow-x-auto px-1 py-1">
               <MobileNavLink href="/upload" icon={Upload} label="Upload" />
               <MobileNavLink href="/orders" icon={ShoppingCart} label="Orders" />
               <MobileNavLink href="/income" icon={DollarSign} label="Income" />
               <MobileNavLink href="/sku" icon={Package} label="SKU" />
+              <MobileNavLink href="/balance" icon={WalletCards} label="Balance" />
+              <MobileNavLink href="/exceptions" icon={CircleAlert} label="Exception" />
+              <MobileNavLink href="/ads" icon={Megaphone} label="Ads" />
               <MobileNavLink href="/profit" icon={BarChart3} label="Profit" />
               <MobileNavLink href="/settings" icon={Settings} label="Setting" />
             </div>
@@ -92,7 +104,7 @@ function NavLink({
   children,
 }: {
   href: string;
-  icon: any;
+  icon: LucideIcon;
   children: React.ReactNode;
 }) {
   return (
@@ -112,7 +124,7 @@ function MobileNavLink({
   label,
 }: {
   href: string;
-  icon: any;
+  icon: LucideIcon;
   label: string;
 }) {
   return (

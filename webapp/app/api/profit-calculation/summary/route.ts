@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
  * Profit remains disabled until Balance, HPP, return/refund, and allocation
  * contracts are analyzed against the active RAW tables.
  */
-export async function GET(_request: NextRequest) {
+export async function GET() {
   return NextResponse.json(
     {
       success: false,

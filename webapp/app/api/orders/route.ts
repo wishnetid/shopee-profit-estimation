@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createConnection } from 'mysql2/promise';
+import { createConnection, type RowDataPacket } from 'mysql2/promise';
 import { requireStoreId } from '../../../lib/store';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { parsePagination } = require('../../../lib/pagination.js') as {
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     const sort = SORT_COLUMNS[sp.get('sort') || 'waktu_pesanan_dibuat'] || SORT_COLUMNS.waktu_pesanan_dibuat;
     const direction = sp.get('direction') === 'asc' ? 'ASC' : 'DESC';
     const offset = (page - 1) * limit;
-    const params: any[] = [storeId];
+    const params: Array<string | number> = [storeId];
     let whereClause = 'WHERE store_id = ?';
 
     if (search) {
@@ -63,20 +63,20 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const [rows] = await conn.execute(
+    const [rows] = await conn.execute<RowDataPacket[]>(
       `SELECT * FROM order_all ${whereClause} ORDER BY ${sort} ${direction} LIMIT ? OFFSET ?`,
       [...params, limit, offset],
     );
-    const [countResult] = await conn.execute(
+    const [countResult] = await conn.execute<Array<RowDataPacket & { total: number }>>(
       `SELECT COUNT(*) AS total FROM order_all ${whereClause}`,
       params,
     );
-    const total = Number((countResult as any)[0].total || 0);
+    const total = Number(countResult[0].total || 0);
 
     return NextResponse.json({ success: true, storeId, data: rows, total, page, limit });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Orders API error:', error);
-    return NextResponse.json({ error: error.message || 'Orders query failed.' }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Orders query failed.' }, { status: 500 });
   } finally {
     await conn.end();
   }

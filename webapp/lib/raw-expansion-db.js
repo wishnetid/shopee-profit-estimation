@@ -1,0 +1,54 @@
+const { toIsoDate } = require('./balance-raw-import.js');
+
+const CONFIG = {
+  balance: {
+    parent: 'balance_report_imports', child: 'balance_transactions_raw', fk: 'balance_report_import_id', rows: (parsed) => parsed.transactions,
+    parentColumns: ['store_id', 'source_file', 'source_sha256', 'report_period_from', 'report_period_to', 'metadata_payload', 'headers_payload', 'warnings_payload', 'summary_payload', 'summary_total_saldo_masuk', 'summary_total_saldo_keluar', 'summary_jumlah_transaksi_masuk', 'summary_jumlah_transaksi_keluar', 'reconciliation_status', 'ledger_continuity_status'],
+    parentValues: (parsed, storeId) => [storeId, parsed.sourceFile, parsed.sha256, toIsoDate(parsed.reportPeriod.from), toIsoDate(parsed.reportPeriod.to), JSON.stringify({ seller_username: parsed.summary.seller_username }), JSON.stringify(parsed.headers), JSON.stringify(parsed.warnings), JSON.stringify(parsed.summary), parsed.summary.total_saldo_masuk, parsed.summary.total_saldo_keluar, parsed.summary.jumlah_transaksi_masuk, parsed.summary.jumlah_transaksi_keluar, parsed.reconciliation.status, parsed.ledgerContinuity.status],
+    childColumns: ['balance_report_import_id', 'source_excel_row', 'transaction_at', 'type_transaksi', 'description', 'no_pesanan_direct', 'no_pesanan_extracted', 'jenis_transaksi', 'jumlah_signed', 'status', 'saldo_akhir', 'raw_payload'],
+    childValues: (importId, row) => [importId, row.source_excel_row, row.transaction_at, row.type_transaksi, row.description, row.no_pesanan_direct, row.no_pesanan_extracted, row.jenis_transaksi, row.jumlah_signed, row.status, row.saldo_akhir, JSON.stringify(row.raw_payload)],
+  },
+  order_cancellation: {
+    parent: 'order_cancellation_report_imports', child: 'order_cancellation_raw', fk: 'order_cancellation_report_import_id', rows: (parsed) => parsed.rows,
+    childColumns: ['order_cancellation_report_import_id', 'source_excel_row', 'no_pesanan', 'status_pesanan', 'alasan_pembatalan', 'status_pembatalan_pengembalian', 'no_resi', 'nomor_referensi_sku', 'nama_variasi', 'jumlah', 'subtotal_pesanan', 'total_pembayaran', 'waktu_pesanan_dibuat', 'waktu_pesanan_selesai', 'raw_payload'],
+    childValues: (id, row) => [id, row.source_excel_row, row.no_pesanan, row.status_pesanan, row.alasan_pembatalan, row.status_pembatalan_pengembalian, row.no_resi, row.nomor_referensi_sku, row.nama_variasi, row.jumlah, row.subtotal_pesanan, row.total_pembayaran, row.waktu_pesanan_dibuat, row.waktu_pesanan_selesai, JSON.stringify(row.raw_payload)],
+  },
+  order_failed_delivery: {
+    parent: 'order_failed_delivery_report_imports', child: 'order_failed_delivery_raw', fk: 'order_failed_delivery_report_import_id', rows: (parsed) => parsed.rows,
+    childColumns: ['order_failed_delivery_report_import_id', 'source_excel_row', 'no_pesanan', 'status_pesanan', 'status_pembatalan_pengembalian', 'status_pengiriman_gagal', 'no_resi', 'nomor_referensi_sku', 'nama_variasi', 'jumlah', 'subtotal_pesanan', 'total_pembayaran', 'waktu_pesanan_dibuat', 'waktu_pesanan_selesai', 'status_klaim', 'tanggal_klaim_diajukan', 'tanggal_klaim_disetujui', 'tanggal_klaim_dicairkan', 'tanggal_klaim_ditolak', 'jumlah_kompensasi', 'raw_payload'],
+    childValues: (id, row) => [id, row.source_excel_row, row.no_pesanan, row.status_pesanan, row.status_pembatalan_pengembalian, row.status_pengiriman_gagal, row.no_resi, row.nomor_referensi_sku, row.nama_variasi, row.jumlah, row.subtotal_pesanan, row.total_pembayaran, row.waktu_pesanan_dibuat, row.waktu_pesanan_selesai, row.status_klaim, row.tanggal_klaim_diajukan, row.tanggal_klaim_disetujui, row.tanggal_klaim_dicairkan, row.tanggal_klaim_ditolak, row.jumlah_kompensasi, JSON.stringify(row.raw_payload)],
+  },
+  order_return_refund: {
+    parent: 'order_return_refund_report_imports', child: 'order_return_refund_raw', fk: 'order_return_refund_report_import_id', rows: (parsed) => parsed.rows,
+    childColumns: ['order_return_refund_report_import_id', 'source_excel_row', 'no_pengembalian', 'no_pesanan', 'waktu_pesanan_dibuat', 'kode_variasi', 'variasi', 'status_pembatalan_pengembalian', 'tipe_pengembalian', 'jumlah_produk_dikembalikan', 'solusi_pengembalian', 'alasan_pengembalian', 'total_pengembalian_dana', 'waktu_pengembalian_dana_selesai', 'status_pengembalian_barang', 'pelepasan_dana_signed', 'ongkos_kirim_pengiriman_signed', 'ongkos_kirim_pengembalian_signed', 'jumlah_kompensasi_signed', 'raw_payload'],
+    childValues: (id, row) => [id, row.source_excel_row, row.no_pengembalian, row.no_pesanan, row.waktu_pesanan_dibuat, row.kode_variasi, row.variasi, row.status_pembatalan_pengembalian, row.tipe_pengembalian, row.jumlah_produk_dikembalikan, row.solusi_pengembalian, row.alasan_pengembalian, row.total_pengembalian_dana, row.waktu_pengembalian_dana_selesai, row.status_pengembalian_barang, row.pelepasan_dana_signed, row.ongkos_kirim_pengiriman_signed, row.ongkos_kirim_pengembalian_signed, row.jumlah_kompensasi_signed, JSON.stringify(row.raw_payload)],
+  },
+  ads_ledger: {
+    parent: 'ads_report_imports', child: 'ads_transactions_raw', fk: 'ads_report_import_id', rows: (parsed) => parsed.rows,
+    parentColumns: ['store_id', 'source_file', 'source_sha256', 'report_period_from', 'report_period_to', 'metadata_payload', 'headers_payload', 'warnings_payload', 'source_format', 'currency', 'seller_username', 'source_store_reference'],
+    parentValues: (parsed, storeId) => [storeId, parsed.sourceFile, parsed.sha256, toIsoDate(parsed.reportPeriod.from), toIsoDate(parsed.reportPeriod.to), JSON.stringify(parsed.metadata), JSON.stringify(parsed.headers), JSON.stringify(parsed.warnings), 'csv', parsed.metadata.currency, parsed.metadata.seller_username, parsed.metadata.source_store_reference],
+    childColumns: ['ads_report_import_id', 'source_csv_row', 'sequence_number', 'transaction_date', 'description', 'jumlah_signed', 'note', 'raw_payload'],
+    childValues: (id, row) => [id, row.source_csv_row, row.sequence_number, row.transaction_date, row.description, row.jumlah_signed, row.note, JSON.stringify(row.raw_payload)],
+  },
+};
+const COMMON_PARENT_COLUMNS = ['store_id', 'source_file', 'source_sha256', 'report_period_from', 'report_period_to', 'metadata_payload', 'headers_payload', 'warnings_payload'];
+
+function configFor(reportType) { const config = CONFIG[reportType]; if (!config) throw new Error('Unsupported RAW report type.'); return config; }
+function parentColumns(config) { return config.parentColumns || COMMON_PARENT_COLUMNS; }
+function parentValues(config, parsed, storeId) { return config.parentValues ? config.parentValues(parsed, storeId) : [storeId, parsed.sourceFile, parsed.sha256, toIsoDate(parsed.reportPeriod.from), toIsoDate(parsed.reportPeriod.to), JSON.stringify({}), JSON.stringify(parsed.headers), JSON.stringify(parsed.warnings)]; }
+async function findExistingRawImport(conn, reportType, storeId, sha256) { const config = configFor(reportType); const [rows] = await conn.query(`SELECT id, source_file, imported_at FROM ${config.parent} WHERE store_id = ? AND source_sha256 = ? LIMIT 1`, [storeId, sha256]); return rows[0] || null; }
+const PREVIEW_COLUMNS = {
+  balance: [['transaction_at', 'Tanggal Transaksi'], ['type_transaksi', 'Tipe Transaksi'], ['description', 'Deskripsi'], ['no_pesanan_direct', 'No. Pesanan Direct'], ['no_pesanan_extracted', 'No. Pesanan Extracted'], ['jenis_transaksi', 'Jenis Transaksi'], ['jumlah_signed', 'Jumlah Signed'], ['saldo_akhir', 'Saldo Akhir']],
+  order_cancellation: [['no_pesanan', 'No. Pesanan'], ['status_pesanan', 'Status Pesanan'], ['alasan_pembatalan', 'Alasan Pembatalan'], ['nomor_referensi_sku', 'Nomor Referensi SKU'], ['nama_variasi', 'Nama Variasi'], ['total_pembayaran', 'Total Pembayaran']],
+  order_failed_delivery: [['no_pesanan', 'No. Pesanan'], ['status_pengiriman_gagal', 'Status Pengiriman Gagal'], ['no_resi', 'No. Resi'], ['status_klaim', 'Status Klaim'], ['jumlah_kompensasi', 'Jumlah Kompensasi']],
+  order_return_refund: [['no_pengembalian', 'No. Pengembalian'], ['no_pesanan', 'No. Pesanan'], ['status_pembatalan_pengembalian', 'Status'], ['tipe_pengembalian', 'Tipe Pengembalian'], ['total_pengembalian_dana', 'Total Pengembalian Dana'], ['pelepasan_dana_signed', 'Pelepasan Dana']],
+  ads_ledger: [['sequence_number', 'Urutan'], ['transaction_date', 'Waktu'], ['description', 'Deskripsi'], ['jumlah_signed', 'Jumlah Signed'], ['note', 'Catatan']],
+};
+function buildRawPreview(parsed, reportType, existing) {
+  const config = configFor(reportType); const rows = config.rows(parsed); const duplicateHash = Boolean(existing);
+  const previewColumns = (PREVIEW_COLUMNS[reportType] || []).map(([key, label]) => ({ key, label }));
+  return { valid: parsed.valid, canImport: parsed.valid && !duplicateHash, duplicateHash, existingImportId: existing?.id ?? null, totalRows: rows.length, newRows: duplicateHash ? 0 : rows.length, existingRows: 0, unchangedRows: duplicateHash ? rows.length : 0, safeUpdateRows: 0, protectedFieldCount: 0, staleSnapshotCount: 0, regressionCount: 0, updatedRows: [], sourceFile: parsed.sourceFile, sha256: parsed.sha256, reportPeriod: parsed.reportPeriod, headers: parsed.headers, previewColumns, previewRows: rows.slice(0, 10), warnings: parsed.warnings, errors: parsed.errors, summary: parsed.summary || parsed.metadata || null, reconciliation: parsed.reconciliation || null, ledgerContinuity: parsed.ledgerContinuity || null, sections: { transactions: { status: parsed.valid ? 'ready' : 'blocked', rows: rows.length } } };
+}
+async function insertRows(conn, table, columns, rows) { if (!rows.length) return 0; const groups = rows.map(() => `(${columns.map(() => '?').join(',')})`).join(','); const [result] = await conn.query(`INSERT INTO ${table} (${columns.join(',')}) VALUES ${groups}`, rows.flat()); return Number(result.affectedRows || 0); }
+async function importRawPackage(conn, parsed, reportType, storeId) { const config = configFor(reportType); if (!parsed.valid) throw new Error('RAW package belum valid dan tidak boleh di-import.'); await conn.beginTransaction(); try { const existing = await findExistingRawImport(conn, reportType, storeId, parsed.sha256); if (existing) { await conn.rollback(); return { duplicate: true, importId: existing.id, inserted: 0 }; } const columns = parentColumns(config); const [parent] = await conn.query(`INSERT INTO ${config.parent} (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`, parentValues(config, parsed, storeId)); const importId = parent.insertId; const inserted = await insertRows(conn, config.child, config.childColumns, config.rows(parsed).map((row) => config.childValues(importId, row))); await conn.commit(); return { duplicate: false, importId, inserted }; } catch (error) { await conn.rollback(); throw error; } }
+module.exports = { CONFIG, buildRawPreview, findExistingRawImport, importRawPackage };

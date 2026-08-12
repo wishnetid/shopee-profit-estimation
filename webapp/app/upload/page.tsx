@@ -51,6 +51,7 @@ interface PreviewData {
   reportPeriod?: { from: string | null; to: string | null };
   reconciliation?: { status: string; summaryTotal: number | null; orderSignedTotal: number | null; difference: number | null };
   sections?: Record<string, { status: string; rows: number }>;
+  previewTicket?: string | null;
 }
 
 interface ImportResult {
@@ -123,8 +124,8 @@ export default function UploadPage() {
     const selectedStoreId = storeId;
     const requestId = ++previewRequestRef.current;
     const ext = file.name.toLowerCase().split('.').pop();
-    if (!['xlsx', 'xls'].includes(ext || '')) {
-      setError('Format file tidak didukung. Gunakan .xlsx atau .xls');
+    if (!['xlsx', 'xls', 'csv'].includes(ext || '')) {
+      setError('Format file tidak didukung. Gunakan .xlsx, .xls, atau .csv');
       return;
     }
     setSelectedFile(file);
@@ -169,13 +170,14 @@ export default function UploadPage() {
           typeof column === 'string' ? { key: column, label: column } : column
         )),
         previewRows: data.previewRows || [],
-        sheetName: data.sheetName || 'Income package',
+        sheetName: data.sheetName || data.sourceFormat || 'Source package',
         canImport: data.canImport,
         duplicateHash: data.duplicateHash,
         sha256: data.sha256,
         reportPeriod: data.reportPeriod,
         reconciliation: data.reconciliation,
         sections: data.sections,
+        previewTicket: data.previewTicket || null,
       });
     } catch (err: any) {
       if (requestId === previewRequestRef.current && selectedStoreId === storeId) {
@@ -188,6 +190,8 @@ export default function UploadPage() {
 
   const changeCount = preview?.safeUpdateRows || 0;
   const canImport = !!preview && (preview.canImport ?? (preview.newRows > 0 || changeCount > 0));
+  const isIncomePreview = preview?.reportType === 'Income Penghasilan';
+  const previewReportLabel = preview?.reportType || 'RAW package';
 
   const handleImport = async () => {
     if (!selectedFile || !preview || !canImport || !previewStoreId) return;
@@ -210,6 +214,7 @@ export default function UploadPage() {
     formData.append('action', 'import');
     formData.append('source_snapshot_at', sourceSnapshotAt);
     formData.append('source_snapshot_file', selectedFile.name);
+    if (preview.previewTicket) formData.append('preview_ticket', preview.previewTicket);
 
     try {
       const res = await fetch('/api/upload', { method: 'POST', body: formData });
@@ -254,7 +259,7 @@ export default function UploadPage() {
       <div className="p-4 lg:p-8">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 mb-1">Upload Manager</h1>
-          <p className="text-sm text-slate-600 mb-6">Upload file Order.all atau Income untuk toko {activeStore?.store_name || 'aktif'}. Master SKU shared untuk semua toko.</p>
+          <p className="text-sm text-slate-600 mb-6">Preview lalu import Order.all, Income, Balance, Cancellation, Failed Delivery, Return/Refund, Ads CSV untuk toko {activeStore?.store_name || 'aktif'}. Master SKU tetap shared.</p>
 
           <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg p-4">
             <label htmlFor="source-snapshot-at" className="block text-sm font-semibold text-amber-900 mb-1">
@@ -284,7 +289,7 @@ export default function UploadPage() {
             <h3 className="text-base lg:text-lg font-semibold text-slate-900 mb-1">Drag & Drop File</h3>
             <p className="text-sm text-slate-500 mb-3">atau pilih file</p>
             <label className="inline-block px-5 py-2.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 cursor-pointer transition-colors">
-              <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={handleFileSelect} className="hidden" />
+              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileSelect} className="hidden" />
               Pilih File
             </label>
           </div>
@@ -299,6 +304,8 @@ export default function UploadPage() {
               <li>• <strong>Order.all:</strong> Sheet &quot;orders&quot;, 50+ kolom</li>
               <li>• <strong>Income:</strong> Sheet &quot;Penghasilan&quot;</li>
               <li>• <strong>Master SKU:</strong> Kolom SKU1 + Harga</li>
+              <li>• <strong>Balance / Exceptions:</strong> Header transaksi atau exception Shopee</li>
+              <li>• <strong>Ads RAW:</strong> CSV Urutan + Waktu + Deskripsi + Jumlah</li>
             </ul>
           </div>
         </div>
@@ -369,10 +376,12 @@ export default function UploadPage() {
                 {preview.sections && (
                   <div className="mt-4 border-t border-slate-100 pt-4">
                     <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                      <h3 className="text-sm font-semibold text-slate-800">Income RAW package</h3>
-                      <span className={`text-xs font-semibold ${preview.reconciliation?.status === 'matched' ? 'text-emerald-600' : 'text-red-600'}`}>
-                        Rekonsiliasi {preview.reconciliation?.status === 'matched' ? 'cocok' : 'bermasalah'}
-                      </span>
+                      <h3 className="text-sm font-semibold text-slate-800">{previewReportLabel}</h3>
+                      {isIncomePreview && (
+                        <span className={`text-xs font-semibold ${preview.reconciliation?.status === 'matched' ? 'text-emerald-600' : 'text-red-600'}`}>
+                          Rekonsiliasi {preview.reconciliation?.status === 'matched' ? 'cocok' : 'bermasalah'}
+                        </span>
+                      )}
                     </div>
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
                       {Object.entries(preview.sections).map(([name, value]) => (
@@ -561,7 +570,7 @@ export default function UploadPage() {
                     'Tidak ada perubahan'
                   ) : (
                     preview.sections ? (
-                      'Import Paket Income RAW'
+                      `Import ${previewReportLabel}`
                     ) : (
                       <>
                         {preview.newRows > 0 ? `Import ${preview.newRows.toLocaleString()} baris baru` : 'Update snapshot'}

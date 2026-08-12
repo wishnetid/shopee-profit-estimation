@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createConnection } from 'mysql2/promise';
+import { createConnection, type RowDataPacket } from 'mysql2/promise';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { parsePagination, parsePositiveInteger } = require('../../../lib/pagination.js') as {
   parsePagination: (page: string | null, limit: string | null) => { page: number; limit: number; error: string | null };
@@ -34,15 +34,15 @@ export async function GET(request: NextRequest) {
 
     const conn = await getConnection();
     try {
-    const [imports] = await conn.query(`SELECT id, source_file, source_sha256, sheet_name, warnings_payload, imported_at FROM sku_report_imports ORDER BY imported_at DESC, id DESC`) as any;
-    const importRows = imports as any[];
+    const [imports] = await conn.query<RowDataPacket[]>(`SELECT id, source_file, source_sha256, sheet_name, warnings_payload, imported_at FROM sku_report_imports ORDER BY imported_at DESC, id DESC`);
+    const importRows = imports;
     const importId = requestedImport ? importCheck.value : importRows[0]?.id;
     if (!importId) return NextResponse.json({ success: true, imports: [], selectedImport: null, data: [], total: 0, page, limit });
     const selectedImport = importRows.find(row => Number(row.id) === importId);
     if (!selectedImport) return NextResponse.json({ error: 'SKU RAW import tidak ditemukan.' }, { status: 404 });
 
     let where = 'WHERE r.sku_report_import_id = ?';
-    const params: any[] = [importId];
+    const params: unknown[] = [importId];
     if (search) {
       const terms = search.split('||').map(query => query.trim()).filter(Boolean);
       const clauses = terms.map(() => '(r.sku1 LIKE ? OR r.sku2 LIKE ? OR r.idproduk LIKE ?)');
@@ -52,11 +52,11 @@ export async function GET(request: NextRequest) {
       }
     }
     const offset = (page - 1) * limit;
-    const [rows] = await conn.query(`SELECT r.id, r.source_excel_row, r.sku1, r.sku2, r.harga, r.idproduk FROM sku_master_raw r ${where} ORDER BY ${sort} ${direction}, r.id ASC LIMIT ? OFFSET ?`, [...params, limit, offset]) as any;
-    const [[count]] = await conn.query(`SELECT COUNT(*) AS total FROM sku_master_raw r ${where}`, params) as any;
+    const [rows] = await conn.query<RowDataPacket[]>(`SELECT r.id, r.source_excel_row, r.sku1, r.sku2, r.harga, r.idproduk FROM sku_master_raw r ${where} ORDER BY ${sort} ${direction}, r.id ASC LIMIT ? OFFSET ?`, [...params, limit, offset]);
+    const [[count]] = await conn.query<Array<RowDataPacket & { total: number }>>(`SELECT COUNT(*) AS total FROM sku_master_raw r ${where}`, params);
     return NextResponse.json({ success: true, imports: importRows, selectedImport, data: rows, total: Number(count.total || 0), page, limit });
     } finally { await conn.end(); }
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'SKU RAW query failed.' }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'SKU RAW query failed.' }, { status: 500 });
   }
 }

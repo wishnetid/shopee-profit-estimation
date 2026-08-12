@@ -10,7 +10,7 @@ interface Column {
 
 interface DataTableProps {
   columns: Column[];
-  data: any[];
+  data: Record<string, unknown>[];
   totalRows: number;
   onPageChange: (page: number, limit: number) => void;
   onSearch: (queries: string[]) => void;

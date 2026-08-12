@@ -54,9 +54,8 @@ Master SKU
 
 ### Belum selesai
 
-- Balance Transaction RAW.
-- Return/refund, failed delivery, cancellation.
-- HPP final, ads, net payout, actual profit, estimation profit.
+- RAW Expansion Balance, Cancellation, Failed Delivery, Return/Refund, dan Ads: DDL live sudah dibuat dari backup tervalidasi; post-DDL audit dan preview-only sembilan sample real lulus tanpa write. Source masih belum commit/deploy; import real belum dilakukan. Handoff: `RAW-EXPANSION-IMPLEMENTATION.md` lalu `webapp/docs/RAW-EXPANSION.md`.
+- HPP final, ads accounting layer, net payout, actual profit, estimation profit.
 - Multi-user ownership authorization per store.
 - Baseline lint cleanup.
 

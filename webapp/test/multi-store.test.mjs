@@ -28,18 +28,24 @@ function loadDbEnv() {
 }
 
 const env = loadDbEnv();
-const canConnect = Boolean(env.DB_HOST && env.DB_USER && env.DB_PASSWORD && env.DB_NAME);
+let dbAvailable = Boolean(env.DB_HOST && env.DB_USER && env.DB_PASSWORD && env.DB_NAME);
 let connection;
 
 before(async () => {
-  if (!canConnect) return;
-  connection = await mysql.createConnection({
-    host: env.DB_HOST,
-    port: Number(env.DB_PORT || 3306),
-    user: env.DB_USER,
-    password: env.DB_PASSWORD,
-    database: env.DB_NAME,
-  });
+  if (!dbAvailable) return;
+  try {
+    connection = await mysql.createConnection({
+      host: env.DB_HOST,
+      port: Number(env.DB_PORT || 3306),
+      user: env.DB_USER,
+      password: env.DB_PASSWORD,
+      database: env.DB_NAME,
+      connectTimeout: 5000,
+    });
+  } catch {
+    // Source-contract tests must remain runnable when the optional live DB is unreachable.
+    dbAvailable = false;
+  }
 });
 
 after(async () => {
@@ -47,8 +53,8 @@ after(async () => {
 });
 
 function skipIfUnavailable(t) {
-  if (!canConnect) {
-    t.skip('DB environment is not configured; live multi-store checks skipped.');
+  if (!dbAvailable) {
+    t.skip('Live DB is unavailable; live multi-store checks skipped.');
   }
 }
 
@@ -73,9 +79,27 @@ test('Settings API keeps store reset scoped and rejects unknown reset actions', 
   assert.match(source, /body\.action !== ['"]clear_store['"]/);
   assert.match(source, /DELETE FROM order_all WHERE store_id = \?/);
   assert.match(source, /DELETE FROM income_report_imports WHERE store_id = \?/);
+  assert.doesNotMatch(source, /DELETE FROM balance_transactions_raw/);
+  assert.doesNotMatch(source, /DELETE FROM balance_report_imports/);
+  assert.doesNotMatch(source, /DELETE FROM order_cancellation_report_imports/);
+  assert.doesNotMatch(source, /DELETE FROM order_failed_delivery_report_imports/);
+  assert.doesNotMatch(source, /DELETE FROM order_return_refund_report_imports/);
+  assert.doesNotMatch(source, /DELETE FROM ads_transactions_raw/);
+  assert.doesNotMatch(source, /DELETE FROM ads_report_imports/);
   assert.match(source, /Aksi reset tidak dikenali/);
   assert.doesNotMatch(source, /TRUNCATE TABLE/);
   assert.doesNotMatch(source, /clear_all/);
+});
+
+test('RAW packages block store deletion but stay outside the legacy clear-store action', () => {
+  const stores = fs.readFileSync(path.resolve(process.cwd(), 'app/api/stores/route.ts'), 'utf8');
+  const page = fs.readFileSync(path.resolve(process.cwd(), 'app/settings/page.tsx'), 'utf8');
+  assert.match(stores, /balance_package_count/);
+  assert.match(stores, /cancellation_package_count/);
+  assert.match(stores, /failed_delivery_package_count/);
+  assert.match(stores, /return_refund_package_count/);
+  assert.match(stores, /ads_package_count/);
+  assert.match(page, /Tombol clear toko hanya menghapus Order\.all dan package Income/);
 });
 
 test('Settings API provides an explicit confirmed global Master SKU reset that deletes children before parents', () => {
@@ -104,8 +128,10 @@ test('Store deletion requires explicit confirmation, refuses the last store and 
   assert.match(route, /requireStoreId/);
   assert.match(route, /SELECT id FROM stores FOR UPDATE/);
   assert.match(route, /Tidak dapat menghapus toko terakhir/);
-  assert.match(route, /SELECT COUNT\(\*\) AS order_count FROM order_all WHERE store_id = \?/);
-  assert.match(route, /SELECT COUNT\(\*\) AS income_package_count FROM income_report_imports WHERE store_id = \?/);
+  assert.match(route, /FROM order_all WHERE store_id = \?\) AS order_count/);
+  assert.match(route, /FROM income_report_imports WHERE store_id = \?\) AS income_package_count/);
+  assert.match(route, /FROM balance_report_imports WHERE store_id = \?\) AS balance_package_count/);
+  assert.match(route, /FROM ads_report_imports WHERE store_id = \?\) AS ads_package_count/);
   assert.match(route, /Clear data toko terlebih dahulu/);
   assert.match(route, /DELETE FROM stores WHERE id = \?/);
   assert.match(route, /isMutationAuthorized/);
@@ -184,7 +210,7 @@ test('upload invalidates all preview and import UI state on store switch and lab
   assert.match(source, /setSelectedFile\(null\);/);
   assert.match(source, /setChecking\(false\);/);
   assert.match(source, /previewStoreId === storeId/);
-  assert.match(source, /Master SKU shared untuk semua toko/);
+  assert.match(source, /Master SKU tetap shared/);
 });
 
 test('SKU importId uses strict positive-integer validation and ignores stale responses', () => {
@@ -217,7 +243,7 @@ test('store and settings mutation handlers return 400 for malformed JSON', () =>
 
 test('live store parents reference valid stores and income children inherit parent scope', async (t) => {
   skipIfUnavailable(t);
-  if (!canConnect) return;
+  if (!dbAvailable) return;
 
   const [[{ storeCount }]] = await connection.query('SELECT COUNT(*) AS storeCount FROM stores');
   assert.ok(Number(storeCount) >= 2, 'multi-store fixture must contain at least two stores');
@@ -255,7 +281,7 @@ test('live store parents reference valid stores and income children inherit pare
 
 test('live unique keys include store scope for current-state and package identities', async (t) => {
   skipIfUnavailable(t);
-  if (!canConnect) return;
+  if (!dbAvailable) return;
 
   const [orderIndexes] = await connection.query('SHOW INDEX FROM order_all');
   const orderColumns = orderIndexes

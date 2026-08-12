@@ -1,4 +1,5 @@
 import * as mysql from 'mysql2/promise';
+import type { ExecuteValues } from 'mysql2';
 
 let pool: mysql.Pool | null = null;
 
@@ -35,7 +36,7 @@ export function getPool(): mysql.Pool {
   return pool;
 }
 
-export async function query<T = unknown>(sql: string, params?: any[]): Promise<T> {
+export async function query<T = unknown>(sql: string, params?: ExecuteValues): Promise<T> {
   const [rows] = await getPool().execute(sql, params);
   return rows as T;
 }

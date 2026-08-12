@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { RowDataPacket } from 'mysql2/promise';
 import { getPool } from './db';
 
 export function parseStoreId(value: string | null | undefined): number | null {
@@ -8,7 +9,7 @@ export function parseStoreId(value: string | null | undefined): number | null {
 }
 
 export async function storeExists(storeId: number): Promise<boolean> {
-  const [rows] = await getPool().query<any[]>('SELECT id FROM stores WHERE id = ? LIMIT 1', [storeId]);
+  const [rows] = await getPool().query<Array<RowDataPacket & { id: number }>>('SELECT id FROM stores WHERE id = ? LIMIT 1', [storeId]);
   return rows.length > 0;
 }
 

@@ -1,11 +1,13 @@
 const crypto = require('crypto');
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
-const ALLOWED_WORKBOOK_EXTENSIONS = new Set(['.xlsx', '.xls']);
-const ALLOWED_WORKBOOK_MIME_TYPES = new Set([
+const ALLOWED_UPLOAD_EXTENSIONS = new Set(['.xlsx', '.xls', '.csv']);
+const ALLOWED_UPLOAD_MIME_TYPES = new Set([
   '',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel',
+  'text/csv',
+  'application/csv',
   'application/octet-stream',
 ]);
 
@@ -56,14 +58,14 @@ function validateUploadFile(file) {
   }
 
   const extension = file.name.includes('.') ? `.${file.name.split('.').pop().toLowerCase()}` : '';
-  if (!ALLOWED_WORKBOOK_EXTENSIONS.has(extension)) {
-    return { valid: false, error: 'Hanya file Excel .xlsx atau .xls yang diizinkan.' };
+  if (!ALLOWED_UPLOAD_EXTENSIONS.has(extension)) {
+    return { valid: false, error: 'Hanya file Excel .xlsx/.xls atau CSV .csv yang diizinkan.' };
   }
   if (file.size <= 0) return { valid: false, error: 'File Excel kosong.' };
   if (file.size > MAX_UPLOAD_BYTES) {
     return { valid: false, error: `Ukuran file melebihi batas ${MAX_UPLOAD_BYTES / 1024 / 1024} MB.` };
   }
-  if (!ALLOWED_WORKBOOK_MIME_TYPES.has(file.type || '')) {
+  if (!ALLOWED_UPLOAD_MIME_TYPES.has(file.type || '')) {
     return { valid: false, error: 'Tipe file tidak diizinkan.' };
   }
 

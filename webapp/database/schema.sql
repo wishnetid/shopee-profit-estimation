@@ -219,8 +219,34 @@ CREATE TABLE IF NOT EXISTS upload_jobs (
   UNIQUE KEY uq_upload_jobs_job_id (job_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Deliberately absent from the active schema:
+-- RAW expansion: Balance, order exceptions, and Ads are store-scoped
+-- periodic packages. Full executable DDL lives in scripts/migrate-raw-expansion.js.
+-- This reference intentionally keeps every event package separate; it performs no
+-- business deduplication or financial aggregation across reports.
+--
+-- Parent identities:
+--   balance_report_imports                 (store_id, source_sha256)
+--   order_cancellation_report_imports      (store_id, source_sha256)
+--   order_failed_delivery_report_imports   (store_id, source_sha256)
+--   order_return_refund_report_imports     (store_id, source_sha256)
+--   ads_report_imports                     (store_id, source_sha256)
+--
+-- Child identities:
+--   balance_transactions_raw               (balance_report_import_id, source_excel_row)
+--   order_cancellation_raw                 (order_cancellation_report_import_id, source_excel_row)
+--   order_failed_delivery_raw              (order_failed_delivery_report_import_id, source_excel_row)
+--   order_return_refund_raw                (order_return_refund_report_import_id, source_excel_row)
+--   ads_transactions_raw                   (ads_report_import_id, source_csv_row)
+--
+-- Parent packages include source_file, source_sha256, report period, metadata,
+-- headers, warnings, and imported_at. Every child retains raw_payload and source
+-- row provenance. Child and parent foreign keys use ON DELETE RESTRICT.
+--
+-- Do not use legacy balance_transactions for this feature. Do not calculate
+-- profit, net payout, or final ad cost from this RAW layer.
+
+-- Deliberately absent from the active financial layer:
 --   orders, income_penghasilan, master_products, balance_transactions,
 --   profit_calculation.
--- They are legacy/unfinished objects in the live database and must not be
--- used as the source of truth for the RAW foundation or Profit page.
+-- They are legacy/unfinished objects and must not be used as the source of truth
+-- for the RAW foundation or Profit page.

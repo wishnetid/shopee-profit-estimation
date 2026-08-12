@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createConnection } from 'mysql2/promise';
+import { createConnection, type RowDataPacket } from 'mysql2/promise';
 import { requireStoreId } from '../../../lib/store';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { parsePagination } = require('../../../lib/pagination.js') as {
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid Income query.' }, { status: 400 });
     }
 
-    const [imports] = await conn.query(
+    const [imports] = await conn.query<RowDataPacket[]>(
       `SELECT id, store_id, source_file, source_sha256, report_period_from, report_period_to,
               summary_payload, summary_total_yang_dilepas, reconciliation_order_signed_total,
               reconciliation_difference, reconciliation_status, warnings_payload, imported_at
@@ -52,20 +52,20 @@ export async function GET(request: NextRequest) {
        WHERE store_id = ?
        ORDER BY imported_at DESC, id DESC`,
       [storeId],
-    ) as any;
-    const importRows = imports as any[];
+    );
+    const importRows = imports;
     const plan = buildIncomeQueryPlan({ section, view, search, sort, direction, storeId });
     const offset = (page - 1) * limit;
     const fromClause = `${plan.table} r INNER JOIN income_report_imports i ON i.id = r.income_report_import_id`;
-    const [rows] = await conn.query(
+    const [rows] = await conn.query<RowDataPacket[]>(
       `SELECT ${plan.selectSql} FROM ${fromClause} ${plan.whereSql}
        ORDER BY ${plan.orderSql}, r.id DESC LIMIT ? OFFSET ?`,
       [...plan.params, limit, offset],
-    ) as any;
-    const [[count]] = await conn.query(
+    );
+    const [[count]] = await conn.query<Array<RowDataPacket & { total: number }>>(
       `SELECT COUNT(*) AS total FROM ${fromClause} ${plan.whereSql}`,
       plan.params,
-    ) as any;
+    );
     return NextResponse.json({
       success: true,
       storeId,
@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
       sort,
       direction,
     });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Income query failed.' }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Income query failed.' }, { status: 500 });
   } finally { await conn.end(); }
 }

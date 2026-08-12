@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import type { RowDataPacket } from 'mysql2/promise';
+import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { getConnection, getPool, withTransaction } from '@/lib/db';
 import { requireStoreId } from '../../../lib/store';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const {
   isMutationAuthorized,
   isSameOriginMutation,
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 } = require('../../../lib/dashboard-auth.js') as {
   isMutationAuthorized: (authorization: string | null, env?: NodeJS.ProcessEnv) => boolean;
   isSameOriginMutation: (origin: string | null, expectedOrigin: string) => boolean;
@@ -20,7 +20,7 @@ const clean = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 
 export async function GET() {
   try {
-    const [stores] = await getPool().query<any[]>(`
+    const [stores] = await getPool().query<RowDataPacket[]>(`
       SELECT
         s.id,
         s.store_name,
@@ -67,16 +67,16 @@ export async function POST(request: NextRequest) {
 
     const result = await withTransaction(async connection => {
       let ownerUserId: number;
-      const [rows] = await connection.query<any[]>('SELECT id FROM users ORDER BY id ASC LIMIT 1');
+      const [rows] = await connection.query<RowDataPacket[]>('SELECT id FROM users ORDER BY id ASC LIMIT 1');
       if (rows.length) ownerUserId = Number(rows[0].id);
       else {
-        const [created] = await connection.execute<any>(
+        const [created] = await connection.execute<ResultSetHeader>(
           'INSERT INTO users (username, display_name) VALUES (?, ?)',
           ['yogaimawan', 'Yogi Imawan'],
         );
         ownerUserId = Number(created.insertId);
       }
-      const [created] = await connection.execute<any>(
+      const [created] = await connection.execute<ResultSetHeader>(
         'INSERT INTO stores (owner_user_id, store_name, store_slug) VALUES (?, ?, ?)',
         [ownerUserId, storeName, storeSlug],
       );
@@ -122,12 +122,17 @@ export async function DELETE(request: NextRequest) {
       await conn.rollback();
       return NextResponse.json({ error: 'Store tidak ditemukan.' }, { status: 404 });
     }
-    const [[usage]] = await conn.query<(RowDataPacket & { order_count: number; income_package_count: number })[]>(`
+    const [[usage]] = await conn.query<(RowDataPacket & Record<string, number>)[]>(`
       SELECT
-        (SELECT COUNT(*) AS order_count FROM order_all WHERE store_id = ?) AS order_count,
-        (SELECT COUNT(*) AS income_package_count FROM income_report_imports WHERE store_id = ?) AS income_package_count
-    `, [storeId, storeId]);
-    if (Number(usage.order_count) > 0 || Number(usage.income_package_count) > 0) {
+        (SELECT COUNT(*) FROM order_all WHERE store_id = ?) AS order_count,
+        (SELECT COUNT(*) FROM income_report_imports WHERE store_id = ?) AS income_package_count,
+        (SELECT COUNT(*) FROM balance_report_imports WHERE store_id = ?) AS balance_package_count,
+        (SELECT COUNT(*) FROM order_cancellation_report_imports WHERE store_id = ?) AS cancellation_package_count,
+        (SELECT COUNT(*) FROM order_failed_delivery_report_imports WHERE store_id = ?) AS failed_delivery_package_count,
+        (SELECT COUNT(*) FROM order_return_refund_report_imports WHERE store_id = ?) AS return_refund_package_count,
+        (SELECT COUNT(*) FROM ads_report_imports WHERE store_id = ?) AS ads_package_count
+    `, [storeId, storeId, storeId, storeId, storeId, storeId, storeId]);
+    if (Object.values(usage).some((count) => Number(count) > 0)) {
       await conn.rollback();
       return NextResponse.json({ error: 'Clear data toko terlebih dahulu sebelum menghapus toko.' }, { status: 409 });
     }

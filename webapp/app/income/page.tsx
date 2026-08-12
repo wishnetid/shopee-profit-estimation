@@ -61,11 +61,18 @@ const SORT_MAP: Record<string, string> = {
   source_excel_row: 'source_excel_row',
 };
 
+interface IncomePayload {
+  data: Record<string, unknown>[];
+  storeId: number;
+  total: number;
+  packageCount: number;
+}
+
 export default function IncomePage() {
   const { storeId, activeStore } = useStore();
   const [section, setSection] = useState<Section>('penghasilan');
   const [view, setView] = useState<View>('Order');
-  const [payload, setPayload] = useState<any>(null);
+  const [payload, setPayload] = useState<IncomePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const requestSequence = useRef(0);
@@ -90,8 +97,8 @@ export default function IncomePage() {
       if (requestId !== requestSequence.current) return;
       if (!res.ok) throw new Error(data.error || 'Gagal memuat Income RAW.');
       setPayload(data);
-    } catch (err: any) {
-      if (requestId === requestSequence.current) setError(err.message || 'Gagal memuat Income RAW.');
+    } catch (err: unknown) {
+      if (requestId === requestSequence.current) setError(err instanceof Error ? err.message : 'Gagal memuat Income RAW.');
     } finally {
       if (requestId === requestSequence.current) setLoading(false);
     }
