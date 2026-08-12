@@ -18,7 +18,8 @@ test('Profit page separates Estimasi Kotor from locked Profit Aktual and uses an
   assert.match(source, /const resetResult = useCallback\(\(\) => \{\s*requestSequence\.current \+= 1;\s*setData\(null\);\s*setError\(''\);\s*setPage\(1\);\s*setLoading\(false\);/);
   assert.match(source, /<ProfitEstimationContent\s+key=\{storeId \|\| 'no-store'\}/);
   assert.match(source, /function ProfitEstimationContent\(/);
-  assert.match(source, /Sisa Estimasi Setelah Ads/);
+  assert.match(source, /Estimasi PPN Iklan \(11%\)/);
+  assert.match(source, /Sisa Estimasi Setelah Ads & PPN/);
   assert.match(source, /HPP Belum Lengkap/);
   assert.match(source, /Angka ini bukan Profit Bersih/);
   assert.doesNotMatch(source, /label="Profit Bersih"/);

@@ -72,7 +72,10 @@ test('buildEstimationReport counts an order-level payment once and multiplies ea
     excludedOrderCount: 0,
     estimatedGrossBeforeFeeAds: 100000,
     adsSpend: 10000,
+    adsPpnRate: 0.11,
+    estimatedAdsPpn: 1100,
     afterAds: 90000,
+    afterAdsAndPpn: 88900,
     adsDuplicateEventCount: 0,
   });
   assert.deepEqual(report.daily, [{
@@ -82,8 +85,99 @@ test('buildEstimationReport counts an order-level payment once and multiplies ea
     reviewOrderCount: 0,
     estimatedGrossBeforeFeeAds: 100000,
     adsSpend: 10000,
+    estimatedAdsPpn: 1100,
     afterAds: 90000,
+    afterAdsAndPpn: 88900,
   }]);
+});
+
+test('buildEstimationReport rounds the 11% Ads PPN allocation to whole IDR in both summary and daily rows', () => {
+  const report = buildEstimationReport({
+    orderRows: [],
+    skuRows: [],
+    adsRows: [
+      {
+        ads_report_import_id: 1,
+        transaction_date: '2026-08-10',
+        sequence_number: 1,
+        description: 'Deduction for Product Ad (Auto Bidding - GMV Max)',
+        jumlah_signed: '-153065.00',
+        note: '',
+      },
+    ],
+    page: 1,
+    limit: 50,
+  });
+
+  assert.equal(report.summary.adsPpnRate, 0.11);
+  assert.equal(report.summary.estimatedAdsPpn, 16837);
+  assert.equal(report.summary.afterAdsAndPpn, -169902);
+  assert.equal(report.daily[0].estimatedAdsPpn, 16837);
+  assert.equal(report.daily[0].afterAdsAndPpn, -169902);
+});
+
+test('buildEstimationReport sums daily-rounded PPN allocations so the summary reconciles with Ringkasan Harian', () => {
+  const report = buildEstimationReport({
+    orderRows: [],
+    skuRows: [],
+    adsRows: [
+      {
+        ads_report_import_id: 1,
+        transaction_date: '2026-08-10',
+        sequence_number: 1,
+        description: 'Deduction for Product Ad (Auto Bidding - GMV Max)',
+        jumlah_signed: '-5.00',
+        note: '',
+      },
+      {
+        ads_report_import_id: 1,
+        transaction_date: '2026-08-11',
+        sequence_number: 2,
+        description: 'Deduction for Product Ad (Auto Bidding - GMV Max)',
+        jumlah_signed: '-5.00',
+        note: '',
+      },
+    ],
+    page: 1,
+    limit: 50,
+  });
+
+  assert.deepEqual(report.daily.map((row) => row.estimatedAdsPpn), [1, 1]);
+  assert.equal(report.summary.adsSpend, 10);
+  assert.equal(report.summary.estimatedAdsPpn, 2);
+  assert.equal(report.summary.afterAdsAndPpn, -12);
+});
+
+test('buildEstimationReport keeps PPN at zero when there is no qualifying Ads Spend', () => {
+  const report = buildEstimationReport({
+    orderRows: [],
+    skuRows: [],
+    adsRows: [
+      {
+        ads_report_import_id: 1,
+        transaction_date: '2026-08-10',
+        sequence_number: 1,
+        description: 'Isi Saldo',
+        jumlah_signed: '100000.00',
+        note: '',
+      },
+      {
+        ads_report_import_id: 1,
+        transaction_date: '2026-08-10',
+        sequence_number: 2,
+        description: 'Deduction for Product Ad',
+        jumlah_signed: '100.00',
+        note: '',
+      },
+    ],
+    page: 1,
+    limit: 50,
+  });
+
+  assert.equal(report.summary.adsSpend, 0);
+  assert.equal(report.summary.estimatedAdsPpn, 0);
+  assert.equal(report.summary.afterAdsAndPpn, 0);
+  assert.deepEqual(report.daily, []);
 });
 
 test('buildEstimationReport excludes Order.all and independent exception-source cancellation or return markers and never treats absent HPP as zero', () => {

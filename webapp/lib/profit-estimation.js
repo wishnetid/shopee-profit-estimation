@@ -12,6 +12,15 @@ const ESTIMATION_STATUS = Object.freeze({
   NOT_ELIGIBLE: 'not_eligible',
 });
 
+// Ads RAW records credit consumption before tax. This is a read-only daily
+// allocation so gross-estimation margins include the statutory PPN burden,
+// while actual cash PPN remains attributable to the separate top-up event.
+const ADS_PPN_RATE = 0.11;
+
+function calculateEstimatedAdsPpn(adsSpend) {
+  return Math.round(adsSpend * ADS_PPN_RATE);
+}
+
 function normalizeText(value) {
   if (value === undefined || value === null) return null;
   const text = String(value).trim();
@@ -317,7 +326,10 @@ function buildEstimationReport({
     excludedOrderCount: allOrders.filter((order) => order.estimationStatus === ESTIMATION_STATUS.NOT_ELIGIBLE).length,
     estimatedGrossBeforeFeeAds: allOrders.reduce((total, order) => total + (order.estimasiKotor || 0), 0),
     adsSpend: ads.total,
+    adsPpnRate: ADS_PPN_RATE,
+    estimatedAdsPpn: 0,
     afterAds: 0,
+    afterAdsAndPpn: 0,
     adsDuplicateEventCount: ads.duplicateEventCount,
   };
   summary.afterAds = summary.estimatedGrossBeforeFeeAds - summary.adsSpend;
@@ -333,7 +345,9 @@ function buildEstimationReport({
       reviewOrderCount: 0,
       estimatedGrossBeforeFeeAds: 0,
       adsSpend: 0,
+      estimatedAdsPpn: 0,
       afterAds: 0,
+      afterAdsAndPpn: 0,
     };
     dailyMap.set(date, next);
     return next;
@@ -355,8 +369,20 @@ function buildEstimationReport({
     dailyEntry(date).adsSpend += spend;
   }
   const daily = [...dailyMap.values()]
-    .map((entry) => ({ ...entry, afterAds: entry.estimatedGrossBeforeFeeAds - entry.adsSpend }))
+    .map((entry) => {
+      const estimatedAdsPpn = calculateEstimatedAdsPpn(entry.adsSpend);
+      const afterAds = entry.estimatedGrossBeforeFeeAds - entry.adsSpend;
+      return {
+        ...entry,
+        estimatedAdsPpn,
+        afterAds,
+        afterAdsAndPpn: afterAds - estimatedAdsPpn,
+      };
+    })
     .sort((left, right) => right.date.localeCompare(left.date));
+
+  summary.estimatedAdsPpn = daily.reduce((total, entry) => total + entry.estimatedAdsPpn, 0);
+  summary.afterAdsAndPpn = summary.afterAds - summary.estimatedAdsPpn;
 
   const safePage = Number.isSafeInteger(Number(page)) && Number(page) > 0 ? Number(page) : 1;
   const safeLimit = Number.isSafeInteger(Number(limit)) && Number(limit) > 0 ? Number(limit) : 50;
@@ -376,6 +402,7 @@ function buildEstimationReport({
 }
 
 module.exports = {
+  ADS_PPN_RATE,
   ELIGIBLE_STATUSES,
   ESTIMATION_STATUS,
   aggregateAdsSpend,

@@ -25,7 +25,9 @@ type DailyRow = {
   reviewOrderCount: number;
   estimatedGrossBeforeFeeAds: number;
   adsSpend: number;
+  estimatedAdsPpn: number;
   afterAds: number;
+  afterAdsAndPpn: number;
 };
 
 type EstimationPayload = {
@@ -42,7 +44,10 @@ type EstimationPayload = {
     excludedOrderCount: number;
     estimatedGrossBeforeFeeAds: number;
     adsSpend: number;
+    adsPpnRate: number;
+    estimatedAdsPpn: number;
     afterAds: number;
+    afterAdsAndPpn: number;
     adsDuplicateEventCount: number;
   };
   daily: DailyRow[];
@@ -110,12 +115,13 @@ function StatusBadge({ status }: { status: EstimationStatus }) {
   return <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${colors[status]}`}>{STATUS_COPY[status]}</span>;
 }
 
-function SummaryCard({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: 'purple' | 'rose' | 'indigo' | 'amber' }) {
+function SummaryCard({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: 'purple' | 'rose' | 'indigo' | 'amber' | 'slate' }) {
   const colors = {
     purple: 'border-purple-200 bg-purple-50 text-purple-800',
     rose: 'border-rose-200 bg-rose-50 text-rose-800',
     indigo: 'border-indigo-200 bg-indigo-50 text-indigo-800',
     amber: 'border-amber-200 bg-amber-50 text-amber-800',
+    slate: 'border-slate-200 bg-slate-50 text-slate-800',
   };
 
   return (
@@ -265,7 +271,7 @@ function ProfitEstimationContent({
                   <h2 className="font-semibold">Estimasi Kotor Sebelum Fee & Ads</h2>
                   <p>
                     Per order: satu Total Pembayaran dikurangi HPP seluruh item. Ads Spend hanya mengambil deduction Product Ad negatif.
-                    Top-up dan rebate tidak dihitung sebagai spend. Angka ini bukan Profit Bersih.
+                    Estimasi PPN Iklan 11% dihitung dari Ads Spend; top-up dan rebate tidak dihitung sebagai spend. Angka ini bukan Profit Bersih.
                   </p>
                 </div>
               </div>
@@ -330,7 +336,7 @@ function ProfitEstimationContent({
 
             {data && !loading && (
               <>
-                <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                   <SummaryCard
                     label="Estimasi Kotor Sebelum Fee & Ads"
                     value={formatIdr(data.summary.estimatedGrossBeforeFeeAds)}
@@ -344,8 +350,14 @@ function ProfitEstimationContent({
                     tone="rose"
                   />
                   <SummaryCard
-                    label="Sisa Estimasi Setelah Ads"
-                    value={formatIdr(data.summary.afterAds)}
+                    label="Estimasi PPN Iklan (11%)"
+                    value={formatIdr(data.summary.estimatedAdsPpn)}
+                    detail="Alokasi 11% dari Ads Spend, bukan transaksi PPN harian"
+                    tone="amber"
+                  />
+                  <SummaryCard
+                    label="Sisa Estimasi Setelah Ads & PPN"
+                    value={formatIdr(data.summary.afterAdsAndPpn)}
                     detail="Agregat toko/hari, belum dialokasikan per order"
                     tone="indigo"
                   />
@@ -353,7 +365,7 @@ function ProfitEstimationContent({
                     label="Perlu Tindak Lanjut"
                     value={`${data.summary.hppIncompleteOrderCount + data.summary.reviewOrderCount}`}
                     detail={`${data.summary.hppIncompleteOrderCount} HPP belum lengkap · ${data.summary.reviewOrderCount} review`}
-                    tone="amber"
+                    tone="slate"
                   />
                 </div>
 
@@ -375,10 +387,10 @@ function ProfitEstimationContent({
                 <section className="mb-5 overflow-hidden rounded-xl border border-slate-200 bg-white">
                   <div className="border-b border-slate-200 px-4 py-4 lg:px-5">
                     <h2 className="font-semibold text-slate-900">Ringkasan Harian</h2>
-                    <p className="mt-1 text-sm text-slate-500">Tanggal mengikuti kalender source/WIB, bukan parsing ISO di browser.</p>
+                    <p className="mt-1 text-sm text-slate-500">PPN adalah alokasi 11% dari Ads Spend; tanggal mengikuti kalender source/WIB, bukan parsing ISO di browser.</p>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[860px] text-sm">
+                    <table className="w-full min-w-[1010px] text-sm">
                       <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
                         <tr>
                           <th className="px-4 py-3">Tanggal</th>
@@ -387,12 +399,13 @@ function ProfitEstimationContent({
                           <th className="px-4 py-3 text-right">Review</th>
                           <th className="px-4 py-3 text-right">Estimasi Kotor</th>
                           <th className="px-4 py-3 text-right">Ads Spend</th>
-                          <th className="px-4 py-3 text-right">Sisa Setelah Ads</th>
+                          <th className="px-4 py-3 text-right">Estimasi PPN (11%)</th>
+                          <th className="px-4 py-3 text-right">Sisa Setelah Ads & PPN</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-slate-700">
                         {data.daily.length === 0 ? (
-                          <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">Tidak ada data dalam rentang ini.</td></tr>
+                          <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">Tidak ada data dalam rentang ini.</td></tr>
                         ) : data.daily.map((row) => (
                           <tr key={row.date} className="hover:bg-slate-50">
                             <td className="px-4 py-3 font-medium">{formatDate(row.date)}</td>
@@ -401,7 +414,8 @@ function ProfitEstimationContent({
                             <td className="px-4 py-3 text-right tabular-nums text-orange-700">{row.reviewOrderCount}</td>
                             <td className="px-4 py-3 text-right font-medium tabular-nums">{formatIdr(row.estimatedGrossBeforeFeeAds)}</td>
                             <td className="px-4 py-3 text-right font-medium tabular-nums text-rose-700">{formatIdr(row.adsSpend)}</td>
-                            <td className="px-4 py-3 text-right font-semibold tabular-nums text-indigo-700">{formatIdr(row.afterAds)}</td>
+                            <td className="px-4 py-3 text-right font-medium tabular-nums text-amber-700">{formatIdr(row.estimatedAdsPpn)}</td>
+                            <td className="px-4 py-3 text-right font-semibold tabular-nums text-indigo-700">{formatIdr(row.afterAdsAndPpn)}</td>
                           </tr>
                         ))}
                       </tbody>
