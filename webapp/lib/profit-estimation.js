@@ -16,6 +16,8 @@ const ESTIMATION_STATUS = Object.freeze({
 // allocation so gross-estimation margins include the statutory PPN burden,
 // while actual cash PPN remains attributable to the separate top-up event.
 const ADS_PPN_RATE = 0.11;
+const MINIMUM_HISTORICAL_SAMPLES = 3;
+const HISTORICAL_LOOKBACK_DAYS = 90;
 
 function calculateEstimatedAdsPpn(adsSpend) {
   return Math.round(adsSpend * ADS_PPN_RATE);
@@ -293,10 +295,77 @@ function sortOrdersDescending(left, right) {
   return String(right.no_pesanan || '').localeCompare(String(left.no_pesanan || ''));
 }
 
+function orderCompositionKey(order) {
+  const quantitiesBySku = new Map();
+  for (const item of order.items) {
+    const sku = item.nomor_referensi_sku || item.sku_induk;
+    if (!sku || !Number.isInteger(item.quantity) || item.quantity <= 0) return null;
+    const key = sku.toLowerCase();
+    quantitiesBySku.set(key, (quantitiesBySku.get(key) || 0) + item.quantity);
+  }
+  return quantitiesBySku.size
+    ? [...quantitiesBySku.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([sku, quantity]) => `${sku}\u001f${quantity}`).join('\u001e')
+    : null;
+}
+
+function median(values) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function attachShopeePayouts(orders, historicalOrders, settlementRows) {
+  const settlementByOrder = new Map();
+  for (const row of settlementRows) {
+    const orderNumber = normalizeText(row.no_pesanan);
+    const payout = parseFiniteNumber(row.signed_total);
+    const releasedDate = parseCalendarDate(row.tanggal_dana_dilepaskan);
+    if (orderNumber && payout !== null && releasedDate && !settlementByOrder.has(orderNumber.toLowerCase())) {
+      settlementByOrder.set(orderNumber.toLowerCase(), { signedTotal: payout, tanggal_dana_dilepaskan: releasedDate });
+    }
+  }
+  const historicalSettlements = historicalOrders.map((order) => {
+    const settlement = order.no_pesanan ? settlementByOrder.get(order.no_pesanan.toLowerCase()) : null;
+    const releasedDate = parseCalendarDate(settlement?.tanggal_dana_dilepaskan);
+    return { order, settlement, releasedDate };
+  }).filter(({ order, settlement, releasedDate }) => (
+    order.estimationStatus === ESTIMATION_STATUS.ESTIMABLE
+    && order.statusPesanan === 'Selesai'
+    && settlement
+    && releasedDate
+    && order.totalPembayaran
+  ));
+  const latestReleaseDay = historicalSettlements.reduce((latest, { releasedDate }) => Math.max(latest, Date.parse(`${releasedDate}T00:00:00Z`)), -Infinity);
+  const historicalByComposition = new Map();
+  for (const { order, settlement, releasedDate } of historicalSettlements) {
+    if (Date.parse(`${releasedDate}T00:00:00Z`) < latestReleaseDay - (HISTORICAL_LOOKBACK_DAYS * 86400000)) continue;
+    const composition = orderCompositionKey(order);
+    if (!composition) continue;
+    const rates = historicalByComposition.get(composition) || [];
+    rates.push(settlement.signedTotal / order.totalPembayaran);
+    historicalByComposition.set(composition, rates);
+  }
+  return orders.map((order) => {
+    if (order.estimationStatus !== ESTIMATION_STATUS.ESTIMABLE || order.totalHpp === null || order.totalPembayaran === null) return { ...order, shopeePayout: null, shopeePayoutKind: null, historicalMethod: null, historicalSampleCount: 0, estimatedShopeeNetProfitBeforeAds: null };
+    const actual = order.no_pesanan ? settlementByOrder.get(order.no_pesanan.toLowerCase()) : undefined;
+    if (actual !== undefined) return { ...order, shopeePayout: actual.signedTotal, shopeePayoutKind: 'settlement_actual', historicalMethod: null, historicalSampleCount: 0, estimatedShopeeNetProfitBeforeAds: actual.signedTotal - order.totalHpp };
+    if (order.statusPesanan === 'Selesai') {
+      return { ...order, shopeePayout: null, shopeePayoutKind: null, historicalMethod: null, historicalSampleCount: 0, estimatedShopeeNetProfitBeforeAds: null };
+    }
+    const rates = historicalByComposition.get(orderCompositionKey(order)) || [];
+    const rate = rates.length >= MINIMUM_HISTORICAL_SAMPLES ? median(rates) : null;
+    const payout = rate === null ? null : Math.round(order.totalPembayaran * rate);
+    return { ...order, shopeePayout: payout, shopeePayoutKind: payout === null ? null : 'historical_projection', historicalMethod: payout === null ? null : 'SKU_COMPOSITION_RECENT', historicalSampleCount: rates.length, estimatedShopeeNetProfitBeforeAds: payout === null ? null : payout - order.totalHpp };
+  });
+}
+
 function buildEstimationReport({
   orderRows = [],
+  historicalOrderRows = orderRows,
   skuRows = [],
   adsRows = [],
+  settlementRows = [],
   exceptionOrderNumbers = [],
   dateFrom = null,
   dateTo = null,
@@ -311,10 +380,12 @@ function buildEstimationReport({
       .filter(Boolean)
       .map((orderNumber) => orderNumber.toLowerCase()),
   );
-  const allOrders = groupOrderRows(orderRows)
+  const historicalOrders = groupOrderRows(historicalOrderRows)
+    .map((group) => createOrderResult(group, skuIndex, rawExceptionOrders));
+  const allOrders = attachShopeePayouts(groupOrderRows(orderRows)
     .map((group) => createOrderResult(group, skuIndex, rawExceptionOrders))
     .filter((order) => !order.orderDate || isDateInRange(order.orderDate, dateRange))
-    .sort(sortOrdersDescending);
+    .sort(sortOrdersDescending), historicalOrders, settlementRows);
   const ads = aggregateAdsSpend(adsRows, dateRange);
 
   const summary = {
@@ -330,6 +401,13 @@ function buildEstimationReport({
     estimatedAdsPpn: 0,
     afterAds: 0,
     afterAdsAndPpn: 0,
+    finalSettlementPayout: 0,
+    projectedPendingPayout: 0,
+    projectedShopeePayout: 0,
+    estimatedShopeeNetProfitBeforeAds: 0,
+    estimatedShopeeNetProfitAfterAdsAndPpn: 0,
+    shopeeNetProfitOrderCount: 0,
+    unavailableShopeePayoutOrderCount: 0,
     adsDuplicateEventCount: ads.duplicateEventCount,
   };
   summary.afterAds = summary.estimatedGrossBeforeFeeAds - summary.adsSpend;
@@ -348,6 +426,13 @@ function buildEstimationReport({
       estimatedAdsPpn: 0,
       afterAds: 0,
       afterAdsAndPpn: 0,
+      finalSettlementPayout: 0,
+      projectedPendingPayout: 0,
+      projectedShopeePayout: 0,
+      estimatedShopeeNetProfitBeforeAds: 0,
+      estimatedShopeeNetProfitAfterAdsAndPpn: 0,
+      shopeeNetProfitOrderCount: 0,
+      unavailableShopeePayoutOrderCount: 0,
     };
     dailyMap.set(date, next);
     return next;
@@ -359,6 +444,15 @@ function buildEstimationReport({
     if (order.estimationStatus === ESTIMATION_STATUS.ESTIMABLE) {
       entry.estimatedOrderCount += 1;
       entry.estimatedGrossBeforeFeeAds += order.estimasiKotor || 0;
+      if (order.shopeePayoutKind === 'settlement_actual') entry.finalSettlementPayout += order.shopeePayout || 0;
+      if (order.shopeePayoutKind === 'historical_projection') entry.projectedPendingPayout += order.shopeePayout || 0;
+      entry.projectedShopeePayout += order.shopeePayout || 0;
+      if (order.estimatedShopeeNetProfitBeforeAds !== null) {
+        entry.estimatedShopeeNetProfitBeforeAds += order.estimatedShopeeNetProfitBeforeAds;
+        entry.shopeeNetProfitOrderCount += 1;
+      } else {
+        entry.unavailableShopeePayoutOrderCount += 1;
+      }
     } else if (order.estimationStatus === ESTIMATION_STATUS.HPP_INCOMPLETE) {
       entry.hppIncompleteOrderCount += 1;
     } else if (order.estimationStatus === ESTIMATION_STATUS.NEEDS_REVIEW) {
@@ -377,12 +471,33 @@ function buildEstimationReport({
         estimatedAdsPpn,
         afterAds,
         afterAdsAndPpn: afterAds - estimatedAdsPpn,
+        // Ads-only dates intentionally carry a negative net contribution so every
+        // in-scope Ads spend and daily-rounded PPN is deducted exactly once.
+        // An order day without a payout basis remains unavailable instead of zero.
+        estimatedShopeeNetProfitAfterAdsAndPpn: entry.unavailableShopeePayoutOrderCount > 0
+          ? null
+          : entry.shopeeNetProfitOrderCount
+          ? entry.estimatedShopeeNetProfitBeforeAds - entry.adsSpend - estimatedAdsPpn
+          : entry.estimatedOrderCount === 0 ? -entry.adsSpend - estimatedAdsPpn : null,
       };
     })
     .sort((left, right) => right.date.localeCompare(left.date));
 
   summary.estimatedAdsPpn = daily.reduce((total, entry) => total + entry.estimatedAdsPpn, 0);
   summary.afterAdsAndPpn = summary.afterAds - summary.estimatedAdsPpn;
+  summary.finalSettlementPayout = daily.reduce((total, entry) => total + entry.finalSettlementPayout, 0);
+  summary.projectedPendingPayout = daily.reduce((total, entry) => total + entry.projectedPendingPayout, 0);
+  summary.projectedShopeePayout = daily.reduce((total, entry) => total + entry.projectedShopeePayout, 0);
+  summary.shopeeNetProfitOrderCount = daily.reduce((total, entry) => total + entry.shopeeNetProfitOrderCount, 0);
+  summary.unavailableShopeePayoutOrderCount = daily.reduce((total, entry) => total + entry.unavailableShopeePayoutOrderCount, 0);
+  summary.estimatedShopeeNetProfitBeforeAds = summary.shopeeNetProfitOrderCount ? daily.reduce((total, entry) => total + entry.estimatedShopeeNetProfitBeforeAds, 0) : null;
+  // Summary always deducts every in-scope Ads event and its daily-rounded PPN once,
+  // even if a different order date lacks enough historical evidence for projection.
+  summary.estimatedShopeeNetProfitAfterAdsAndPpn = summary.unavailableShopeePayoutOrderCount > 0
+    ? null
+    : summary.shopeeNetProfitOrderCount
+    ? summary.estimatedShopeeNetProfitBeforeAds - summary.adsSpend - summary.estimatedAdsPpn
+    : null;
 
   const safePage = Number.isSafeInteger(Number(page)) && Number(page) > 0 ? Number(page) : 1;
   const safeLimit = Number.isSafeInteger(Number(limit)) && Number(limit) > 0 ? Number(limit) : 50;
@@ -403,6 +518,8 @@ function buildEstimationReport({
 
 module.exports = {
   ADS_PPN_RATE,
+  HISTORICAL_LOOKBACK_DAYS,
+  MINIMUM_HISTORICAL_SAMPLES,
   ELIGIBLE_STATUSES,
   ESTIMATION_STATUS,
   aggregateAdsSpend,

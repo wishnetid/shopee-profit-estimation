@@ -12,6 +12,8 @@ const { buildEstimationReport, validateDateRange } = require('../../../lib/profi
     orderRows: OrderRow[];
     skuRows: SkuRow[];
     adsRows: AdsRow[];
+    settlementRows: SettlementRow[];
+    historicalOrderRows: OrderRow[];
     exceptionOrderNumbers: string[];
     dateFrom: string | null;
     dateTo: string | null;
@@ -52,6 +54,12 @@ type AdsRow = RowDataPacket & {
   description: string | null;
   jumlah_signed: string | number | null;
   note: string | null;
+};
+
+type SettlementRow = RowDataPacket & {
+  no_pesanan: string | null;
+  signed_total: string | number | null;
+  tanggal_dana_dilepaskan: string | null;
 };
 
 type ExceptionOrderRow = RowDataPacket & {
@@ -156,6 +164,48 @@ export async function GET(request: NextRequest) {
       ORDER BY o.waktu_pesanan_dibuat DESC, o.no_pesanan DESC, o.id DESC
     `, [...scopedOrderParams, storeCheck.storeId as number]);
 
+    // Historical settlement cohort is intentionally not restricted by the visible
+    // date range. Pending orders need recent completed outcomes as their model.
+    const [historicalOrderRows] = await conn.query<OrderRow[]>(`
+      SELECT
+        no_pesanan,
+        status_pesanan,
+        alasan_pembatalan,
+        status_pembatalan_pengembalian,
+        total_pembayaran,
+        DATE_FORMAT(waktu_pesanan_dibuat, '%Y-%m-%d %H:%i:%s') AS waktu_pesanan_dibuat,
+        nomor_referensi_sku,
+        sku_induk,
+        nama_produk,
+        nama_variasi,
+        jumlah,
+        returned_quantity
+      FROM order_all
+      WHERE store_id = ?
+      ORDER BY waktu_pesanan_dibuat DESC, no_pesanan DESC, id DESC
+    `, [storeCheck.storeId as number]);
+
+    const [settlementRows] = await conn.query<SettlementRow[]>(`
+      SELECT r.no_pesanan, r.signed_total, DATE_FORMAT(r.tanggal_dana_dilepaskan, '%Y-%m-%d') AS tanggal_dana_dilepaskan
+      FROM income_penghasilan_raw r
+      INNER JOIN income_report_imports i ON i.id = r.income_report_import_id
+      WHERE i.store_id = ?
+        AND r.lihat_berdasarkan = 'Order'
+        AND NULLIF(TRIM(r.no_pesanan), '') IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM income_penghasilan_raw recent_income
+          INNER JOIN income_report_imports recent_import ON recent_import.id = recent_income.income_report_import_id
+          WHERE recent_import.store_id = ?
+            AND recent_income.lihat_berdasarkan = 'Order'
+            AND recent_income.no_pesanan = r.no_pesanan
+            AND (
+              recent_import.imported_at > i.imported_at
+              OR (recent_import.imported_at = i.imported_at AND recent_income.id > r.id)
+            )
+        )
+    `, [storeCheck.storeId as number, storeCheck.storeId as number]);
+
     const [adsRows] = await conn.query<AdsRow[]>(`
       SELECT
         r.ads_report_import_id,
@@ -194,8 +244,10 @@ export async function GET(request: NextRequest) {
 
     const report = buildEstimationReport({
       orderRows,
+      historicalOrderRows,
       skuRows,
       adsRows,
+      settlementRows,
       exceptionOrderNumbers: exceptionOrderRows.map((row) => row.no_pesanan || ''),
       dateFrom: dateRange.dateFrom,
       dateTo: dateRange.dateTo,

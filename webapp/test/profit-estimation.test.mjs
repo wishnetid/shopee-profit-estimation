@@ -76,6 +76,13 @@ test('buildEstimationReport counts an order-level payment once and multiplies ea
     estimatedAdsPpn: 1100,
     afterAds: 90000,
     afterAdsAndPpn: 88900,
+    finalSettlementPayout: 0,
+    projectedPendingPayout: 0,
+    projectedShopeePayout: 0,
+    estimatedShopeeNetProfitBeforeAds: null,
+    estimatedShopeeNetProfitAfterAdsAndPpn: null,
+    shopeeNetProfitOrderCount: 0,
+    unavailableShopeePayoutOrderCount: 1,
     adsDuplicateEventCount: 0,
   });
   assert.deepEqual(report.daily, [{
@@ -88,6 +95,13 @@ test('buildEstimationReport counts an order-level payment once and multiplies ea
     estimatedAdsPpn: 1100,
     afterAds: 90000,
     afterAdsAndPpn: 88900,
+    finalSettlementPayout: 0,
+    projectedPendingPayout: 0,
+    projectedShopeePayout: 0,
+    estimatedShopeeNetProfitBeforeAds: 0,
+    estimatedShopeeNetProfitAfterAdsAndPpn: null,
+    shopeeNetProfitOrderCount: 0,
+    unavailableShopeePayoutOrderCount: 1,
   }]);
 });
 
@@ -321,6 +335,124 @@ test('validateDateRange rejects impossible and reverse calendar ranges before qu
   assert.deepEqual(validateDateRange('2026-08-01', '2026-08-10'), { dateFrom: '2026-08-01', dateTo: '2026-08-10' });
   assert.throws(() => validateDateRange('2026-02-30', null), /dateFrom/);
   assert.throws(() => validateDateRange('2026-08-11', '2026-08-10'), /dateFrom/);
+});
+
+test('buildEstimationReport projects pending Shopee payout from recent matching completed settlements and separates it from final settlement', () => {
+  const report = buildEstimationReport({
+    orderRows: [
+      orderRow({ no_pesanan: 'FINISHED-1', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', total_pembayaran: '100000.00', waktu_pesanan_dibuat: '2026-08-01 09:00:00' }),
+      orderRow({ no_pesanan: 'FINISHED-2', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', total_pembayaran: '200000.00', waktu_pesanan_dibuat: '2026-08-02 09:00:00' }),
+      orderRow({ no_pesanan: 'FINISHED-3', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', total_pembayaran: '300000.00', waktu_pesanan_dibuat: '2026-08-03 09:00:00' }),
+      orderRow({ no_pesanan: 'PENDING-1', status_pesanan: 'Sedang Dikirim', nomor_referensi_sku: 'SKU-MATCH', total_pembayaran: '400000.00', waktu_pesanan_dibuat: '2026-08-11 09:00:00' }),
+    ],
+    skuRows: [skuRow({ sku1: 'SKU-MATCH', harga: '40000.00' })],
+    settlementRows: [
+      { no_pesanan: 'FINISHED-1', signed_total: '80000.00', tanggal_dana_dilepaskan: '2026-08-04' },
+      { no_pesanan: 'FINISHED-2', signed_total: '160000.00', tanggal_dana_dilepaskan: '2026-08-05' },
+      { no_pesanan: 'FINISHED-3', signed_total: '240000.00', tanggal_dana_dilepaskan: '2026-08-06' },
+    ],
+    adsRows: [],
+    page: 1,
+    limit: 50,
+  });
+
+  const byOrder = Object.fromEntries(report.orders.data.map((row) => [row.no_pesanan, row]));
+  assert.equal(byOrder['FINISHED-1'].shopeePayoutKind, 'settlement_actual');
+  assert.equal(byOrder['FINISHED-1'].shopeePayout, 80000);
+  assert.equal(byOrder['PENDING-1'].shopeePayoutKind, 'historical_projection');
+  assert.equal(byOrder['PENDING-1'].shopeePayout, 320000);
+  assert.equal(byOrder['PENDING-1'].historicalSampleCount, 3);
+  assert.equal(byOrder['PENDING-1'].historicalMethod, 'SKU_COMPOSITION_RECENT');
+  assert.equal(report.summary.finalSettlementPayout, 480000);
+  assert.equal(report.summary.projectedPendingPayout, 320000);
+  assert.equal(report.summary.projectedShopeePayout, 800000);
+  assert.equal(report.summary.estimatedShopeeNetProfitBeforeAds, 640000);
+  assert.equal(report.summary.estimatedShopeeNetProfitAfterAdsAndPpn, 640000);
+  assert.equal(report.daily.find((row) => row.date === '2026-08-11').projectedPendingPayout, 320000);
+  assert.equal(report.daily.find((row) => row.date === '2026-08-11').estimatedShopeeNetProfitAfterAdsAndPpn, 280000);
+});
+
+test('buildEstimationReport subtracts Ads and daily-rounded PPN exactly once even when the spend falls on an Ads-only day', () => {
+  const report = buildEstimationReport({
+    orderRows: [orderRow({ no_pesanan: 'SETTLED-1', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-PRIMARY', total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-01 09:00:00' })],
+    skuRows: [skuRow({ harga: '30.00' })],
+    settlementRows: [{ no_pesanan: 'SETTLED-1', signed_total: '100.00', tanggal_dana_dilepaskan: '2026-08-03' }],
+    adsRows: [{ ads_report_import_id: 1, transaction_date: '2026-08-02', sequence_number: 1, description: 'Deduction for Product Ad', jumlah_signed: '-20.00', note: '' }],
+    page: 1,
+    limit: 50,
+  });
+
+  assert.equal(report.summary.estimatedShopeeNetProfitBeforeAds, 70);
+  assert.equal(report.summary.estimatedShopeeNetProfitAfterAdsAndPpn, 48);
+  assert.equal(report.daily.find((row) => row.date === '2026-08-01').estimatedShopeeNetProfitAfterAdsAndPpn, 70);
+  assert.equal(report.daily.find((row) => row.date === '2026-08-02').estimatedShopeeNetProfitAfterAdsAndPpn, -22);
+});
+
+test('buildEstimationReport never projects a completed order that lacks Penghasilan / Order settlement', () => {
+  const report = buildEstimationReport({
+    orderRows: [
+      orderRow({ no_pesanan: 'FINISHED-WITHOUT-SETTLEMENT', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-10 09:00:00' }),
+      orderRow({ no_pesanan: 'HISTORY-1', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-01 09:00:00' }),
+      orderRow({ no_pesanan: 'HISTORY-2', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-02 09:00:00' }),
+      orderRow({ no_pesanan: 'HISTORY-3', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-03 09:00:00' }),
+    ],
+    skuRows: [skuRow({ sku1: 'SKU-MATCH', harga: '10.00' })],
+    settlementRows: [
+      { no_pesanan: 'HISTORY-1', signed_total: '80.00', tanggal_dana_dilepaskan: '2026-08-04' },
+      { no_pesanan: 'HISTORY-2', signed_total: '80.00', tanggal_dana_dilepaskan: '2026-08-05' },
+      { no_pesanan: 'HISTORY-3', signed_total: '80.00', tanggal_dana_dilepaskan: '2026-08-06' },
+    ],
+    adsRows: [],
+    page: 1,
+    limit: 50,
+  });
+
+  const completed = report.orders.data.find((row) => row.no_pesanan === 'FINISHED-WITHOUT-SETTLEMENT');
+  assert.equal(completed.shopeePayout, null);
+  assert.equal(completed.shopeePayoutKind, null);
+  assert.equal(completed.estimatedShopeeNetProfitBeforeAds, null);
+});
+
+test('buildEstimationReport keeps daily and summary net profit unavailable when an under-sampled pending order shares a day with a settled order', () => {
+  const report = buildEstimationReport({
+    orderRows: [
+      orderRow({ no_pesanan: 'SETTLED-SAME-DAY', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-PRIMARY', total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-10 09:00:00' }),
+      orderRow({ no_pesanan: 'PENDING-UNDER-SAMPLED', status_pesanan: 'Sedang Dikirim', nomor_referensi_sku: 'SKU-OTHER', total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-10 10:00:00' }),
+    ],
+    skuRows: [skuRow({ sku1: 'SKU-PRIMARY', harga: '30.00' }), skuRow({ sku1: 'SKU-OTHER', harga: '30.00' })],
+    settlementRows: [{ no_pesanan: 'SETTLED-SAME-DAY', signed_total: '100.00', tanggal_dana_dilepaskan: '2026-08-11' }],
+    adsRows: [],
+    page: 1,
+    limit: 50,
+  });
+
+  assert.equal(report.daily[0].estimatedShopeeNetProfitAfterAdsAndPpn, null);
+  assert.equal(report.summary.estimatedShopeeNetProfitAfterAdsAndPpn, null);
+});
+
+test('buildEstimationReport normalizes matching composition by total quantity per SKU across multiple item rows', () => {
+  const report = buildEstimationReport({
+    orderRows: [
+      orderRow({ no_pesanan: 'FINISHED-1', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', jumlah: 2, total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-01 09:00:00' }),
+      orderRow({ no_pesanan: 'FINISHED-2', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', jumlah: 2, total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-02 09:00:00' }),
+      orderRow({ no_pesanan: 'FINISHED-3', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', jumlah: 2, total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-03 09:00:00' }),
+      orderRow({ no_pesanan: 'PENDING-SPLIT', status_pesanan: 'Sedang Dikirim', nomor_referensi_sku: 'SKU-MATCH', jumlah: 1, total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-11 09:00:00' }),
+      orderRow({ no_pesanan: 'PENDING-SPLIT', status_pesanan: 'Sedang Dikirim', nomor_referensi_sku: 'SKU-MATCH', nama_variasi: 'Hitam,L', jumlah: 1, total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-11 09:00:00' }),
+    ],
+    skuRows: [skuRow({ sku1: 'SKU-MATCH', harga: '10.00' })],
+    settlementRows: [
+      { no_pesanan: 'FINISHED-1', signed_total: '80.00', tanggal_dana_dilepaskan: '2026-08-04' },
+      { no_pesanan: 'FINISHED-2', signed_total: '80.00', tanggal_dana_dilepaskan: '2026-08-05' },
+      { no_pesanan: 'FINISHED-3', signed_total: '80.00', tanggal_dana_dilepaskan: '2026-08-06' },
+    ],
+    adsRows: [],
+    page: 1,
+    limit: 50,
+  });
+
+  const pending = report.orders.data.find((row) => row.no_pesanan === 'PENDING-SPLIT');
+  assert.equal(pending.shopeePayout, 80);
+  assert.equal(pending.historicalSampleCount, 3);
 });
 
 test('buildEstimationReport paginates per-order output without changing totals or daily aggregates', () => {

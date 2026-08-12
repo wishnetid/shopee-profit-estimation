@@ -14,6 +14,11 @@ type EstimationOrder = {
   totalPembayaran: number | null;
   totalHpp: number | null;
   estimasiKotor: number | null;
+  shopeePayout: number | null;
+  shopeePayoutKind: 'settlement_actual' | 'historical_projection' | null;
+  historicalMethod: 'SKU_COMPOSITION_RECENT' | null;
+  historicalSampleCount: number;
+  estimatedShopeeNetProfitBeforeAds: number | null;
   estimationStatus: EstimationStatus;
   reasons: string[];
 };
@@ -28,6 +33,13 @@ type DailyRow = {
   estimatedAdsPpn: number;
   afterAds: number;
   afterAdsAndPpn: number;
+  finalSettlementPayout: number;
+  projectedPendingPayout: number;
+  projectedShopeePayout: number;
+  estimatedShopeeNetProfitBeforeAds: number;
+  estimatedShopeeNetProfitAfterAdsAndPpn: number | null;
+  shopeeNetProfitOrderCount: number;
+  unavailableShopeePayoutOrderCount: number;
 };
 
 type EstimationPayload = {
@@ -48,6 +60,13 @@ type EstimationPayload = {
     estimatedAdsPpn: number;
     afterAds: number;
     afterAdsAndPpn: number;
+    finalSettlementPayout: number;
+    projectedPendingPayout: number;
+    projectedShopeePayout: number;
+    estimatedShopeeNetProfitBeforeAds: number | null;
+    estimatedShopeeNetProfitAfterAdsAndPpn: number | null;
+    shopeeNetProfitOrderCount: number;
+    unavailableShopeePayoutOrderCount: number;
     adsDuplicateEventCount: number;
   };
   daily: DailyRow[];
@@ -223,7 +242,7 @@ function ProfitEstimationContent({
             <div>
               <h1 className="text-2xl font-bold text-slate-900 lg:text-3xl">Profit & Estimasi</h1>
               <p className="mt-1 text-sm text-slate-600">
-                Monitoring estimasi kotor dan Ads Spend untuk {activeStoreName}.
+                Monitoring proyeksi penghasilan Shopee, HPP, dan Ads untuk {activeStoreName}.
               </p>
             </div>
           </div>
@@ -268,10 +287,10 @@ function ProfitEstimationContent({
               <div className="flex items-start gap-3">
                 <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-purple-700" />
                 <div className="text-sm leading-6 text-purple-950">
-                  <h2 className="font-semibold">Estimasi Kotor Sebelum Fee & Ads</h2>
+                  <h2 className="font-semibold">Estimasi Profit Bersih Shopee</h2>
                   <p>
-                    Per order: satu Total Pembayaran dikurangi HPP seluruh item. Ads Spend hanya mengambil deduction Product Ad negatif.
-                    Estimasi PPN Iklan 11% dihitung dari Ads Spend; top-up dan rebate tidak dihitung sebagai spend. Angka ini bukan Profit Bersih.
+                    Settlement yang sudah dilepas memakai Penghasilan / Order final. Order pending memakai median payout rate dari minimal tiga settlement terbaru dengan komposisi SKU dan quantity sama.
+                    Ads Spend hanya mengambil deduction Product Ad negatif; PPN Iklan 11% adalah alokasi estimasi harian.
                   </p>
                 </div>
               </div>
@@ -338,27 +357,27 @@ function ProfitEstimationContent({
               <>
                 <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                   <SummaryCard
-                    label="Estimasi Kotor Sebelum Fee & Ads"
-                    value={formatIdr(data.summary.estimatedGrossBeforeFeeAds)}
-                    detail={`${data.summary.estimatedOrderCount} order siap diestimasi`}
+                    label="Penghasilan Final Settlement"
+                    value={formatIdr(data.summary.finalSettlementPayout)}
+                    detail="Penghasilan / Order yang sudah dana dilepas"
                     tone="purple"
                   />
                   <SummaryCard
-                    label="Ads Spend"
-                    value={formatIdr(data.summary.adsSpend)}
-                    detail="Hanya deduction Product Ad negatif"
+                    label="Estimasi Penghasilan Pending"
+                    value={formatIdr(data.summary.projectedPendingPayout)}
+                    detail="Model historis settlement terbaru"
                     tone="rose"
                   />
                   <SummaryCard
-                    label="Estimasi PPN Iklan (11%)"
-                    value={formatIdr(data.summary.estimatedAdsPpn)}
-                    detail="Alokasi 11% dari Ads Spend, bukan transaksi PPN harian"
+                    label="Total Proyeksi Penghasilan Shopee"
+                    value={formatIdr(data.summary.projectedShopeePayout)}
+                    detail="Final settlement + estimasi pending"
                     tone="amber"
                   />
                   <SummaryCard
-                    label="Sisa Estimasi Setelah Ads & PPN"
-                    value={formatIdr(data.summary.afterAdsAndPpn)}
-                    detail="Agregat toko/hari, belum dialokasikan per order"
+                    label="Estimasi Profit Bersih Shopee"
+                    value={formatIdr(data.summary.estimatedShopeeNetProfitAfterAdsAndPpn)}
+                    detail="Setelah HPP, Ads Spend, dan Estimasi PPN"
                     tone="indigo"
                   />
                   <SummaryCard
@@ -387,10 +406,10 @@ function ProfitEstimationContent({
                 <section className="mb-5 overflow-hidden rounded-xl border border-slate-200 bg-white">
                   <div className="border-b border-slate-200 px-4 py-4 lg:px-5">
                     <h2 className="font-semibold text-slate-900">Ringkasan Harian</h2>
-                    <p className="mt-1 text-sm text-slate-500">PPN adalah alokasi 11% dari Ads Spend; tanggal mengikuti kalender source/WIB, bukan parsing ISO di browser.</p>
+                    <p className="mt-1 text-sm text-slate-500">Final settlement dan pending projection dipisahkan. Model historis memakai komposisi SKU/quantity sama, minimal tiga settlement, dan hanya cohort 90 hari terbaru.</p>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1010px] text-sm">
+                    <table className="w-full min-w-[1480px] text-sm">
                       <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
                         <tr>
                           <th className="px-4 py-3">Tanggal</th>
@@ -398,14 +417,17 @@ function ProfitEstimationContent({
                           <th className="px-4 py-3 text-right">HPP Belum Lengkap</th>
                           <th className="px-4 py-3 text-right">Review</th>
                           <th className="px-4 py-3 text-right">Estimasi Kotor</th>
+                          <th className="px-4 py-3 text-right">Penghasilan Final</th>
+                          <th className="px-4 py-3 text-right">Estimasi Pending</th>
+                          <th className="px-4 py-3 text-right">Proyeksi Penghasilan</th>
                           <th className="px-4 py-3 text-right">Ads Spend</th>
                           <th className="px-4 py-3 text-right">Estimasi PPN (11%)</th>
-                          <th className="px-4 py-3 text-right">Sisa Setelah Ads & PPN</th>
+                          <th className="px-4 py-3 text-right">Estimasi Profit Bersih</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-slate-700">
                         {data.daily.length === 0 ? (
-                          <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">Tidak ada data dalam rentang ini.</td></tr>
+                          <tr><td colSpan={11} className="px-4 py-10 text-center text-slate-400">Tidak ada data dalam rentang ini.</td></tr>
                         ) : data.daily.map((row) => (
                           <tr key={row.date} className="hover:bg-slate-50">
                             <td className="px-4 py-3 font-medium">{formatDate(row.date)}</td>
@@ -413,9 +435,12 @@ function ProfitEstimationContent({
                             <td className="px-4 py-3 text-right tabular-nums text-amber-700">{row.hppIncompleteOrderCount}</td>
                             <td className="px-4 py-3 text-right tabular-nums text-orange-700">{row.reviewOrderCount}</td>
                             <td className="px-4 py-3 text-right font-medium tabular-nums">{formatIdr(row.estimatedGrossBeforeFeeAds)}</td>
+                            <td className="px-4 py-3 text-right tabular-nums">{formatIdr(row.finalSettlementPayout)}</td>
+                            <td className="px-4 py-3 text-right tabular-nums">{formatIdr(row.projectedPendingPayout)}</td>
+                            <td className="px-4 py-3 text-right font-medium tabular-nums">{formatIdr(row.projectedShopeePayout)}</td>
                             <td className="px-4 py-3 text-right font-medium tabular-nums text-rose-700">{formatIdr(row.adsSpend)}</td>
                             <td className="px-4 py-3 text-right font-medium tabular-nums text-amber-700">{formatIdr(row.estimatedAdsPpn)}</td>
-                            <td className="px-4 py-3 text-right font-semibold tabular-nums text-indigo-700">{formatIdr(row.afterAdsAndPpn)}</td>
+                            <td className="px-4 py-3 text-right font-semibold tabular-nums text-indigo-700">{formatIdr(row.estimatedShopeeNetProfitAfterAdsAndPpn)}</td>
                           </tr>
                         ))}
                       </tbody>
