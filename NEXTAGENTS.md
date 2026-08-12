@@ -1,6 +1,6 @@
 # NEXTAGENTS — Shopee Profit Estimation
 
-**Last updated:** 2026-08-09 19:17 WIB
+**Last updated:** 2026-08-12 WIB
 
 **Production:** https://webapp-umber-five.vercel.app
 
@@ -8,9 +8,9 @@
 
 **Branch:** `master`
 
-**Code release:** `caf2d9f` — `fix(income): handle legacy aggregate fee breakdown`
+**Code release:** `7bfab44` — `feat(raw): add balance exceptions and ads packages`
 
-**Code verification deployment:** `dpl_7rbfVnZbRFPc9FMmGHWX95XUhHjo` — `Ready`
+**Code verification deployment:** `dpl_8sVCM8uuL71w15UV3qmgmh3nPz4b` — `Ready`
 
 > Mulai dengan membaca `README.md` penuh, lalu file ini. Jangan langsung coding, migration, import, clear, reset, atau hapus store. RAW Order.all, Income, Master SKU shared, serta multi-store sudah live. Profit final belum tersedia.
 
@@ -25,11 +25,9 @@ Store aktif yang tersisa
   TACTICALIZED
 
 TACTICALIZED
-  Order.all sudah terisi
-  Income RAW package periode Mei 2026 sudah terimport
-  Reconciliation package: matched
-  Active child sections: Penghasilan / Order, Penghasilan / Sku, Adjustment
-  Shipping Fee Discrepancy tidak ada karena source sheet tidak tersedia
+  Order.all: 0 row
+  Income parent/child RAW: 0 row
+  RAW Expansion parent/child: 0 row
 
 Master SKU
   shared/global; tidak dimiliki store tertentu
@@ -49,12 +47,12 @@ Master SKU
 - `DELETE /api/stores` menghapus store kosong dengan confirmation eksplisit.
 - Basic Auth berlaku untuk page dan API.
 - Profit legacy disengaja mengembalikan `503 PROFIT_NOT_READY`.
-- GitHub `master` dan Vercel Production memuat source release `caf2d9f` untuk legacy aggregate-fee Income.
-- Package Income Mei yang live sudah dibuktikan source-to-DB: parent SHA cocok, source-row identity aktif lengkap, dan tidak ada child orphan.
+- GitHub `master` dan Vercel Production memuat source release `7bfab44`, termasuk RAW Expansion Balance, Cancellation, Failed Delivery, Return/Refund, dan Ads.
+- Master SKU shared tetap berisi satu package dan 32 source row. State Order/Income/RAW terbaru wajib dicek dari API production karena data operasional dapat berubah.
 
 ### Belum selesai
 
-- RAW Expansion Balance, Cancellation, Failed Delivery, Return/Refund, dan Ads: DDL live sudah dibuat dari backup tervalidasi; post-DDL audit dan preview-only sembilan sample real lulus tanpa write. Source masih belum commit/deploy; import real belum dilakukan. Handoff: `RAW-EXPANSION-IMPLEMENTATION.md` lalu `webapp/docs/RAW-EXPANSION.md`.
+- RAW Expansion sudah deployed. DDL live dibuat dari backup tervalidasi; post-DDL audit, preview-only sembilan sample real lokal, dan preview-only Balance canonical production lulus tanpa write. Import real belum dilakukan. Handoff: `RAW-EXPANSION-IMPLEMENTATION.md` lalu `webapp/docs/RAW-EXPANSION.md`.
 - HPP final, ads accounting layer, net payout, actual profit, estimation profit.
 - Multi-user ownership authorization per store.
 - Baseline lint cleanup.
@@ -306,7 +304,7 @@ confirmation: true untuk clear/reset/hapus
 
 ## 7. Quality dan Runtime
 
-Quality gate source release `caf2d9f`:
+Quality gate source release `7bfab44`:
 
 ```text
 Income regression suite                        16/16 PASS

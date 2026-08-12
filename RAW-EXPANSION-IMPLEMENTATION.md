@@ -1,12 +1,12 @@
 # RAW Expansion — Balance, Order Exceptions, dan Ads
 
-**Status:** Implementasi lokal tervalidasi; DDL live sudah dibuat dan preview-only sample real sudah lulus. Commit/deploy production masih pending.
+**Status:** Deployed production. DDL live sudah dibuat dan preview-only sample real serta canonical production sudah lulus tanpa write. Import real masih pending.
 **Dibuat:** 2026-08-12
 **Fix audit:** 2026-08-12
 **Target app:** `webapp/`
 **Production saat dokumen dibuat:** `https://webapp-umber-five.vercel.app`
 
-> Dokumen ini adalah handoff implementasi. Baca penuh sebelum mengubah parser, schema, upload route, UI, atau migration. Scope ini hanya menambah penyimpanan dan pembacaan RAW. Tidak ada kalkulasi profit, dedup bisnis, atau penggabungan finansial otomatis. Implementasi lokal sudah melewati unit test, typecheck, dan production build. DDL live sudah dibuat dari backup tervalidasi, lalu preview-only sembilan sample real lulus tanpa membuat parent/child RAW. Import real dan post-import audit tetap belum dilakukan.
+> Dokumen ini adalah handoff implementasi. Baca penuh sebelum mengubah parser, schema, upload route, UI, atau migration. Scope ini hanya menambah penyimpanan dan pembacaan RAW. Tidak ada kalkulasi profit, dedup bisnis, atau penggabungan finansial otomatis. Source `7bfab44` sudah deployed sebagai Vercel Production `dpl_8sVCM8uuL71w15UV3qmgmh3nPz4b`. DDL live dibuat dari backup tervalidasi; sembilan sample real lokal dan satu preview-only Balance canonical production lulus tanpa membuat parent/child RAW. Import real dan post-import audit tetap belum dilakukan.
 
 ---
 

@@ -1,6 +1,6 @@
 # Shopee Profit Estimation
 
-**Last updated:** 2026-08-09 19:17 WIB
+**Last updated:** 2026-08-12 WIB
 
 **Production:** https://webapp-umber-five.vercel.app
 
@@ -8,11 +8,11 @@
 
 **Branch:** `master`
 
-**Code release commit:** `caf2d9f` — `fix(income): handle legacy aggregate fee breakdown`
+**Code release commit:** `7bfab44` — `feat(raw): add balance exceptions and ads packages`
 
-**Code verification deployment:** `dpl_7rbfVnZbRFPc9FMmGHWX95XUhHjo` — `Ready`
+**Code verification deployment:** `dpl_8sVCM8uuL71w15UV3qmgmh3nPz4b` — `Ready`
 
-> Baca file ini penuh sebelum menyentuh project. App production mengelola RAW **Order.all**, **Income**, **Master SKU shared**, dan **multi-toko**. Financial/profit final belum tersedia; jangan menyimpulkan profit dari data RAW yang ada.
+> Baca file ini penuh sebelum menyentuh project. App production mengelola RAW **Order.all**, **Income**, **Balance**, **order exceptions**, **Ads**, **Master SKU shared**, dan **multi-toko**. Financial/profit final belum tersedia; jangan menyimpulkan profit dari data RAW yang ada.
 
 ---
 
@@ -33,7 +33,7 @@
 
 3. **Income RAW package per store**
    - Satu workbook Income disimpan sebagai satu package/provenance.
-   - TACTICALIZED saat dokumentasi ini diperbarui memiliki satu package Income periode Mei 2026 dengan reconciliation `matched`.
+   - Saat dokumentasi ini diperbarui, API production menunjukkan belum ada package Income pada store `TACTICALIZED`.
    - Kontrak RAW aktif menyimpan `Penghasilan` view `Order` dan `Sku`, serta `Adjustment` bila source menyediakannya.
    - Tidak adanya sheet `Shipping Fee Discrepancy` pada source berarti tidak ada child RAW section yang diharapkan untuk package tersebut.
    - `Seller Fee` tetap audit-only dan belum dimaterialisasi sebagai child RAW transaksi.
@@ -49,14 +49,26 @@
    - MySQL cPanel hanya diakses server-side.
    - Basic Auth wajib pada page dan API.
 
+6. **RAW Expansion — source evidence per store**
+   - Balance Transaction, Cancellation, Failed Delivery, Return/Refund, dan Ads Ledger tersedia pada Upload serta halaman `/balance`, `/exceptions`, dan `/ads`.
+   - Semua report baru menggunakan preview-first, package SHA-256 per store, source-row provenance, dan preview ticket yang terikat store/hash/report.
+   - DDL sepuluh tabel RAW sudah dibuat dari backup tervalidasi. Production preview-only Balance lulus dengan reconciliation dan ledger continuity `matched`, tanpa write.
+   - Semua tabel RAW Expansion masih kosong sampai operator memberi approval import eksplisit.
+
 ### Belum tersedia — jangan diasumsikan valid
 
-- Balance Transaction RAW.
-- Return/refund, failed delivery, dan cancellation terhadap settlement finansial.
+- Settlement/financial interpretation dari Balance, return/refund, failed delivery, dan cancellation.
 - Mapping HPP final serta alokasi order-level ke item-level.
-- Biaya iklan.
+- Ads accounting layer dan alokasi biaya iklan ke order/item.
 - Financial layer: net payout, actual profit, dan estimation profit.
 - Multi-user ownership authorization per store.
+
+### Snapshot runtime saat dokumentasi diperbarui
+
+- Store aktif: `TACTICALIZED` (`id=1`).
+- `order_all`, seluruh parent/child Income, serta seluruh parent/child RAW Expansion: `0` row.
+- Master SKU shared tetap berisi satu package dan 32 source row.
+- Nilai ini adalah snapshot API production setelah preview-only; query API live sebelum membuat klaim data/import baru.
 
 Route dan halaman Profit sengaja mengembalikan:
 

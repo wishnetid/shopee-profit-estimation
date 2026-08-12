@@ -2,9 +2,9 @@
 
 ## Status
 
-Source implementation is local/uncommitted and production build has passed. Live DDL is created and preview-only real-sample verification passed without writes. It is **not committed, pushed, deployed, or imported** yet.
+Source release `7bfab44` is pushed to `master` and deployed as Vercel Production `dpl_8sVCM8uuL71w15UV3qmgmh3nPz4b`. Live DDL is created and preview-only real-sample verification passed without writes. It is **not imported** yet.
 
-Local repair verification passed: classifier collision, physical source-row provenance, RAW preview field keys, store/hash/report-bound preview ticket, duplicate no-op copy, store lifecycle guards, search bounds, and API aliases were added. Direct cPanel MySQL access from the VPS still times out, but the Windows OpenVPN SSH bridge provides a verified route. The clean absent state was backed up, then all ten RAW target tables were created and post-DDL-audited. Preview-only checks of nine real RAW samples passed without writes. See `docs/RAW-EXPANSION-LIVE-DDL-AUDIT-20260812.md`. Do not claim the new reports are usable in production until commit, deploy, production preview-only, and post-import verification succeed.
+Local repair verification passed: classifier collision, physical source-row provenance, RAW preview field keys, store/hash/report-bound preview ticket, duplicate no-op copy, store lifecycle guards, search bounds, and API aliases were added. Direct cPanel MySQL access from the VPS still times out, but the Windows OpenVPN SSH bridge provides a verified route. The clean absent state was backed up, then all ten RAW target tables were created and post-DDL-audited. Preview-only checks of nine real RAW samples and a canonical-production Balance preview passed without writes. See `docs/RAW-EXPANSION-LIVE-DDL-AUDIT-20260812.md`. Do not claim source data is imported until explicit import and post-import verification succeed.
 
 ## Scope
 
@@ -77,12 +77,10 @@ npm run build                                   PASS
 
 `npm test` cannot fully pass in this runtime because existing `multi-store.test.mjs` tries a live cPanel MySQL connection and receives `ETIMEDOUT`. The baseline showed the same failure before this feature.
 
-## Remaining Release Steps
+## Remaining Data Gate
 
-1. Complete fresh independent review, stage only source/tests/docs, then commit/push/deploy.
-2. Run canonical-production `action=preview` for one real RAW workbook and prove DB remains unchanged.
-3. Wait for explicit approval before a real `action=import`.
-4. After import, prove parent SHA, child source row parity, no orphans, store scoping, and `/api/raw` output.
+1. Wait for explicit approval before a real `action=import`.
+2. After import, prove parent SHA, child source row parity, no orphans, store scoping, and `/api/raw` output.
 
 ## Do Not
 
