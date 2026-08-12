@@ -47,7 +47,7 @@ Master SKU
 - Basic Auth berlaku untuk page dan API.
 - Profit legacy disengaja mengembalikan `503 PROFIT_NOT_READY`; belum ada UI/API profit yang dipublikasikan.
 - Probe read-only membuktikan raw data dapat menghitung profit per-order aktual, kerugian cash settlement retur, dan estimasi kotor sebelum fee untuk order belum settlement.
-- GitHub `master` memuat source release `4e54c39`; deployment metadata harus diverifikasi lagi setelah commit dokumentasi ini dipush.
+- GitHub `master` memuat baseline source release `4e54c39`; setiap commit dokumentasi harus dipush lalu deployment production baru diverifikasi sebelum state deployment disebut final.
 - Master SKU tetap shared/global. State Order/Income/RAW terbaru wajib dicek dari database read-only atau API production karena data operasional dapat berubah.
 
 ### Belum selesai
