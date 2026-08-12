@@ -736,6 +736,7 @@ export async function POST(request: NextRequest) {
     if (!fileValidation.valid) return NextResponse.json({ error: fileValidation.error }, { status: 400 });
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    const sha256 = computeSha256(buffer);
     const isCsv = file.name.toLowerCase().endsWith('.csv');
     const workbook = isCsv ? null : XLSX.read(buffer, { type: 'buffer' });
     const reportType = isCsv
@@ -768,21 +769,26 @@ export async function POST(request: NextRequest) {
     if (action === 'preview') {
       conn = await getConnection();
       if (reportType === 'income') {
-        const parsed = parseIncomePackage(workbook as XLSX.WorkBook, sourceSnapshotFile, computeSha256(buffer));
+        const parsed = parseIncomePackage(workbook as XLSX.WorkBook, sourceSnapshotFile, sha256);
         const existingImport = await findExistingIncomeImport(conn, storeId, parsed.sha256);
         const preview = buildIncomePreview(parsed, existingImport);
         if (!preview.valid) return NextResponse.json({ error: 'Income package ditolak.', ...preview }, { status: 400 });
-        return NextResponse.json({ success: true, action: 'preview', reportType: reportName, ...preview });
+        const previewTicket = preview.canImport
+          ? createPreviewTicket({ storeId, sha256, reportType }, previewTicketSecret())
+          : null;
+        return NextResponse.json({ success: true, action: 'preview', reportType: reportName, previewTicket, ...preview });
       }
       if (reportType === 'master') {
-        const parsed = parseSkuRawPackage(workbook as XLSX.WorkBook, sourceSnapshotFile, computeSha256(buffer));
+        const parsed = parseSkuRawPackage(workbook as XLSX.WorkBook, sourceSnapshotFile, sha256);
         const existingImport = await findExistingSkuImport(conn, parsed.sha256);
         const preview = buildSkuPreview(parsed, existingImport);
         if (!preview.valid) return NextResponse.json({ error: 'SKU RAW package ditolak.', ...preview }, { status: 400 });
-        return NextResponse.json({ success: true, action: 'preview', reportType: reportName, ...preview });
+        const previewTicket = preview.canImport
+          ? createPreviewTicket({ storeId, sha256, reportType }, previewTicketSecret())
+          : null;
+        return NextResponse.json({ success: true, action: 'preview', reportType: reportName, previewTicket, ...preview });
       }
       if (['balance', 'order_cancellation', 'order_failed_delivery', 'order_return_refund', 'ads_ledger'].includes(reportType)) {
-        const sha256 = computeSha256(buffer);
         const parsed = reportType === 'balance'
           ? parseBalancePackage(workbook as XLSX.WorkBook, sourceSnapshotFile, sha256)
           : reportType === 'ads_ledger'
@@ -798,18 +804,31 @@ export async function POST(request: NextRequest) {
       }
       const preview = await handlePreview(workbook as XLSX.WorkBook, reportType, conn, storeId, sourceSnapshotAt, sourceSnapshotFile);
       if (!preview) return NextResponse.json({ error: 'Cannot parse file for preview.' }, { status: 400 });
+      const canImport = (preview as any).canImport ?? Boolean((preview as any).newRows > 0 || (preview as any).safeUpdateRows > 0);
+      const previewTicket = canImport
+        ? createPreviewTicket({ storeId, sha256, reportType }, previewTicketSecret())
+        : null;
       return NextResponse.json({
         success: true,
         action: 'preview',
         reportType: reportName,
         ...preview,
+        canImport,
+        previewTicket,
       });
     }
 
     // ── IMPORT ──
+    const ticketCheck = verifyPreviewTicket(
+      typeof formData.get('preview_ticket') === 'string' ? String(formData.get('preview_ticket')) : null,
+      { storeId, sha256, reportType },
+      previewTicketSecret(),
+    );
+    if (!ticketCheck.valid) return NextResponse.json({ error: ticketCheck.error }, { status: 400 });
+
     let parsedSkuPackage: any = null;
     if (reportType === 'master') {
-      parsedSkuPackage = parseSkuRawPackage(workbook as XLSX.WorkBook, sourceSnapshotFile, computeSha256(buffer));
+      parsedSkuPackage = parseSkuRawPackage(workbook as XLSX.WorkBook, sourceSnapshotFile, sha256);
       if (!parsedSkuPackage.valid) {
         return NextResponse.json({ error: 'SKU RAW package ditolak.', ...parsedSkuPackage }, { status: 400 });
       }
@@ -823,7 +842,7 @@ export async function POST(request: NextRequest) {
         result = await importOrderAll(workbook as XLSX.WorkBook, conn, storeId, sourceSnapshotAt!, sourceSnapshotFile);
         break;
       case 'income':
-        result = await importIncomePackage(conn, parseIncomePackage(workbook as XLSX.WorkBook, sourceSnapshotFile, computeSha256(buffer)), storeId);
+        result = await importIncomePackage(conn, parseIncomePackage(workbook as XLSX.WorkBook, sourceSnapshotFile, sha256), storeId);
         break;
       case 'master':
         result = await importSkuRawPackage(conn, parsedSkuPackage);
@@ -839,12 +858,6 @@ export async function POST(request: NextRequest) {
           : reportType === 'ads_ledger'
             ? parseAdsPackage(buffer, sourceSnapshotFile, sha256)
             : parseExceptionPackage(workbook as XLSX.WorkBook, sourceSnapshotFile, sha256);
-        const ticketCheck = verifyPreviewTicket(
-          typeof formData.get('preview_ticket') === 'string' ? String(formData.get('preview_ticket')) : null,
-          { storeId, sha256, reportType },
-          previewTicketSecret(),
-        );
-        if (!ticketCheck.valid) return NextResponse.json({ error: ticketCheck.error }, { status: 400 });
         result = await importRawPackage(conn, parsed, reportType, storeId);
         break;
       }

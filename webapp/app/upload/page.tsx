@@ -1,10 +1,18 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type InputHTMLAttributes } from 'react';
 import { Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2, Eye, ArrowLeft, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
-import { useStore } from '@/components/StoreContext';
 
-type Step = 'select' | 'preview' | 'done';
+const directoryInputProps = { webkitdirectory: '' } as unknown as InputHTMLAttributes<HTMLInputElement>;
+import { useStore } from '@/components/StoreContext';
+const { createBulkQueue, eligibleQueueItems, requeueFailedItems, summarizeQueue } = require('@/lib/bulk-upload-queue.js') as {
+  createBulkQueue: (files: File[]) => BulkQueueItem[];
+  eligibleQueueItems: (queue: BulkQueueItem[]) => BulkQueueItem[];
+  requeueFailedItems: (queue: BulkQueueItem[]) => BulkQueueItem[];
+  summarizeQueue: (queue: BulkQueueItem[]) => BulkQueueSummary;
+};
+
+type Step = 'select' | 'preview' | 'bulk' | 'done';
 
 interface DiffChange {
   column: string;
@@ -63,6 +71,31 @@ interface ImportResult {
   errors: number;
 }
 
+type BulkPreview = {
+  reportType: string;
+  totalRows: number;
+  canImport: boolean;
+  duplicateHash: boolean;
+  previewTicket: string | null;
+  sha256: string | null;
+  reportPeriod?: { from: string | null; to: string | null };
+  reconciliation?: { status: string } | null;
+  ledgerContinuity?: { status: string } | null;
+};
+
+type BulkQueueItem = {
+  id: string;
+  file: File;
+  selected: boolean;
+  status: 'pending' | 'checking' | 'ready' | 'duplicate' | 'invalid' | 'rejected' | 'importing' | 'imported' | 'failed';
+  reportType: string | null;
+  preview: BulkPreview | null;
+  error: string | null;
+  result: ImportResult | null;
+};
+
+type BulkQueueSummary = Record<'total' | 'pending' | 'checking' | 'ready' | 'duplicate' | 'invalid' | 'rejected' | 'importing' | 'imported' | 'failed' | 'selected' | 'selectedRows', number>;
+
 export default function UploadPage() {
   const { storeId, activeStore } = useStore();
   const [step, setStep] = useState<Step>('select');
@@ -76,9 +109,15 @@ export default function UploadPage() {
   const [checking, setChecking] = useState(false);
   const [showDiff, setShowDiff] = useState(true);
   const [sourceSnapshotAt, setSourceSnapshotAt] = useState('');
+  const [bulkQueue, setBulkQueue] = useState<BulkQueueItem[]>([]);
+  const [bulkStoreId, setBulkStoreId] = useState<string | null>(null);
+  const [bulkRunning, setBulkRunning] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const bulkFileRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
   const previewRequestRef = useRef(0);
   const importRequestRef = useRef(0);
+  const bulkRequestRef = useRef(0);
 
   useEffect(() => {
     previewRequestRef.current += 1;
@@ -94,7 +133,13 @@ export default function UploadPage() {
       setChecking(false);
       setShowDiff(true);
       setSourceSnapshotAt('');
+      setBulkQueue([]);
+      setBulkStoreId(null);
+      setBulkRunning(false);
+      bulkRequestRef.current += 1;
       if (fileRef.current) fileRef.current.value = '';
+      if (bulkFileRef.current) bulkFileRef.current.value = '';
+      if (folderRef.current) folderRef.current.value = '';
     }, 0);
     return () => window.clearTimeout(timer);
   }, [storeId]);
@@ -110,13 +155,136 @@ export default function UploadPage() {
     e.preventDefault();
     setIsDragging(false);
     const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) pickFile(files[0]);
+    if (files.length > 1) void queueFiles(files);
+    else if (files.length === 1) void pickFile(files[0]);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      pickFile(e.target.files[0]);
+    if (e.target.files && e.target.files.length > 0) void pickFile(e.target.files[0]);
+  };
+
+  const updateBulkItem = (id: string, patch: Partial<BulkQueueItem>) => {
+    setBulkQueue((queue) => queue.map((item) => item.id === id ? { ...item, ...patch } : item));
+  };
+
+  const queueFiles = async (files: File[]) => {
+    if (!storeId) { setError('Pilih toko aktif terlebih dahulu.'); return; }
+    if (!files.length) return;
+    const selectedStoreId = storeId;
+    const requestId = ++bulkRequestRef.current;
+    const queue = createBulkQueue(files);
+    setBulkQueue(queue);
+    setBulkStoreId(selectedStoreId);
+    setBulkRunning(true);
+    setError(null);
+    setStep('bulk');
+
+    for (const item of queue) {
+      if (item.status === 'rejected') continue;
+      if (requestId !== bulkRequestRef.current || selectedStoreId !== storeId) return;
+      updateBulkItem(item.id, { status: 'checking', error: null });
+      const formData = new FormData();
+      formData.append('file', item.file);
+      formData.append('storeId', selectedStoreId);
+      formData.append('action', 'preview');
+      formData.append('source_snapshot_at', sourceSnapshotAt);
+      formData.append('source_snapshot_file', item.file.name);
+      try {
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (requestId !== bulkRequestRef.current || selectedStoreId !== storeId) return;
+        if (!res.ok) {
+          updateBulkItem(item.id, { status: 'invalid', error: data.error || 'Preview gagal.' });
+          continue;
+        }
+        const preview: BulkPreview = {
+          reportType: data.reportType,
+          totalRows: data.totalRows ?? Object.values(data.sections || {}).reduce((sum: number, section: any) => sum + (section.rows || 0), 0),
+          canImport: Boolean(data.canImport),
+          duplicateHash: Boolean(data.duplicateHash),
+          previewTicket: data.previewTicket || null,
+          sha256: data.sha256 || null,
+          reportPeriod: data.reportPeriod,
+          reconciliation: data.reconciliation || null,
+          ledgerContinuity: data.ledgerContinuity || null,
+        };
+        const duplicate = preview.duplicateHash || !preview.canImport;
+        updateBulkItem(item.id, {
+          status: duplicate ? 'duplicate' : 'ready',
+          selected: !duplicate,
+          reportType: preview.reportType,
+          preview,
+          error: duplicate ? 'File identik atau tidak memiliki perubahan aman untuk di-import.' : null,
+        });
+      } catch (err: any) {
+        if (requestId !== bulkRequestRef.current || selectedStoreId !== storeId) return;
+        updateBulkItem(item.id, { status: 'invalid', error: err.message || 'Preview gagal.' });
+      }
     }
+    if (requestId === bulkRequestRef.current && selectedStoreId === storeId) setBulkRunning(false);
+  };
+
+  const handleBulkSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files?.length) void queueFiles(Array.from(event.target.files));
+    event.target.value = '';
+  };
+
+  const toggleBulkItem = (id: string) => {
+    setBulkQueue((queue) => queue.map((item) => item.id === id && item.status === 'ready' ? { ...item, selected: !item.selected } : item));
+  };
+
+  const retryBulkFailed = () => {
+    if (bulkRunning) return;
+    setBulkQueue((queue) => requeueFailedItems(queue));
+    setError(null);
+  };
+
+  const handleBulkImport = async () => {
+    if (!bulkStoreId || bulkStoreId !== storeId) {
+      setError('Toko aktif berubah. Jalankan Bulk Preview ulang.');
+      return;
+    }
+    const items = eligibleQueueItems(bulkQueue);
+    if (!items.length) return;
+    const requestId = ++bulkRequestRef.current;
+    setBulkRunning(true);
+    setError(null);
+    for (const item of items) {
+      if (requestId !== bulkRequestRef.current || bulkStoreId !== storeId) return;
+      updateBulkItem(item.id, { status: 'importing', error: null });
+      const formData = new FormData();
+      formData.append('file', item.file);
+      formData.append('storeId', bulkStoreId);
+      formData.append('action', 'import');
+      formData.append('source_snapshot_at', sourceSnapshotAt);
+      formData.append('source_snapshot_file', item.file.name);
+      if (item.preview?.previewTicket) formData.append('preview_ticket', item.preview.previewTicket);
+      try {
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (requestId !== bulkRequestRef.current || bulkStoreId !== storeId) return;
+        if (!res.ok) {
+          updateBulkItem(item.id, { status: 'failed', error: data.error || 'Import gagal.' });
+          continue;
+        }
+        updateBulkItem(item.id, {
+          status: 'imported',
+          selected: false,
+          result: {
+            message: data.message,
+            rowsImported: data.rowsImported || 0,
+            rowsUpdated: data.rowsUpdated || 0,
+            rowsGuarded: data.rowsGuarded || 0,
+            protectedFields: data.protectedFields || 0,
+            errors: data.errors || 0,
+          },
+        });
+      } catch (err: any) {
+        if (requestId !== bulkRequestRef.current || bulkStoreId !== storeId) return;
+        updateBulkItem(item.id, { status: 'failed', error: err.message || 'Import gagal.' });
+      }
+    }
+    if (requestId === bulkRequestRef.current && bulkStoreId === storeId) setBulkRunning(false);
   };
 
   const pickFile = async (file: File) => {
@@ -240,18 +408,36 @@ export default function UploadPage() {
   };
 
   const reset = () => {
+    previewRequestRef.current += 1;
+    importRequestRef.current += 1;
+    bulkRequestRef.current += 1;
     setStep('select');
     setPreview(null);
+    setPreviewStoreId(null);
     setResult(null);
     setError(null);
     setSelectedFile(null);
     setChecking(false);
+    setImporting(false);
     setSourceSnapshotAt('');
+    setBulkQueue([]);
+    setBulkStoreId(null);
+    setBulkRunning(false);
     if (fileRef.current) fileRef.current.value = '';
+    if (bulkFileRef.current) bulkFileRef.current.value = '';
+    if (folderRef.current) folderRef.current.value = '';
   };
 
   const formatSize = (bytes: number) =>
     bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
+  const bulkSummary = summarizeQueue(bulkQueue);
+  const bulkEligible = eligibleQueueItems(bulkQueue);
+  const bulkStatusLabel: Record<BulkQueueItem['status'], string> = {
+    pending: 'Menunggu', checking: 'Preview', ready: 'Siap', duplicate: 'Duplikat', invalid: 'Invalid', rejected: 'Ditolak', importing: 'Import', imported: 'Berhasil', failed: 'Gagal',
+  };
+  const bulkStatusClass: Record<BulkQueueItem['status'], string> = {
+    pending: 'bg-slate-100 text-slate-600', checking: 'bg-blue-100 text-blue-700', ready: 'bg-emerald-100 text-emerald-700', duplicate: 'bg-amber-100 text-amber-700', invalid: 'bg-red-100 text-red-700', rejected: 'bg-red-100 text-red-700', importing: 'bg-blue-100 text-blue-700', imported: 'bg-emerald-100 text-emerald-700', failed: 'bg-red-100 text-red-700',
+  };
 
   // ── SELECT STEP ──
   if (step === 'select') {
@@ -290,7 +476,22 @@ export default function UploadPage() {
             <p className="text-sm text-slate-500 mb-3">atau pilih file</p>
             <label className="inline-block px-5 py-2.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 cursor-pointer transition-colors">
               <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileSelect} className="hidden" />
-              Pilih File
+              Pilih 1 File
+            </label>
+          </div>
+
+          <div className="mt-4 grid gap-3 rounded-lg border border-violet-200 bg-violet-50 p-4 lg:grid-cols-[1fr_auto_auto] lg:items-center">
+            <div>
+              <h3 className="text-sm font-semibold text-violet-950">Bulk Preview Queue</h3>
+              <p className="mt-1 text-xs text-violet-800">Pilih banyak file atau satu folder. Sistem menjalankan preview satu per satu tanpa write, lalu lo pilih package yang di-import.</p>
+            </div>
+            <label className="cursor-pointer rounded-lg border border-violet-300 bg-white px-4 py-2 text-center text-sm font-semibold text-violet-700 hover:bg-violet-100">
+              <input ref={bulkFileRef} type="file" accept=".xlsx,.xls,.csv" multiple onChange={handleBulkSelect} className="hidden" />
+              Pilih Banyak File
+            </label>
+            <label className="cursor-pointer rounded-lg bg-violet-700 px-4 py-2 text-center text-sm font-semibold text-white hover:bg-violet-800">
+              <input ref={folderRef} type="file" accept=".xlsx,.xls,.csv" multiple {...directoryInputProps} onChange={handleBulkSelect} className="hidden" />
+              Pilih Folder
             </label>
           </div>
 
@@ -307,6 +508,81 @@ export default function UploadPage() {
               <li>• <strong>Balance / Exceptions:</strong> Header transaksi atau exception Shopee</li>
               <li>• <strong>Ads RAW:</strong> CSV Urutan + Waktu + Deskripsi + Jumlah</li>
             </ul>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === 'bulk') {
+    return (
+      <div className="p-4 lg:p-8">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-4 flex items-center gap-3">
+            <button onClick={reset} disabled={bulkRunning} className="rounded-lg p-2 hover:bg-slate-100 disabled:opacity-40">
+              <ArrowLeft className="h-5 w-5 text-slate-600" />
+            </button>
+            <div>
+              <h1 className="text-xl font-bold text-slate-900 lg:text-2xl">Bulk Queue</h1>
+              <p className="text-sm text-slate-500">Preview berurutan. Tidak ada file yang di-import sebelum tombol Import Selected.</p>
+            </div>
+          </div>
+
+          <div className="mb-4 grid gap-3 sm:grid-cols-4">
+            <div className="rounded-lg border border-slate-200 bg-white p-3"><div className="text-xl font-bold text-slate-900">{bulkSummary.total}</div><div className="text-xs text-slate-500">File dipilih</div></div>
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3"><div className="text-xl font-bold text-emerald-700">{bulkSummary.ready}</div><div className="text-xs text-emerald-800">Siap dipilih</div></div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3"><div className="text-xl font-bold text-amber-700">{bulkSummary.duplicate}</div><div className="text-xs text-amber-800">Duplikat/no-op</div></div>
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3"><div className="text-xl font-bold text-red-700">{bulkSummary.invalid + bulkSummary.rejected + bulkSummary.failed}</div><div className="text-xs text-red-800">Perlu perhatian</div></div>
+          </div>
+
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            <b>Order.all:</b> waktu snapshot/export di atas diterapkan pada semua Order.all dalam queue. Untuk snapshot historis dengan waktu export berbeda, jangan import sekaligus; preview dan import Order.all per snapshot agar guard freshness tetap benar.
+          </div>
+
+          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 text-left text-slate-600">
+                  <tr>
+                    <th className="w-10 px-3 py-3">Pilih</th>
+                    <th className="px-3 py-3">File</th>
+                    <th className="px-3 py-3">Report</th>
+                    <th className="px-3 py-3">Periode isi file</th>
+                    <th className="px-3 py-3 text-right">Rows</th>
+                    <th className="px-3 py-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bulkQueue.map((item) => (
+                    <tr key={item.id} className="border-t border-slate-100 align-top">
+                      <td className="px-3 py-3">
+                        <input aria-label={`Pilih ${item.file.name}`} type="checkbox" checked={item.selected} disabled={item.status !== 'ready' || bulkRunning} onChange={() => toggleBulkItem(item.id)} />
+                      </td>
+                      <td className="max-w-[290px] px-3 py-3"><div className="truncate font-medium text-slate-800" title={item.file.name}>{item.file.name}</div><div className="mt-0.5 text-slate-400">{formatSize(item.file.size)}</div></td>
+                      <td className="px-3 py-3 text-slate-700">{item.reportType || '—'}</td>
+                      <td className="px-3 py-3 text-slate-700">{item.preview?.reportPeriod ? `${item.preview.reportPeriod.from || '—'} s/d ${item.preview.reportPeriod.to || '—'}` : '—'}</td>
+                      <td className="px-3 py-3 text-right text-slate-700">{item.preview?.totalRows?.toLocaleString() || '—'}</td>
+                      <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 font-semibold ${bulkStatusClass[item.status]}`}>{bulkStatusLabel[item.status]}</span>{item.error && <div className="mt-1 max-w-xs text-red-600">{item.error}</div>}{item.preview?.reconciliation && <div className="mt-1 text-emerald-700">Rekonsiliasi: {item.preview.reconciliation.status}</div>}{item.preview?.ledgerContinuity && <div className="mt-1 text-emerald-700">Ledger: {item.preview.ledgerContinuity.status}</div>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {error && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button onClick={reset} disabled={bulkRunning} className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40">Batal</button>
+            {bulkSummary.failed > 0 && (
+              <button onClick={retryBulkFailed} disabled={bulkRunning} className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-40">
+                Retry Gagal ({bulkSummary.failed})
+              </button>
+            )}
+            <button onClick={handleBulkImport} disabled={bulkRunning || bulkEligible.length === 0 || bulkStoreId !== storeId} className="rounded-lg bg-violet-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-violet-300">
+              {bulkRunning ? 'Memproses...' : `Import Selected (${bulkEligible.length} file / ${bulkSummary.selectedRows.toLocaleString()} row)`}
+            </button>
+            <span className="text-xs text-slate-500">Import dijalankan satu per satu. Gagal satu file tidak membatalkan package lain. Retry hanya mengulang file gagal yang preview-nya masih valid.</span>
           </div>
         </div>
       </div>

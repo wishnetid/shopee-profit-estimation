@@ -272,6 +272,27 @@ Pilih store aktif
 - Exact file/hash untuk store yang sama akan menjadi no-op.
 - Jangan memilih store lain di tengah preview/import; UI akan membatalkan state lama untuk mencegah lintas-scope.
 
+### Bulk queue folder / banyak file
+
+```text
+Pilih store aktif
+→ /upload
+→ isi waktu snapshot/export bila queue memuat Order.all
+→ pilih Banyak File atau Folder
+→ sistem preview setiap file secara berurutan, tanpa write
+→ review report type, periode dari isi source, row count, duplicate/no-op, dan error
+→ pilih hanya package status Siap
+→ Import Selected berjalan berurutan per file
+→ gunakan Retry Gagal hanya untuk file gagal yang preview-nya masih valid
+```
+
+- Nama file hanya ditampilkan; classifier menentukan report type dari struktur source.
+- Tidak ada import sebelum operator menekan `Import Selected`.
+- Queue dibatalkan jika store aktif berubah.
+- Preview ticket terikat store, SHA-256, dan report type; selalu dikirim kembali pada import file terkait.
+- Jangan campur Order.all dengan snapshot/export timestamp berbeda dalam satu import queue. Jalankan per kelompok waktu agar freshness guard tetap benar.
+- File invalid, duplicate/no-op, dan file tidak dipilih tidak ditulis ke database.
+
 ### Master SKU shared
 
 ```text

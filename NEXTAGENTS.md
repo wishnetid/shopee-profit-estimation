@@ -231,6 +231,25 @@ Pilih store aktif
 - Jangan import otomatis hanya karena file ditemukan di `data_sample/`.
 - Jangan pindah store selama preview/import berlangsung; UI sengaja membatalkan state lama jika selector berubah.
 
+### Bulk queue folder / banyak file
+
+- Source files dipreview berurutan melalui endpoint preview yang sama seperti upload tunggal; preview tidak menulis DB.
+- Report type ditentukan dari struktur source, bukan nama file. Periode berasal dari metadata/row source jika parser menyediakannya.
+- Operator hanya dapat memilih status `Siap`; duplicate/no-op, invalid, rejected, dan unselected tidak dapat ditulis.
+- `Import Selected` tetap sequential dan per-file transaction/provenance. Gagal satu file tidak membatalkan package lain.
+- `Retry Gagal` hanya mengaktifkan ulang file failed dengan preview masih importable; tidak mengulang file siap lain atau duplicate.
+- Store switch menghapus queue dan menginvalidasi request aktif. Preview ticket terikat store, SHA-256, dan report type; dikembalikan hanya pada file yang menghasilkan ticket tersebut.
+- Jangan mencampur Order.all dari snapshot/export timestamp berbeda dalam satu import bulk. Kelompokkan dan jalankan per timestamp agar freshness guard benar.
+
+Files:
+
+```text
+webapp/app/upload/page.tsx
+webapp/lib/bulk-upload-queue.js
+webapp/test/bulk-upload-queue.test.mjs
+webapp/test/bulk-upload-ui.test.mjs
+```
+
 ### Management destructive
 
 ```text
