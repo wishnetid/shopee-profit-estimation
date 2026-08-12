@@ -8,11 +8,11 @@
 
 **Branch:** `master`
 
-**Code release:** `7bfab44` — `feat(raw): add balance exceptions and ads packages`
+**Code release:** `4e54c39` — `feat(upload): add reviewed bulk report queue`
 
-**Code verification deployment:** `dpl_8sVCM8uuL71w15UV3qmgmh3nPz4b` — `Ready`
+**Last code verification deployment:** `dpl_8sVCM8uuL71w15UV3qmgmh3nPz4b` — `Ready`
 
-> Mulai dengan membaca `README.md` penuh, lalu file ini. Jangan langsung coding, migration, import, clear, reset, atau hapus store. RAW Order.all, Income, Master SKU shared, serta multi-store sudah live. Profit final belum tersedia.
+> Mulai dengan membaca `README.md` penuh, lalu file ini. Jangan langsung coding, migration, import, clear, reset, atau hapus store. RAW Order.all, Income, Balance, order exceptions, Ads, dan Master SKU shared sudah live. UI Profit belum tersedia, tetapi kelayakan kalkulasi per-order sudah dibuktikan read-only.
 
 ---
 
@@ -21,19 +21,18 @@
 ### Production state saat dokumentasi diperbarui
 
 ```text
-Store aktif yang tersisa
+Store aktif
   TACTICALIZED
 
-TACTICALIZED
-  Order.all: 0 row
-  Income parent/child RAW: 0 row
-  RAW Expansion parent/child: 0 row
+Data live
+  Order.all current-state, Income package/child RAW,
+  Balance, order exceptions, Ads, dan Master SKU sudah terimport.
 
 Master SKU
   shared/global; tidak dimiliki store tertentu
 ```
 
-> Jangan gunakan angka row dalam dokumen ini sebagai kebenaran saat ini. Untuk kondisi live terbaru, cek `/api/stores` dan `/api/settings/database?storeId=<id>` dengan Basic Auth.
+> Jangan gunakan count atau package pada dokumen ini sebagai kebenaran saat ini. Untuk kondisi live terbaru, gunakan database read-only atau canonical production API dengan Basic Auth.
 
 ### Selesai dan live
 
@@ -46,14 +45,17 @@ Master SKU
 - `clear_shared_sku` mereset Master SKU global dengan confirmation eksplisit.
 - `DELETE /api/stores` menghapus store kosong dengan confirmation eksplisit.
 - Basic Auth berlaku untuk page dan API.
-- Profit legacy disengaja mengembalikan `503 PROFIT_NOT_READY`.
-- GitHub `master` dan Vercel Production memuat source release `7bfab44`, termasuk RAW Expansion Balance, Cancellation, Failed Delivery, Return/Refund, dan Ads.
-- Master SKU shared tetap berisi satu package dan 32 source row. State Order/Income/RAW terbaru wajib dicek dari API production karena data operasional dapat berubah.
+- Profit legacy disengaja mengembalikan `503 PROFIT_NOT_READY`; belum ada UI/API profit yang dipublikasikan.
+- Probe read-only membuktikan raw data dapat menghitung profit per-order aktual, kerugian cash settlement retur, dan estimasi kotor sebelum fee untuk order belum settlement.
+- GitHub `master` memuat source release `4e54c39`; deployment metadata harus diverifikasi lagi setelah commit dokumentasi ini dipush.
+- Master SKU tetap shared/global. State Order/Income/RAW terbaru wajib dicek dari database read-only atau API production karena data operasional dapat berubah.
 
 ### Belum selesai
 
-- RAW Expansion sudah deployed. DDL live dibuat dari backup tervalidasi; post-DDL audit, preview-only sembilan sample real lokal, dan preview-only Balance canonical production lulus tanpa write. Import real belum dilakukan. Handoff: `RAW-EXPANSION-IMPLEMENTATION.md` lalu `webapp/docs/RAW-EXPANSION.md`.
-- HPP final, ads accounting layer, net payout, actual profit, estimation profit.
+- UI/API Profit per-order. Kontrak kalkulasi read-only sudah ada, tetapi belum boleh diubah menjadi feature produk tanpa diskusi/approval.
+- Ads accounting layer dan alokasi biaya iklan ke order/item.
+- Biaya eksternal per order: packaging, tenaga kerja, dan biaya operasional lain.
+- QC stok return/refund untuk menentukan restock layak versus HPP yang menjadi kerugian.
 - Multi-user ownership authorization per store.
 - Baseline lint cleanup.
 
@@ -195,6 +197,32 @@ webapp/test/income-raw-import.test.mjs
 - Tidak ikut `clear_store` atau hapus store.
 - `clear_shared_sku` menghapus child `sku_master_raw` sebelum parent `sku_report_imports` dan membutuhkan confirmation eksplisit.
 - `/sku` tidak memerlukan active-store scope kecuali produk memutuskan SKU override per store pada fase lain.
+
+### Kelayakan report financial per order — verified read-only
+
+Batas ini telah diuji terhadap data RAW nyata dan hanya berlaku saat seluruh input terkait ditemukan.
+
+```text
+Profit Bersih Produk Saat Ini
+= Penghasilan / Order signed_total
+- Σ(HPP Master × quantity item)
+
+Estimasi Kotor Sementara
+= Total Pembayaran Pembeli
+- Σ(HPP Master × quantity item)
+
+Kerugian Cash Settlement Retur
+= Penghasilan / Order signed_total
+```
+
+- Pakai `Penghasilan / Order` sebagai settlement; jangan dijumlahkan dengan `Penghasilan / Sku`.
+- Gunakan `Penghasilan / Sku` hanya sebagai alokasi item pada order multi-item.
+- Cari HPP dengan `Nomor Referensi SKU`, fallback `SKU Induk`; alias Master SKU ekuivalen bukan beberapa HPP untuk ditotal.
+- Retur membutuhkan status QC persediaan sebelum hasil akhir diakui: restock layak mempertahankan HPP sebagai stok, rusak/hilang membebankan HPP ke kerugian.
+- Exclude packaging, tenaga kerja, dan ads sampai ada kontrak alokasi.
+- `Seller Fee` tetap audit-only; tidak ditambahkan ke `Penghasilan`.
+
+Belum diimplementasikan: route/API/UI Profit. Jangan mengubah guard `PROFIT_NOT_READY` atau menambah kalkulasi baru tanpa diskusi dan approval.
 
 ---
 

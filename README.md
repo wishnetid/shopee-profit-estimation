@@ -8,11 +8,11 @@
 
 **Branch:** `master`
 
-**Code release commit:** `7bfab44` — `feat(raw): add balance exceptions and ads packages`
+**Code release commit:** `4e54c39` — `feat(upload): add reviewed bulk report queue`
 
-**Code verification deployment:** `dpl_8sVCM8uuL71w15UV3qmgmh3nPz4b` — `Ready`
+**Last code verification deployment:** `dpl_8sVCM8uuL71w15UV3qmgmh3nPz4b` — `Ready`
 
-> Baca file ini penuh sebelum menyentuh project. App production mengelola RAW **Order.all**, **Income**, **Balance**, **order exceptions**, **Ads**, **Master SKU shared**, dan **multi-toko**. Financial/profit final belum tersedia; jangan menyimpulkan profit dari data RAW yang ada.
+> Baca file ini penuh sebelum menyentuh project. App production mengelola RAW **Order.all**, **Income**, **Balance**, **order exceptions**, **Ads**, **Master SKU shared**, dan **multi-toko**. UI Profit tetap belum tersedia; tetapi kelayakan perhitungan per-order dari RAW sudah diuji read-only dengan kontrak pada bagian 5.
 
 ---
 
@@ -33,7 +33,7 @@
 
 3. **Income RAW package per store**
    - Satu workbook Income disimpan sebagai satu package/provenance.
-   - Saat dokumentasi ini diperbarui, API production menunjukkan belum ada package Income pada store `TACTICALIZED`.
+   - Package Income operasional sudah tersimpan pada store `TACTICALIZED`; kondisi package/count terbaru harus selalu dibuktikan melalui database read-only atau API production.
    - Kontrak RAW aktif menyimpan `Penghasilan` view `Order` dan `Sku`, serta `Adjustment` bila source menyediakannya.
    - Tidak adanya sheet `Shipping Fee Discrepancy` pada source berarti tidak ada child RAW section yang diharapkan untuk package tersebut.
    - `Seller Fee` tetap audit-only dan belum dimaterialisasi sebagai child RAW transaksi.
@@ -57,18 +57,58 @@
 
 ### Belum tersedia — jangan diasumsikan valid
 
-- Settlement/financial interpretation dari Balance, return/refund, failed delivery, dan cancellation.
-- Mapping HPP final serta alokasi order-level ke item-level.
+- UI/API Profit yang dipublikasikan; route Profit tetap guard `503 PROFIT_NOT_READY`.
 - Ads accounting layer dan alokasi biaya iklan ke order/item.
-- Financial layer: net payout, actual profit, dan estimation profit.
+- Biaya eksternal per order: packaging tambahan, tenaga kerja, dan biaya operasional lain.
+- Keputusan QC persediaan retur: layak restock, rusak, atau hilang.
 - Multi-user ownership authorization per store.
+
+### Kelayakan financial per-order — sudah dibuktikan read-only
+
+Data RAW aktif sudah cukup untuk menghitung hasil per order dengan batas yang jelas. Ini adalah **kontrak analitis yang tervalidasi**, belum berarti UI Profit atau API kalkulasi sudah diimplementasikan.
+
+```text
+Order selesai normal / multi-item
+Profit Bersih Produk Saat Ini
+= Dana Dilepas Shopee (Penghasilan / Order signed_total)
+- Σ(HPP Master × quantity item)
+
+Order masih proses pengiriman
+Estimasi Kotor Sementara
+= Total Pembayaran Pembeli
+- Σ(HPP Master × quantity item)
+
+Order retur/refund
+Kerugian Cash Settlement Shopee
+= Penghasilan / Order signed_total
+
+Kerugian final retur
+= Kerugian Cash Settlement Shopee
+- HPP barang yang tidak kembali layak jual
+```
+
+Aturan interpretasi:
+
+- `Penghasilan / Order` adalah settlement utama; jangan menjumlahkannya dengan `Penghasilan / Sku`.
+- `Penghasilan / Sku` dipakai untuk alokasi item ketika satu order memiliki beberapa item/variasi.
+- HPP memakai `Nomor Referensi SKU` terlebih dahulu, lalu `SKU Induk` sebagai fallback; Master SKU yang berisi alias ekuivalen adalah bukti mapping, bukan HPP tambahan untuk dijumlahkan.
+- Untuk retur, HPP hanya menjadi kerugian jika barang hilang/rusak/tidak layak dijual lagi. Barang yang lolos QC dan kembali ke stok tidak boleh mengurangi HPP kedua kali.
+- `Seller Fee` audit-only; jangan ditambahkan lagi ke settlement `Penghasilan`.
+- Packaging, tenaga kerja, dan ads belum termasuk hingga ada kontrak alokasi per order.
+
+Report yang dapat dihasilkan dari RAW sekarang:
+
+- Profit bersih aktual per order yang settlement dan HPP-nya terbukti.
+- Kerugian cash dari settlement Shopee, termasuk dampak refund/potongan yang sudah tercermin dalam settlement.
+- Estimasi kotor sementara untuk order yang belum dana-dilepas.
+- Margin aktual/estimasi, rincian potongan Shopee, rekonsiliasi Penghasilan dengan Balance, serta status risiko Cancellation/Failed Delivery/Return/Refund/Adjustment.
 
 ### Snapshot runtime saat dokumentasi diperbarui
 
 - Store aktif: `TACTICALIZED` (`id=1`).
-- `order_all`, seluruh parent/child Income, serta seluruh parent/child RAW Expansion: `0` row.
-- Master SKU shared tetap berisi satu package dan 32 source row.
-- Nilai ini adalah snapshot API production setelah preview-only; query API live sebelum membuat klaim data/import baru.
+- Order.all, Income RAW, Balance, order exceptions, Ads, dan Master SKU sudah memiliki data operasional hasil import.
+- Nilai row/package bersifat dinamis. Query database read-only atau canonical production API sebelum membuat klaim count, package, atau periode terbaru.
+- Dokumentasi financial per-order di atas berasal dari probe database read-only terhadap data yang sudah tersimpan; tidak ada data ditulis atau diubah selama probe.
 
 Route dan halaman Profit sengaja mengembalikan:
 

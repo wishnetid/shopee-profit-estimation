@@ -20,7 +20,7 @@ npm run dev
 - **Order All:** Store-scoped current-state item snapshots.
 - **Income:** Store-scoped RAW packages; `Penghasilan / Order`, `Penghasilan / Sku`, Adjustment, and Shipping Fee Discrepancy stay separate.
 - **SKU Master:** Shared RAW source packages; no HPP mapping or profit join at this layer.
-- **Profit:** Explicit `PROFIT_NOT_READY` guard; not a partially working calculator.
+- **Profit:** Explicit `PROFIT_NOT_READY` guard; UI/API calculator belum dipublikasikan. RAW sudah terbukti dapat mendukung probe read-only profit per-order, cash settlement return, dan estimasi sebelum fee.
 - **Settings:** Guarded store-scoped clear, shared SKU reset, and safe store deletion controls.
 
 ## Runtime Contract

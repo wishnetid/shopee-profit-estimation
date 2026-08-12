@@ -2,9 +2,9 @@
 
 ## Status
 
-Source release `7bfab44` is pushed to `master` and deployed as Vercel Production `dpl_8sVCM8uuL71w15UV3qmgmh3nPz4b`. Live DDL is created and preview-only real-sample verification passed without writes. It is **not imported** yet.
+Source release baseline `7bfab44` introduced RAW Expansion. Live DDL is created, operational RAW packages sudah diimport, dan audit source-to-DB read-only kemudian membuktikan parent SHA, physical source-row identity, payload fidelity, serta child integrity. Gunakan database read-only atau canonical production API untuk state/count terkini.
 
-Local repair verification passed: classifier collision, physical source-row provenance, RAW preview field keys, store/hash/report-bound preview ticket, duplicate no-op copy, store lifecycle guards, search bounds, and API aliases were added. Direct cPanel MySQL access from the VPS still times out, but the Windows OpenVPN SSH bridge provides a verified route. The clean absent state was backed up, then all ten RAW target tables were created and post-DDL-audited. Preview-only checks of nine real RAW samples and a canonical-production Balance preview passed without writes. See `docs/RAW-EXPANSION-LIVE-DDL-AUDIT-20260812.md`. Do not claim source data is imported until explicit import and post-import verification succeed.
+Local repair verification passed: classifier collision, physical source-row provenance, RAW preview field keys, store/hash/report-bound preview ticket, duplicate no-op copy, store lifecycle guards, search bounds, and API aliases were added. Direct cPanel MySQL access from the VPS still times out, but the Windows OpenVPN SSH bridge provides a verified route. The clean absent state was backed up, then all ten RAW target tables were created and post-DDL-audited. Preview-only checks of nine real RAW samples and a canonical-production Balance preview passed without writes. Import real kemudian dilakukan melalui Upload/Bulk Upload dan post-import audit source-to-DB lulus untuk kontrak RAW aktif. See `docs/RAW-EXPANSION-LIVE-DDL-AUDIT-20260812.md`.
 
 ## Scope
 

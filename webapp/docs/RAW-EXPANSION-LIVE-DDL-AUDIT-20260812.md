@@ -65,5 +65,6 @@ This does not authorize migration automatically. Before `--apply --confirm-ddl`:
 
 - Source verification and RAW-focused lint checks must be green.
 - Full-repository lint remediation is tracked separately and must finish before a clean release gate can be claimed.
-- Real import remains unperformed.
-- Commit, push, deploy, and production preview-only verification remain pending.
+- Import real kemudian dilakukan oleh operator melalui upload/bulk upload.
+- Audit source-to-DB read-only setelah import membuktikan source-row parity, payload fidelity, parent hash, tidak ada orphan child, dan tidak ada duplicate physical source identity untuk scope RAW aktif.
+- Commit/push/deploy dokumentasi ini dilakukan terpisah setelah update state runtime.
