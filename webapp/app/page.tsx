@@ -52,13 +52,14 @@ export default function HomePage() {
 
   return (
     <div className="p-4 lg:p-8">
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 mb-2">
-          Shopee Profit Estimation
-        </h1>
-        <p className="text-sm lg:text-base text-slate-600 mb-6 lg:mb-8">
-          Toko {activeStore?.store_name || 'aktif'} · kelola data Order.all, Income, dan Master SKU
-        </p>
+      <div className="mx-auto max-w-5xl">
+        <section className="mb-6 overflow-hidden rounded-3xl border border-white/70 bg-white/75 p-5 shadow-xl shadow-violet-950/[0.06] backdrop-blur-xl lg:mb-8 lg:p-7">
+          <div className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-violet-700">Workspace operasional</div>
+          <h1 className="mt-4 text-3xl font-bold tracking-tight text-slate-950 lg:text-4xl">Shopee Profit Estimation</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600 lg:text-base">
+            Toko <strong className="font-semibold text-slate-900">{activeStore?.store_name || 'aktif'}</strong> · kelola data Order.all, Income, dan Master SKU dalam satu workspace.
+          </p>
+        </section>
 
         {/* Quick Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6 mb-6 lg:mb-8">
@@ -128,19 +129,19 @@ function StatCard({ label, value, icon, color }: {
   color: 'blue' | 'green' | 'purple' | 'yellow';
 }) {
   const colorClasses = {
-    blue: 'bg-blue-50 text-blue-600 border-blue-200',
-    green: 'bg-green-50 text-green-600 border-green-200',
-    purple: 'bg-purple-50 text-purple-600 border-purple-200',
-    yellow: 'bg-yellow-50 text-yellow-600 border-yellow-200',
+    blue: 'bg-violet-50 text-violet-700 ring-violet-100',
+    green: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+    purple: 'bg-indigo-50 text-indigo-700 ring-indigo-100',
+    yellow: 'bg-amber-50 text-amber-700 ring-amber-100',
   };
 
   return (
-    <div className={`rounded-lg border p-3 lg:p-4 ${colorClasses[color]}`}>
-      <div className="flex items-center gap-2 mb-1">
+    <div className="rounded-2xl border border-white/80 bg-white/75 p-3.5 shadow-lg shadow-violet-950/[0.04] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-xl lg:p-5">
+      <div className={`mb-4 flex h-10 w-10 items-center justify-center rounded-xl ring-1 ${colorClasses[color]}`}>
         {icon}
-        <span className="text-xs font-medium opacity-80">{label}</span>
       </div>
-      <div className="text-xl lg:text-2xl font-bold">{value}</div>
+      <div className="text-xs font-bold uppercase tracking-[0.11em] text-slate-500">{label}</div>
+      <div className="mt-1 text-2xl font-bold tracking-tight text-slate-950 lg:text-3xl">{value}</div>
     </div>
   );
 }
@@ -152,19 +153,19 @@ function ActionCard({ href, title, desc, color }: {
   color: string;
 }) {
   const colorMap: Record<string, string> = {
-    blue: 'border-blue-200 hover:border-blue-400 hover:bg-blue-50',
-    green: 'border-green-200 hover:border-green-400 hover:bg-green-50',
-    emerald: 'border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50',
-    purple: 'border-purple-200 hover:border-purple-400 hover:bg-purple-50',
+    blue: 'hover:border-violet-300 hover:bg-violet-50/70',
+    green: 'hover:border-emerald-300 hover:bg-emerald-50/70',
+    emerald: 'hover:border-teal-300 hover:bg-teal-50/70',
+    purple: 'hover:border-indigo-300 hover:bg-indigo-50/70',
   };
 
   return (
     <a
       href={href}
-      className={`block bg-white rounded-lg border p-4 transition-colors ${colorMap[color] || ''}`}
+      className={`group block rounded-2xl border border-white/80 bg-white/75 p-4 shadow-lg shadow-violet-950/[0.04] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-xl ${colorMap[color] || ''}`}
     >
-      <div className="font-semibold text-slate-900">{title}</div>
-      <div className="text-sm text-slate-500 mt-1">{desc}</div>
+      <div className="font-bold tracking-tight text-slate-900 transition group-hover:text-violet-800">{title}</div>
+      <div className="mt-1 text-sm text-slate-500">{desc}</div>
     </a>
   );
 }

@@ -159,7 +159,7 @@ export function StoreSwitcher() {
   const workspaceMeta = activeStore ? storeMeta(activeStore) : 'Pilih toko untuk memulai';
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur-xl lg:px-8">
+    <header className="sticky top-0 z-30 border-b border-white/70 bg-white/75 px-4 py-3 shadow-sm shadow-violet-950/[0.03] backdrop-blur-xl lg:px-8">
       <div className="flex min-h-11 items-center justify-between gap-3">
         <div ref={popoverRef} className="relative min-w-0">
           <button
