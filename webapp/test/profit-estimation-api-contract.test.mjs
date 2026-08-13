@@ -24,13 +24,10 @@ test('profit estimation route is a dynamic, Node-only, store-scoped GET that pre
   assert.match(source, /FROM order_return_refund_raw r/);
   assert.match(source, /FROM order_failed_delivery_raw r/);
   assert.match(source, /exceptionOrderNumbers: exceptionOrderRows\.map/);
-  assert.match(source, /FROM income_penghasilan_raw recent_income/);
-  assert.match(source, /recent_import\.store_id = \?/);
-  assert.match(source, /recent_import\.imported_at > i\.imported_at/);
-  assert.match(source, /recent_income\.id > r\.id/);
-  assert.match(source, /r\.lihat_berdasarkan = 'Order'/);
-  assert.match(source, /historicalOrderRows,/);
-  assert.match(source, /settlementRows,/);
+  assert.match(source, /o\.subtotal_pesanan/);
+  assert.match(source, /o\.voucher_ditanggung_penjual/);
+  assert.doesNotMatch(source, /income_penghasilan_raw/);
+  assert.doesNotMatch(source, /historicalOrderRows|settlementRows/);
   assert.doesNotMatch(source, /\b(?:INSERT|UPDATE|DELETE|ALTER|DROP|CREATE)\b/i);
 });
 

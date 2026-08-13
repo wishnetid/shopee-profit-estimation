@@ -15,16 +15,16 @@ test('Profit page separates Estimasi Kotor from locked Profit Aktual and uses an
   assert.match(source, /\/api\/profit-estimation/);
   assert.match(source, /setData\(null\)/);
   assert.match(source, /requestSequence\.current/);
-  assert.match(source, /const resetResult = useCallback\(\(\) => \{\s*requestSequence\.current \+= 1;\s*setData\(null\);\s*setError\(''\);\s*setPage\(1\);\s*setLoading\(false\);/);
-  assert.match(source, /<ProfitEstimationContent\s+key=\{storeId \|\| 'no-store'\}/);
+  assert.match(source, /const resetResult = useCallback\(\(\) => \{\s*requestSequence\.current \+= 1;\s*setData\(null\);/);
+  assert.match(source, /<ProfitEstimationContent key=\{storeId \|\| 'no-store'\}/);
   assert.match(source, /function ProfitEstimationContent\(/);
-  assert.match(source, /Estimasi PPN \(11%\)/);
-  assert.match(source, /Penghasilan Final Settlement/);
-  assert.match(source, /Estimasi Penghasilan Pending/);
-  assert.match(source, /Estimasi Profit Bersih Shopee/);
-  assert.match(source, /Model historis settlement terbaru/);
+  assert.match(source, /Estimasi Kotor Setelah HPP/);
+  assert.match(source, /Subtotal Pesanan seller/);
+  assert.match(source, /Potongan Standar/);
+  assert.match(source, /Sisa Setelah Ads & PPN/);
   assert.match(source, /colSpan=\{11\}/);
   assert.match(source, /HPP Belum Lengkap/);
+  assert.doesNotMatch(source, /Estimasi Profit Bersih Shopee|Penghasilan Final Settlement|Estimasi Penghasilan Pending|Model historis settlement terbaru/);
   assert.doesNotMatch(source, /label="Profit Bersih"/);
 });
 

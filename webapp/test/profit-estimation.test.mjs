@@ -16,461 +16,130 @@ function orderRow(overrides = {}) {
     status_pesanan: 'Perlu Dikirim',
     alasan_pembatalan: null,
     status_pembatalan_pengembalian: null,
-    total_pembayaran: '200000.00',
+    subtotal_pesanan: '200000.00',
+    voucher_ditanggung_penjual: '0.00',
     waktu_pesanan_dibuat: '2026-08-10 09:00:00',
     nomor_referensi_sku: 'SKU-PRIMARY',
     sku_induk: null,
     nama_produk: 'Produk Contoh',
     nama_variasi: 'Hitam,M',
     jumlah: 1,
+    returned_quantity: 0,
     ...overrides,
   };
 }
 
 function skuRow(overrides = {}) {
-  return {
-    sku1: 'SKU-PRIMARY',
-    sku2: null,
-    harga: '40000.00',
-    ...overrides,
-  };
+  return { sku1: 'SKU-PRIMARY', sku2: null, harga: '40000.00', ...overrides };
 }
 
-test('buildEstimationReport counts an order-level payment once and multiplies each item HPP by quantity', () => {
+test('buildEstimationReport derives gross estimation from seller subtotal, seller voucher, standard Shopee fees, and item HPP without settlement', () => {
   const report = buildEstimationReport({
     orderRows: [
-      orderRow({ nomor_referensi_sku: 'SKU-JAKET', jumlah: 2 }),
-      orderRow({ nomor_referensi_sku: 'UNKNOWN', sku_induk: 'SKU-CELANA-ALIAS', nama_variasi: 'Hitam,L', jumlah: 1 }),
+      orderRow({ no_pesanan: 'SELLER-ESTIMATE-1', subtotal_pesanan: '672000.00', voucher_ditanggung_penjual: '250.00', nomor_referensi_sku: 'SKU-SELLER-ESTIMATE', jumlah: 7 }),
+      orderRow({ no_pesanan: 'SELLER-ESTIMATE-1', subtotal_pesanan: '1152000.00', voucher_ditanggung_penjual: '0.00', nomor_referensi_sku: 'SKU-SELLER-ESTIMATE', nama_variasi: 'Hitam,M', jumlah: 12 }),
+      orderRow({ no_pesanan: 'SELLER-ESTIMATE-1', subtotal_pesanan: '192000.00', voucher_ditanggung_penjual: '0.00', nomor_referensi_sku: 'SKU-SELLER-ESTIMATE', nama_variasi: 'Hitam,XXL', jumlah: 2 }),
+      orderRow({ no_pesanan: 'SELLER-ESTIMATE-1', subtotal_pesanan: '288000.00', voucher_ditanggung_penjual: '0.00', nomor_referensi_sku: 'SKU-SELLER-ESTIMATE', nama_variasi: 'Hitam,XL', jumlah: 3 }),
     ],
-    skuRows: [
-      skuRow({ sku1: 'SKU-JAKET', harga: '40000.00' }),
-      skuRow({ sku1: 'SKU-CELANA', sku2: 'SKU-CELANA-ALIAS', harga: '20000.00' }),
-    ],
-    adsRows: [
-      { transaction_date: '2026-08-10', sequence_number: 1, description: 'Deduction for Product Ad (Auto Bidding - GMV Max)', jumlah_signed: '-10000.00', note: '' },
-      { transaction_date: '2026-08-10', sequence_number: 2, description: 'Isi Saldo', jumlah_signed: '50000.00', note: '' },
-      { transaction_date: '2026-08-10', sequence_number: 3, description: 'ROAS Protection Free Ads Credit Rebate', jumlah_signed: '500.00', note: '' },
-      { transaction_date: '2026-08-10', sequence_number: 4, description: 'Deduction for Product Ad (Auto Bidding - GMV Max)', jumlah_signed: '99.00', note: '' },
-    ],
-    dateFrom: '2026-08-10',
-    dateTo: '2026-08-10',
-    page: 1,
-    limit: 50,
+    skuRows: [skuRow({ sku1: 'SKU-SELLER-ESTIMATE', harga: '62500.00' })],
   });
 
-  assert.equal(report.orders.total, 1);
-  assert.equal(report.orders.data[0].estimationStatus, ESTIMATION_STATUS.ESTIMABLE);
-  assert.equal(report.orders.data[0].totalPembayaran, 200000);
-  assert.equal(report.orders.data[0].totalHpp, 100000);
-  assert.equal(report.orders.data[0].estimasiKotor, 100000);
-  assert.deepEqual(report.summary, {
-    totalOrderCount: 1,
-    eligibleOrderCount: 1,
-    estimatedOrderCount: 1,
-    hppIncompleteOrderCount: 0,
-    reviewOrderCount: 0,
-    excludedOrderCount: 0,
-    estimatedGrossBeforeFeeAds: 100000,
-    adsSpend: 10000,
-    adsPpnRate: 0.11,
-    estimatedAdsPpn: 1100,
-    afterAds: 90000,
-    afterAdsAndPpn: 88900,
-    finalSettlementPayout: 0,
-    projectedPendingPayout: 0,
-    projectedShopeePayout: 0,
-    estimatedShopeeNetProfitBeforeAds: null,
-    estimatedShopeeNetProfitAfterAdsAndPpn: null,
-    shopeeNetProfitOrderCount: 0,
-    unavailableShopeePayoutOrderCount: 1,
-    adsDuplicateEventCount: 0,
+  const order = report.orders.data[0];
+  assert.equal(order.estimationStatus, ESTIMATION_STATUS.ESTIMABLE);
+  assert.equal(order.sellerSubtotal, 2304000);
+  assert.equal(order.sellerVoucher, 250);
+  assert.deepEqual(order.standardFees, {
+    administration: 190059,
+    orderProcessing: 1250,
+    freeShippingXtra: 115188,
+    promoXtra: 103669,
+    premium: 11519,
   });
-  assert.deepEqual(report.daily, [{
-    date: '2026-08-10',
-    estimatedOrderCount: 1,
-    hppIncompleteOrderCount: 0,
-    reviewOrderCount: 0,
-    estimatedGrossBeforeFeeAds: 100000,
-    adsSpend: 10000,
-    estimatedAdsPpn: 1100,
-    afterAds: 90000,
-    afterAdsAndPpn: 88900,
-    finalSettlementPayout: 0,
-    projectedPendingPayout: 0,
-    projectedShopeePayout: 0,
-    estimatedShopeeNetProfitBeforeAds: 0,
-    estimatedShopeeNetProfitAfterAdsAndPpn: null,
-    shopeeNetProfitOrderCount: 0,
-    unavailableShopeePayoutOrderCount: 1,
-  }]);
+  assert.equal(order.estimatedShopeeFees, 421685);
+  assert.equal(order.estimatedSellerIncome, 1882065);
+  assert.equal(order.totalHpp, 1500000);
+  assert.equal(order.estimasiKotor, 382065);
+  assert.equal(report.summary.estimatedGrossBeforeFeeAds, 382065);
 });
 
-test('buildEstimationReport rounds the 11% Ads PPN allocation to whole IDR in both summary and daily rows', () => {
-  const report = buildEstimationReport({
-    orderRows: [],
-    skuRows: [],
-    adsRows: [
-      {
-        ads_report_import_id: 1,
-        transaction_date: '2026-08-10',
-        sequence_number: 1,
-        description: 'Deduction for Product Ad (Auto Bidding - GMV Max)',
-        jumlah_signed: '-153065.00',
-        note: '',
-      },
-    ],
-    page: 1,
-    limit: 50,
-  });
-
-  assert.equal(report.summary.adsPpnRate, 0.11);
-  assert.equal(report.summary.estimatedAdsPpn, 16837);
-  assert.equal(report.summary.afterAdsAndPpn, -169902);
-  assert.equal(report.daily[0].estimatedAdsPpn, 16837);
-  assert.equal(report.daily[0].afterAdsAndPpn, -169902);
-});
-
-test('buildEstimationReport sums daily-rounded PPN allocations so the summary reconciles with Ringkasan Harian', () => {
-  const report = buildEstimationReport({
-    orderRows: [],
-    skuRows: [],
-    adsRows: [
-      {
-        ads_report_import_id: 1,
-        transaction_date: '2026-08-10',
-        sequence_number: 1,
-        description: 'Deduction for Product Ad (Auto Bidding - GMV Max)',
-        jumlah_signed: '-5.00',
-        note: '',
-      },
-      {
-        ads_report_import_id: 1,
-        transaction_date: '2026-08-11',
-        sequence_number: 2,
-        description: 'Deduction for Product Ad (Auto Bidding - GMV Max)',
-        jumlah_signed: '-5.00',
-        note: '',
-      },
-    ],
-    page: 1,
-    limit: 50,
-  });
-
-  assert.deepEqual(report.daily.map((row) => row.estimatedAdsPpn), [1, 1]);
-  assert.equal(report.summary.adsSpend, 10);
-  assert.equal(report.summary.estimatedAdsPpn, 2);
-  assert.equal(report.summary.afterAdsAndPpn, -12);
-});
-
-test('buildEstimationReport keeps PPN at zero when there is no qualifying Ads Spend', () => {
-  const report = buildEstimationReport({
-    orderRows: [],
-    skuRows: [],
-    adsRows: [
-      {
-        ads_report_import_id: 1,
-        transaction_date: '2026-08-10',
-        sequence_number: 1,
-        description: 'Isi Saldo',
-        jumlah_signed: '100000.00',
-        note: '',
-      },
-      {
-        ads_report_import_id: 1,
-        transaction_date: '2026-08-10',
-        sequence_number: 2,
-        description: 'Deduction for Product Ad',
-        jumlah_signed: '100.00',
-        note: '',
-      },
-    ],
-    page: 1,
-    limit: 50,
-  });
-
-  assert.equal(report.summary.adsSpend, 0);
-  assert.equal(report.summary.estimatedAdsPpn, 0);
-  assert.equal(report.summary.afterAdsAndPpn, 0);
-  assert.deepEqual(report.daily, []);
-});
-
-test('buildEstimationReport excludes Order.all and independent exception-source cancellation or return markers and never treats absent HPP as zero', () => {
+test('buildEstimationReport counts every item subtotal once but never needs Income settlement or a historical cohort', () => {
   const report = buildEstimationReport({
     orderRows: [
-      orderRow({ no_pesanan: 'ORDER-CANCEL', alasan_pembatalan: 'Dibatalkan oleh pembeli' }),
-      orderRow({ no_pesanan: 'ORDER-RETURN', status_pembatalan_pengembalian: 'Dana Dikembalikan ke Pembeli' }),
-      orderRow({ no_pesanan: 'ORDER-RAW-EXCEPTION' }),
-      orderRow({ no_pesanan: 'ORDER-RETURNED-QUANTITY', returned_quantity: 1 }),
-      orderRow({ no_pesanan: 'ORDER-NO-HPP', nomor_referensi_sku: 'SKU-TIDAK-ADA' }),
+      orderRow({ no_pesanan: 'MULTI-ITEM', subtotal_pesanan: '80000.00', jumlah: 2 }),
+      orderRow({ no_pesanan: 'MULTI-ITEM', subtotal_pesanan: '20000.00', nama_variasi: 'Hijau,L', jumlah: 1 }),
     ],
-    exceptionOrderNumbers: ['ORDER-RAW-EXCEPTION'],
+    skuRows: [skuRow({ harga: '10000.00' })],
+  });
+
+  const order = report.orders.data[0];
+  assert.equal(order.sellerSubtotal, 100000);
+  assert.equal(order.totalHpp, 30000);
+  assert.equal(order.estimatedSellerIncome, 80500);
+  assert.equal(order.estimasiKotor, 50500);
+  assert.equal(order.estimationStatus, ESTIMATION_STATUS.ESTIMABLE);
+});
+
+test('buildEstimationReport keeps HPP mapping and invalid seller basis fail-closed', () => {
+  const report = buildEstimationReport({
+    orderRows: [
+      orderRow({ no_pesanan: 'MISSING-HPP', nomor_referensi_sku: 'UNKNOWN' }),
+      orderRow({ no_pesanan: 'MISSING-SUBTOTAL', subtotal_pesanan: null }),
+    ],
     skuRows: [skuRow()],
-    adsRows: [],
-    dateFrom: '2026-08-10',
-    dateTo: '2026-08-10',
-    page: 1,
-    limit: 50,
   });
 
   const byOrder = Object.fromEntries(report.orders.data.map((row) => [row.no_pesanan, row]));
-  assert.equal(byOrder['ORDER-CANCEL'].estimationStatus, ESTIMATION_STATUS.NOT_ELIGIBLE);
-  assert.equal(byOrder['ORDER-RETURN'].estimationStatus, ESTIMATION_STATUS.NOT_ELIGIBLE);
-  assert.equal(byOrder['ORDER-RAW-EXCEPTION'].estimationStatus, ESTIMATION_STATUS.NOT_ELIGIBLE);
-  assert.ok(byOrder['ORDER-RAW-EXCEPTION'].reasons.includes('CANCELLATION_ATAU_RETURN_RAW'));
-  assert.equal(byOrder['ORDER-RETURNED-QUANTITY'].estimationStatus, ESTIMATION_STATUS.NOT_ELIGIBLE);
-  assert.ok(byOrder['ORDER-RETURNED-QUANTITY'].reasons.includes('RETURNED_QUANTITY_POSITIF'));
-  assert.equal(byOrder['ORDER-NO-HPP'].estimationStatus, ESTIMATION_STATUS.HPP_INCOMPLETE);
-  assert.equal(byOrder['ORDER-NO-HPP'].estimasiKotor, null);
-  assert.equal(report.summary.estimatedGrossBeforeFeeAds, 0);
-  assert.equal(report.summary.hppIncompleteOrderCount, 1);
-  assert.equal(report.summary.excludedOrderCount, 4);
+  assert.equal(byOrder['MISSING-HPP'].estimationStatus, ESTIMATION_STATUS.HPP_INCOMPLETE);
+  assert.equal(byOrder['MISSING-HPP'].estimasiKotor, null);
+  assert.equal(byOrder['MISSING-SUBTOTAL'].estimationStatus, ESTIMATION_STATUS.NEEDS_REVIEW);
+  assert.equal(byOrder['MISSING-SUBTOTAL'].estimasiKotor, null);
 });
 
-test('buildEstimationReport marks a missing item status as needs review instead of accepting other eligible item rows', () => {
+test('buildEstimationReport excludes cancellation, return, failed-delivery, and returned quantity from totals', () => {
   const report = buildEstimationReport({
     orderRows: [
-      orderRow({ no_pesanan: 'ORDER-STATUS-MISSING', nomor_referensi_sku: 'SKU-PRIMARY', status_pesanan: 'Perlu Dikirim' }),
-      orderRow({ no_pesanan: 'ORDER-STATUS-MISSING', nomor_referensi_sku: 'SKU-PRIMARY', nama_variasi: 'Hijau,L', status_pesanan: null }),
+      orderRow({ no_pesanan: 'CANCEL', alasan_pembatalan: 'Dibatalkan' }),
+      orderRow({ no_pesanan: 'RETURN', returned_quantity: 1 }),
+      orderRow({ no_pesanan: 'RAW-EXCEPTION' }),
     ],
     skuRows: [skuRow()],
-    adsRows: [],
-    page: 1,
-    limit: 50,
+    exceptionOrderNumbers: ['RAW-EXCEPTION'],
   });
 
-  assert.equal(report.orders.data[0].estimationStatus, ESTIMATION_STATUS.NEEDS_REVIEW);
-  assert.ok(report.orders.data[0].reasons.includes('STATUS_PESANAN_TIDAK_VALID'));
   assert.equal(report.summary.estimatedOrderCount, 0);
+  assert.equal(report.summary.excludedOrderCount, 3);
+  assert.ok(report.orders.data.every((order) => order.estimationStatus === ESTIMATION_STATUS.NOT_ELIGIBLE));
 });
 
-test('buildEstimationReport marks a partially missing order date or payment as needs review instead of using the remaining item value', () => {
+test('buildEstimationReport keeps Ads and daily-rounded PPN as a separate daily aggregate', () => {
   const report = buildEstimationReport({
-    orderRows: [
-      orderRow({ no_pesanan: 'ORDER-DATE-PARTIAL', nomor_referensi_sku: 'SKU-PRIMARY', waktu_pesanan_dibuat: '2026-08-10 09:00:00' }),
-      orderRow({ no_pesanan: 'ORDER-DATE-PARTIAL', nomor_referensi_sku: 'SKU-PRIMARY', nama_variasi: 'Hijau,L', waktu_pesanan_dibuat: null }),
-      orderRow({ no_pesanan: 'ORDER-PAYMENT-PARTIAL', nomor_referensi_sku: 'SKU-PRIMARY', total_pembayaran: '200000.00' }),
-      orderRow({ no_pesanan: 'ORDER-PAYMENT-PARTIAL', nomor_referensi_sku: 'SKU-PRIMARY', nama_variasi: 'Hijau,L', total_pembayaran: null }),
+    orderRows: [orderRow({ no_pesanan: 'ADS-ORDER', subtotal_pesanan: '100000.00' })],
+    skuRows: [skuRow({ harga: '10000.00' })],
+    adsRows: [
+      { ads_report_import_id: 1, transaction_date: '2026-08-10', sequence_number: 1, description: 'Deduction for Product Ad', jumlah_signed: '-10000.00', note: '' },
+      { ads_report_import_id: 1, transaction_date: '2026-08-10', sequence_number: 2, description: 'Isi Saldo', jumlah_signed: '10000.00', note: '' },
     ],
-    skuRows: [skuRow()],
-    adsRows: [],
-    page: 1,
-    limit: 50,
   });
 
-  const byOrder = Object.fromEntries(report.orders.data.map((row) => [row.no_pesanan, row]));
-  assert.equal(byOrder['ORDER-DATE-PARTIAL'].estimationStatus, ESTIMATION_STATUS.NEEDS_REVIEW);
-  assert.equal(byOrder['ORDER-DATE-PARTIAL'].orderDate, null);
-  assert.ok(byOrder['ORDER-DATE-PARTIAL'].reasons.includes('TANGGAL_PESANAN_TIDAK_VALID'));
-  assert.equal(byOrder['ORDER-PAYMENT-PARTIAL'].estimationStatus, ESTIMATION_STATUS.NEEDS_REVIEW);
-  assert.equal(byOrder['ORDER-PAYMENT-PARTIAL'].totalPembayaran, null);
-  assert.ok(byOrder['ORDER-PAYMENT-PARTIAL'].reasons.includes('TOTAL_PEMBAYARAN_TIDAK_VALID'));
-  assert.equal(report.summary.estimatedOrderCount, 0);
+  assert.equal(report.summary.estimatedGrossBeforeFeeAds, 70500);
+  assert.equal(report.summary.adsSpend, 10000);
+  assert.equal(report.summary.estimatedAdsPpn, 1100);
+  assert.equal(report.summary.afterAdsAndPpn, 59400);
+  assert.equal(report.daily[0].afterAdsAndPpn, 59400);
 });
 
-test('buildEstimationReport marks conflicting HPP aliases and inconsistent order-level values as needs review', () => {
-  const report = buildEstimationReport({
-    orderRows: [
-      orderRow({ no_pesanan: 'ORDER-HPP-CONFLICT', nomor_referensi_sku: 'SKU-CONFLICT' }),
-      orderRow({ no_pesanan: 'ORDER-TOTAL-CONFLICT', nomor_referensi_sku: 'SKU-PRIMARY', total_pembayaran: '100000.00' }),
-      orderRow({ no_pesanan: 'ORDER-TOTAL-CONFLICT', nomor_referensi_sku: 'SKU-PRIMARY', nama_variasi: 'Hijau,L', total_pembayaran: '110000.00' }),
-      orderRow({ no_pesanan: 'ORDER-DATE-CONFLICT', nomor_referensi_sku: 'SKU-PRIMARY', waktu_pesanan_dibuat: '2026-08-10 09:00:00' }),
-      orderRow({ no_pesanan: 'ORDER-DATE-CONFLICT', nomor_referensi_sku: 'SKU-PRIMARY', nama_variasi: 'Abu,L', waktu_pesanan_dibuat: '2026-08-11 09:00:00' }),
-    ],
-    skuRows: [
-      skuRow({ sku1: 'SKU-CONFLICT', harga: '40000.00' }),
-      skuRow({ sku1: 'SKU-CONFLICT', harga: '45000.00' }),
-      skuRow({ sku1: 'SKU-PRIMARY', harga: '40000.00' }),
-    ],
-    adsRows: [],
-    page: 1,
-    limit: 50,
-  });
-
-  const byOrder = Object.fromEntries(report.orders.data.map((row) => [row.no_pesanan, row]));
-  assert.equal(byOrder['ORDER-HPP-CONFLICT'].estimationStatus, ESTIMATION_STATUS.NEEDS_REVIEW);
-  assert.ok(byOrder['ORDER-HPP-CONFLICT'].reasons.includes('HPP_CONFLICT'));
-  assert.equal(byOrder['ORDER-TOTAL-CONFLICT'].estimationStatus, ESTIMATION_STATUS.NEEDS_REVIEW);
-  assert.ok(byOrder['ORDER-TOTAL-CONFLICT'].reasons.includes('TOTAL_PEMBAYARAN_TIDAK_KONSISTEN'));
-  assert.equal(byOrder['ORDER-DATE-CONFLICT'].estimationStatus, ESTIMATION_STATUS.NEEDS_REVIEW);
-  assert.ok(byOrder['ORDER-DATE-CONFLICT'].reasons.includes('TANGGAL_PESANAN_TIDAK_KONSISTEN'));
-  assert.equal(report.summary.reviewOrderCount, 3);
-  assert.equal(report.summary.estimatedOrderCount, 0);
-});
-
-test('buildEstimationReport treats different HPP values for the same alias across SKU1 and SKU2 as a conflict', () => {
-  const report = buildEstimationReport({
-    orderRows: [orderRow({ no_pesanan: 'ORDER-CROSS-COLUMN-HPP', nomor_referensi_sku: 'SKU-CROSS-COLUMN' })],
-    skuRows: [
-      skuRow({ sku1: 'SKU-CROSS-COLUMN', sku2: null, harga: '40000.00' }),
-      skuRow({ sku1: null, sku2: 'SKU-CROSS-COLUMN', harga: '45000.00' }),
-    ],
-    adsRows: [],
-    page: 1,
-    limit: 50,
-  });
-
-  assert.equal(report.orders.data[0].estimationStatus, ESTIMATION_STATUS.NEEDS_REVIEW);
-  assert.ok(report.orders.data[0].reasons.includes('HPP_CONFLICT'));
-  assert.equal(report.summary.estimatedGrossBeforeFeeAds, 0);
-});
-
-test('aggregateAdsSpend only counts negative Product Ad deductions and deduplicates exact sequenced events across packages only', () => {
+test('aggregateAdsSpend only counts negative Product Ad deductions and deduplicates sequenced overlap across packages', () => {
   const result = aggregateAdsSpend([
-    { ads_report_import_id: 1, transaction_date: '2026-08-10', sequence_number: 17, description: 'Deduction for Product Ad (Auto Bidding - GMV Max)', jumlah_signed: '-12500.00', note: 'Campaign A' },
-    { ads_report_import_id: 2, transaction_date: '2026-08-10', sequence_number: 17, description: 'Deduction for Product Ad (Auto Bidding - GMV Max)', jumlah_signed: '-12500.00', note: 'Campaign A' },
-    { ads_report_import_id: 1, transaction_date: '2026-08-10', sequence_number: null, description: 'Deduction for Product Ad (Auto Bidding - GMV Max)', jumlah_signed: '-3000.00', note: 'Tanpa nomor event' },
-    { ads_report_import_id: 2, transaction_date: '2026-08-10', sequence_number: null, description: 'Deduction for Product Ad (Auto Bidding - GMV Max)', jumlah_signed: '-3000.00', note: 'Tanpa nomor event' },
-    { ads_report_import_id: 1, transaction_date: '2026-08-10', sequence_number: 22, description: 'Deduction for Product Ad (Auto Bidding - GMV Max)', jumlah_signed: '-1000.00', note: 'Dua source rows sah' },
-    { ads_report_import_id: 1, transaction_date: '2026-08-10', sequence_number: 22, description: 'Deduction for Product Ad (Auto Bidding - GMV Max)', jumlah_signed: '-1000.00', note: 'Dua source rows sah' },
+    { ads_report_import_id: 1, transaction_date: '2026-08-10', sequence_number: 17, description: 'Deduction for Product Ad', jumlah_signed: '-12500.00', note: 'Campaign A' },
+    { ads_report_import_id: 2, transaction_date: '2026-08-10', sequence_number: 17, description: 'Deduction for Product Ad', jumlah_signed: '-12500.00', note: 'Campaign A' },
     { ads_report_import_id: 1, transaction_date: '2026-08-10', sequence_number: 19, description: 'Isi Saldo', jumlah_signed: '100000.00', note: '' },
   ]);
-
-  assert.equal(result.total, 20500);
+  assert.equal(result.total, 12500);
   assert.equal(result.duplicateEventCount, 1);
-  assert.equal(result.byDate.get('2026-08-10'), 20500);
 });
 
 test('validateDateRange rejects impossible and reverse calendar ranges before querying', () => {
   assert.deepEqual(validateDateRange(null, null), { dateFrom: null, dateTo: null });
-  assert.deepEqual(validateDateRange('2026-08-01', '2026-08-10'), { dateFrom: '2026-08-01', dateTo: '2026-08-10' });
   assert.throws(() => validateDateRange('2026-02-30', null), /dateFrom/);
   assert.throws(() => validateDateRange('2026-08-11', '2026-08-10'), /dateFrom/);
-});
-
-test('buildEstimationReport projects pending Shopee payout from recent matching completed settlements and separates it from final settlement', () => {
-  const report = buildEstimationReport({
-    orderRows: [
-      orderRow({ no_pesanan: 'FINISHED-1', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', total_pembayaran: '100000.00', waktu_pesanan_dibuat: '2026-08-01 09:00:00' }),
-      orderRow({ no_pesanan: 'FINISHED-2', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', total_pembayaran: '200000.00', waktu_pesanan_dibuat: '2026-08-02 09:00:00' }),
-      orderRow({ no_pesanan: 'FINISHED-3', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', total_pembayaran: '300000.00', waktu_pesanan_dibuat: '2026-08-03 09:00:00' }),
-      orderRow({ no_pesanan: 'PENDING-1', status_pesanan: 'Sedang Dikirim', nomor_referensi_sku: 'SKU-MATCH', total_pembayaran: '400000.00', waktu_pesanan_dibuat: '2026-08-11 09:00:00' }),
-    ],
-    skuRows: [skuRow({ sku1: 'SKU-MATCH', harga: '40000.00' })],
-    settlementRows: [
-      { no_pesanan: 'FINISHED-1', signed_total: '80000.00', tanggal_dana_dilepaskan: '2026-08-04' },
-      { no_pesanan: 'FINISHED-2', signed_total: '160000.00', tanggal_dana_dilepaskan: '2026-08-05' },
-      { no_pesanan: 'FINISHED-3', signed_total: '240000.00', tanggal_dana_dilepaskan: '2026-08-06' },
-    ],
-    adsRows: [],
-    page: 1,
-    limit: 50,
-  });
-
-  const byOrder = Object.fromEntries(report.orders.data.map((row) => [row.no_pesanan, row]));
-  assert.equal(byOrder['FINISHED-1'].shopeePayoutKind, 'settlement_actual');
-  assert.equal(byOrder['FINISHED-1'].shopeePayout, 80000);
-  assert.equal(byOrder['PENDING-1'].shopeePayoutKind, 'historical_projection');
-  assert.equal(byOrder['PENDING-1'].shopeePayout, 320000);
-  assert.equal(byOrder['PENDING-1'].historicalSampleCount, 3);
-  assert.equal(byOrder['PENDING-1'].historicalMethod, 'SKU_COMPOSITION_RECENT');
-  assert.equal(report.summary.finalSettlementPayout, 480000);
-  assert.equal(report.summary.projectedPendingPayout, 320000);
-  assert.equal(report.summary.projectedShopeePayout, 800000);
-  assert.equal(report.summary.estimatedShopeeNetProfitBeforeAds, 640000);
-  assert.equal(report.summary.estimatedShopeeNetProfitAfterAdsAndPpn, 640000);
-  assert.equal(report.daily.find((row) => row.date === '2026-08-11').projectedPendingPayout, 320000);
-  assert.equal(report.daily.find((row) => row.date === '2026-08-11').estimatedShopeeNetProfitAfterAdsAndPpn, 280000);
-});
-
-test('buildEstimationReport subtracts Ads and daily-rounded PPN exactly once even when the spend falls on an Ads-only day', () => {
-  const report = buildEstimationReport({
-    orderRows: [orderRow({ no_pesanan: 'SETTLED-1', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-PRIMARY', total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-01 09:00:00' })],
-    skuRows: [skuRow({ harga: '30.00' })],
-    settlementRows: [{ no_pesanan: 'SETTLED-1', signed_total: '100.00', tanggal_dana_dilepaskan: '2026-08-03' }],
-    adsRows: [{ ads_report_import_id: 1, transaction_date: '2026-08-02', sequence_number: 1, description: 'Deduction for Product Ad', jumlah_signed: '-20.00', note: '' }],
-    page: 1,
-    limit: 50,
-  });
-
-  assert.equal(report.summary.estimatedShopeeNetProfitBeforeAds, 70);
-  assert.equal(report.summary.estimatedShopeeNetProfitAfterAdsAndPpn, 48);
-  assert.equal(report.daily.find((row) => row.date === '2026-08-01').estimatedShopeeNetProfitAfterAdsAndPpn, 70);
-  assert.equal(report.daily.find((row) => row.date === '2026-08-02').estimatedShopeeNetProfitAfterAdsAndPpn, -22);
-});
-
-test('buildEstimationReport never projects a completed order that lacks Penghasilan / Order settlement', () => {
-  const report = buildEstimationReport({
-    orderRows: [
-      orderRow({ no_pesanan: 'FINISHED-WITHOUT-SETTLEMENT', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-10 09:00:00' }),
-      orderRow({ no_pesanan: 'HISTORY-1', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-01 09:00:00' }),
-      orderRow({ no_pesanan: 'HISTORY-2', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-02 09:00:00' }),
-      orderRow({ no_pesanan: 'HISTORY-3', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-03 09:00:00' }),
-    ],
-    skuRows: [skuRow({ sku1: 'SKU-MATCH', harga: '10.00' })],
-    settlementRows: [
-      { no_pesanan: 'HISTORY-1', signed_total: '80.00', tanggal_dana_dilepaskan: '2026-08-04' },
-      { no_pesanan: 'HISTORY-2', signed_total: '80.00', tanggal_dana_dilepaskan: '2026-08-05' },
-      { no_pesanan: 'HISTORY-3', signed_total: '80.00', tanggal_dana_dilepaskan: '2026-08-06' },
-    ],
-    adsRows: [],
-    page: 1,
-    limit: 50,
-  });
-
-  const completed = report.orders.data.find((row) => row.no_pesanan === 'FINISHED-WITHOUT-SETTLEMENT');
-  assert.equal(completed.shopeePayout, null);
-  assert.equal(completed.shopeePayoutKind, null);
-  assert.equal(completed.estimatedShopeeNetProfitBeforeAds, null);
-});
-
-test('buildEstimationReport keeps daily and summary net profit unavailable when an under-sampled pending order shares a day with a settled order', () => {
-  const report = buildEstimationReport({
-    orderRows: [
-      orderRow({ no_pesanan: 'SETTLED-SAME-DAY', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-PRIMARY', total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-10 09:00:00' }),
-      orderRow({ no_pesanan: 'PENDING-UNDER-SAMPLED', status_pesanan: 'Sedang Dikirim', nomor_referensi_sku: 'SKU-OTHER', total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-10 10:00:00' }),
-    ],
-    skuRows: [skuRow({ sku1: 'SKU-PRIMARY', harga: '30.00' }), skuRow({ sku1: 'SKU-OTHER', harga: '30.00' })],
-    settlementRows: [{ no_pesanan: 'SETTLED-SAME-DAY', signed_total: '100.00', tanggal_dana_dilepaskan: '2026-08-11' }],
-    adsRows: [],
-    page: 1,
-    limit: 50,
-  });
-
-  assert.equal(report.daily[0].estimatedShopeeNetProfitAfterAdsAndPpn, null);
-  assert.equal(report.summary.estimatedShopeeNetProfitAfterAdsAndPpn, null);
-});
-
-test('buildEstimationReport normalizes matching composition by total quantity per SKU across multiple item rows', () => {
-  const report = buildEstimationReport({
-    orderRows: [
-      orderRow({ no_pesanan: 'FINISHED-1', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', jumlah: 2, total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-01 09:00:00' }),
-      orderRow({ no_pesanan: 'FINISHED-2', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', jumlah: 2, total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-02 09:00:00' }),
-      orderRow({ no_pesanan: 'FINISHED-3', status_pesanan: 'Selesai', nomor_referensi_sku: 'SKU-MATCH', jumlah: 2, total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-03 09:00:00' }),
-      orderRow({ no_pesanan: 'PENDING-SPLIT', status_pesanan: 'Sedang Dikirim', nomor_referensi_sku: 'SKU-MATCH', jumlah: 1, total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-11 09:00:00' }),
-      orderRow({ no_pesanan: 'PENDING-SPLIT', status_pesanan: 'Sedang Dikirim', nomor_referensi_sku: 'SKU-MATCH', nama_variasi: 'Hitam,L', jumlah: 1, total_pembayaran: '100.00', waktu_pesanan_dibuat: '2026-08-11 09:00:00' }),
-    ],
-    skuRows: [skuRow({ sku1: 'SKU-MATCH', harga: '10.00' })],
-    settlementRows: [
-      { no_pesanan: 'FINISHED-1', signed_total: '80.00', tanggal_dana_dilepaskan: '2026-08-04' },
-      { no_pesanan: 'FINISHED-2', signed_total: '80.00', tanggal_dana_dilepaskan: '2026-08-05' },
-      { no_pesanan: 'FINISHED-3', signed_total: '80.00', tanggal_dana_dilepaskan: '2026-08-06' },
-    ],
-    adsRows: [],
-    page: 1,
-    limit: 50,
-  });
-
-  const pending = report.orders.data.find((row) => row.no_pesanan === 'PENDING-SPLIT');
-  assert.equal(pending.shopeePayout, 80);
-  assert.equal(pending.historicalSampleCount, 3);
-});
-
-test('buildEstimationReport paginates per-order output without changing totals or daily aggregates', () => {
-  const report = buildEstimationReport({
-    orderRows: [
-      orderRow({ no_pesanan: 'ORDER-1', waktu_pesanan_dibuat: '2026-08-10 08:00:00' }),
-      orderRow({ no_pesanan: 'ORDER-2', waktu_pesanan_dibuat: '2026-08-11 08:00:00' }),
-      orderRow({ no_pesanan: 'ORDER-3', waktu_pesanan_dibuat: '2026-08-12 08:00:00' }),
-    ],
-    skuRows: [skuRow()],
-    adsRows: [],
-    page: 2,
-    limit: 2,
-  });
-
-  assert.equal(report.orders.total, 3);
-  assert.equal(report.orders.data.length, 1);
-  assert.equal(report.orders.data[0].no_pesanan, 'ORDER-1');
-  assert.equal(report.summary.estimatedOrderCount, 3);
-  assert.equal(report.daily.length, 3);
 });

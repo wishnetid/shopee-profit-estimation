@@ -12,12 +12,14 @@ const ESTIMATION_STATUS = Object.freeze({
   NOT_ELIGIBLE: 'not_eligible',
 });
 
-// Ads RAW records credit consumption before tax. This is a read-only daily
-// allocation so gross-estimation margins include the statutory PPN burden,
-// while actual cash PPN remains attributable to the separate top-up event.
 const ADS_PPN_RATE = 0.11;
-const MINIMUM_HISTORICAL_SAMPLES = 3;
-const HISTORICAL_LOOKBACK_DAYS = 90;
+const STANDARD_SHOPEE_FEE_RATES = Object.freeze({
+  administration: 0.0825,
+  freeShippingXtra: 0.05,
+  promoXtra: 0.045,
+  premium: 0.005,
+});
+const ORDER_PROCESSING_FEE = 1250;
 
 function calculateEstimatedAdsPpn(adsSpend) {
   return Math.round(adsSpend * ADS_PPN_RATE);
@@ -110,8 +112,6 @@ function resolveFromAlias(aliasValue, skuIndex) {
   const source = sku1Prices?.size ? 'SKU1' : sku2Prices?.size ? 'SKU2' : null;
 
   if (!prices.size) return { kind: 'missing', source: null, alias, price: null };
-  // SKU1 is the preferred source only when every matching alias agrees on HPP.
-  // A different SKU2 price is a data conflict, never a hidden fallback.
   if (prices.size !== 1) return { kind: 'conflict', source, alias, price: null };
   return { kind: 'resolved', source, alias, price: [...prices][0] };
 }
@@ -139,6 +139,16 @@ function groupOrderRows(orderRows = []) {
   return [...groups.values()];
 }
 
+function calculateStandardShopeeFees(feeBase) {
+  return {
+    administration: Math.round(feeBase * STANDARD_SHOPEE_FEE_RATES.administration),
+    orderProcessing: ORDER_PROCESSING_FEE,
+    freeShippingXtra: Math.round(feeBase * STANDARD_SHOPEE_FEE_RATES.freeShippingXtra),
+    promoXtra: Math.round(feeBase * STANDARD_SHOPEE_FEE_RATES.promoXtra),
+    premium: Math.round(feeBase * STANDARD_SHOPEE_FEE_RATES.premium),
+  };
+}
+
 function createOrderResult(group, skuIndex, exceptionOrderNumbers) {
   const rows = group.rows;
   const reasons = [];
@@ -148,9 +158,10 @@ function createOrderResult(group, skuIndex, exceptionOrderNumbers) {
   const dateValues = rows.map((row) => parseCalendarDate(row.waktu_pesanan_dibuat));
   const dates = [...new Set(dateValues.filter(Boolean))];
   const hasMissingDate = dateValues.some((date) => !date);
-  const paymentValues = rows.map((row) => formatNumberKey(row.total_pembayaran));
-  const totalPayments = [...new Set(paymentValues.filter(Boolean))];
-  const hasMissingPayment = paymentValues.some((payment) => !payment);
+  const subtotalValues = rows.map((row) => parseFiniteNumber(row.subtotal_pesanan));
+  const hasInvalidSubtotal = subtotalValues.some((subtotal) => subtotal === null || subtotal < 0);
+  const voucherValues = rows.map((row) => parseFiniteNumber(row.voucher_ditanggung_penjual));
+  const hasInvalidVoucher = voucherValues.some((voucher) => voucher === null || voucher < 0);
   const hasCancelOrReturn = rows.some((row) => normalizeText(row.alasan_pembatalan) || normalizeText(row.status_pembatalan_pengembalian));
   const hasReturnedQuantity = rows.some((row) => {
     const returnedQuantity = parseFiniteNumber(row.returned_quantity);
@@ -160,16 +171,15 @@ function createOrderResult(group, skuIndex, exceptionOrderNumbers) {
   const hasEligibleStatus = statuses.some((status) => ELIGIBLE_STATUSES.has(status));
   const allEligibleStatuses = !hasMissingStatus && statuses.length > 0 && statuses.every((status) => ELIGIBLE_STATUSES.has(status));
   const orderDate = !hasMissingDate && dates.length === 1 ? dates[0] : null;
-  const totalPembayaran = !hasMissingPayment && totalPayments.length === 1 ? Number(totalPayments[0]) : null;
+  const sellerSubtotal = hasInvalidSubtotal ? null : subtotalValues.reduce((total, subtotal) => total + subtotal, 0);
+  const sellerVoucher = hasInvalidVoucher ? null : voucherValues.reduce((total, voucher) => total + voucher, 0);
+  const feeBase = sellerSubtotal !== null && sellerVoucher !== null ? sellerSubtotal - sellerVoucher : null;
 
   if (!group.no_pesanan) addReason(reasons, 'NO_PESANAN_TIDAK_VALID');
   if (hasMissingStatus) addReason(reasons, 'STATUS_PESANAN_TIDAK_VALID');
-  if (hasMissingDate || dates.length !== 1) {
-    addReason(reasons, !hasMissingDate && dates.length > 1 ? 'TANGGAL_PESANAN_TIDAK_KONSISTEN' : 'TANGGAL_PESANAN_TIDAK_VALID');
-  }
-  if (hasMissingPayment || totalPayments.length !== 1 || totalPembayaran === null || totalPembayaran < 0) {
-    addReason(reasons, !hasMissingPayment && totalPayments.length > 1 ? 'TOTAL_PEMBAYARAN_TIDAK_KONSISTEN' : 'TOTAL_PEMBAYARAN_TIDAK_VALID');
-  }
+  if (hasMissingDate || dates.length !== 1) addReason(reasons, !hasMissingDate && dates.length > 1 ? 'TANGGAL_PESANAN_TIDAK_KONSISTEN' : 'TANGGAL_PESANAN_TIDAK_VALID');
+  if (hasInvalidSubtotal || sellerSubtotal === null) addReason(reasons, 'SUBTOTAL_PESANAN_TIDAK_VALID');
+  if (hasInvalidVoucher || sellerVoucher === null || feeBase === null || feeBase < 0) addReason(reasons, 'VOUCHER_PENJUAL_TIDAK_VALID');
   if (statuses.length > 1 && hasEligibleStatus && !allEligibleStatuses) addReason(reasons, 'STATUS_PESANAN_TIDAK_KONSISTEN');
 
   const itemMappings = [];
@@ -181,7 +191,7 @@ function createOrderResult(group, skuIndex, exceptionOrderNumbers) {
   for (const row of rows) {
     const quantity = parseFiniteNumber(row.jumlah);
     const mapping = resolveItemHpp(row, skuIndex);
-    const item = {
+    itemMappings.push({
       nomor_referensi_sku: normalizeText(row.nomor_referensi_sku),
       sku_induk: normalizeText(row.sku_induk),
       nama_variasi: normalizeText(row.nama_variasi),
@@ -190,8 +200,7 @@ function createOrderResult(group, skuIndex, exceptionOrderNumbers) {
       hppSource: mapping.source,
       hppMatchedBy: mapping.matchedBy,
       hppStatus: mapping.kind,
-    };
-    itemMappings.push(item);
+    });
 
     if (!Number.isInteger(quantity) || quantity <= 0) {
       quantityInvalid = true;
@@ -213,7 +222,6 @@ function createOrderResult(group, skuIndex, exceptionOrderNumbers) {
   if (hppMissing) addReason(reasons, 'HPP_TIDAK_DITEMUKAN');
 
   const hasExplicitIneligibleStatus = statuses.some((status) => !ELIGIBLE_STATUSES.has(status));
-
   let estimationStatus;
   if (hasCancelOrReturn || hasReturnedQuantity || hasRawException || hasExplicitIneligibleStatus) {
     estimationStatus = ESTIMATION_STATUS.NOT_ELIGIBLE;
@@ -225,8 +233,8 @@ function createOrderResult(group, skuIndex, exceptionOrderNumbers) {
     'NO_PESANAN_TIDAK_VALID',
     'TANGGAL_PESANAN_TIDAK_KONSISTEN',
     'TANGGAL_PESANAN_TIDAK_VALID',
-    'TOTAL_PEMBAYARAN_TIDAK_KONSISTEN',
-    'TOTAL_PEMBAYARAN_TIDAK_VALID',
+    'SUBTOTAL_PESANAN_TIDAK_VALID',
+    'VOUCHER_PENJUAL_TIDAK_VALID',
     'STATUS_PESANAN_TIDAK_VALID',
     'STATUS_PESANAN_TIDAK_KONSISTEN',
     'QUANTITY_TIDAK_VALID',
@@ -239,14 +247,23 @@ function createOrderResult(group, skuIndex, exceptionOrderNumbers) {
     estimationStatus = ESTIMATION_STATUS.ESTIMABLE;
   }
 
+  const standardFees = feeBase === null ? null : calculateStandardShopeeFees(feeBase);
+  const estimatedShopeeFees = standardFees ? Object.values(standardFees).reduce((total, fee) => total + fee, 0) : null;
+  const estimatedSellerIncome = feeBase !== null && estimatedShopeeFees !== null ? feeBase - estimatedShopeeFees : null;
+
   return {
     no_pesanan: group.no_pesanan,
     orderDate,
     statusPesanan: statuses.length === 1 ? statuses[0] : statuses.join(' / ') || null,
     itemCount: rows.length,
-    totalPembayaran,
+    sellerSubtotal,
+    sellerVoucher,
+    feeBase,
+    standardFees,
+    estimatedShopeeFees,
+    estimatedSellerIncome,
     totalHpp: estimationStatus === ESTIMATION_STATUS.ESTIMABLE ? totalHpp : null,
-    estimasiKotor: estimationStatus === ESTIMATION_STATUS.ESTIMABLE ? totalPembayaran - totalHpp : null,
+    estimasiKotor: estimationStatus === ESTIMATION_STATUS.ESTIMABLE ? estimatedSellerIncome - totalHpp : null,
     estimationStatus,
     reasons,
     items: itemMappings,
@@ -295,77 +312,10 @@ function sortOrdersDescending(left, right) {
   return String(right.no_pesanan || '').localeCompare(String(left.no_pesanan || ''));
 }
 
-function orderCompositionKey(order) {
-  const quantitiesBySku = new Map();
-  for (const item of order.items) {
-    const sku = item.nomor_referensi_sku || item.sku_induk;
-    if (!sku || !Number.isInteger(item.quantity) || item.quantity <= 0) return null;
-    const key = sku.toLowerCase();
-    quantitiesBySku.set(key, (quantitiesBySku.get(key) || 0) + item.quantity);
-  }
-  return quantitiesBySku.size
-    ? [...quantitiesBySku.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([sku, quantity]) => `${sku}\u001f${quantity}`).join('\u001e')
-    : null;
-}
-
-function median(values) {
-  if (!values.length) return null;
-  const sorted = [...values].sort((left, right) => left - right);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-}
-
-function attachShopeePayouts(orders, historicalOrders, settlementRows) {
-  const settlementByOrder = new Map();
-  for (const row of settlementRows) {
-    const orderNumber = normalizeText(row.no_pesanan);
-    const payout = parseFiniteNumber(row.signed_total);
-    const releasedDate = parseCalendarDate(row.tanggal_dana_dilepaskan);
-    if (orderNumber && payout !== null && releasedDate && !settlementByOrder.has(orderNumber.toLowerCase())) {
-      settlementByOrder.set(orderNumber.toLowerCase(), { signedTotal: payout, tanggal_dana_dilepaskan: releasedDate });
-    }
-  }
-  const historicalSettlements = historicalOrders.map((order) => {
-    const settlement = order.no_pesanan ? settlementByOrder.get(order.no_pesanan.toLowerCase()) : null;
-    const releasedDate = parseCalendarDate(settlement?.tanggal_dana_dilepaskan);
-    return { order, settlement, releasedDate };
-  }).filter(({ order, settlement, releasedDate }) => (
-    order.estimationStatus === ESTIMATION_STATUS.ESTIMABLE
-    && order.statusPesanan === 'Selesai'
-    && settlement
-    && releasedDate
-    && order.totalPembayaran
-  ));
-  const latestReleaseDay = historicalSettlements.reduce((latest, { releasedDate }) => Math.max(latest, Date.parse(`${releasedDate}T00:00:00Z`)), -Infinity);
-  const historicalByComposition = new Map();
-  for (const { order, settlement, releasedDate } of historicalSettlements) {
-    if (Date.parse(`${releasedDate}T00:00:00Z`) < latestReleaseDay - (HISTORICAL_LOOKBACK_DAYS * 86400000)) continue;
-    const composition = orderCompositionKey(order);
-    if (!composition) continue;
-    const rates = historicalByComposition.get(composition) || [];
-    rates.push(settlement.signedTotal / order.totalPembayaran);
-    historicalByComposition.set(composition, rates);
-  }
-  return orders.map((order) => {
-    if (order.estimationStatus !== ESTIMATION_STATUS.ESTIMABLE || order.totalHpp === null || order.totalPembayaran === null) return { ...order, shopeePayout: null, shopeePayoutKind: null, historicalMethod: null, historicalSampleCount: 0, estimatedShopeeNetProfitBeforeAds: null };
-    const actual = order.no_pesanan ? settlementByOrder.get(order.no_pesanan.toLowerCase()) : undefined;
-    if (actual !== undefined) return { ...order, shopeePayout: actual.signedTotal, shopeePayoutKind: 'settlement_actual', historicalMethod: null, historicalSampleCount: 0, estimatedShopeeNetProfitBeforeAds: actual.signedTotal - order.totalHpp };
-    if (order.statusPesanan === 'Selesai') {
-      return { ...order, shopeePayout: null, shopeePayoutKind: null, historicalMethod: null, historicalSampleCount: 0, estimatedShopeeNetProfitBeforeAds: null };
-    }
-    const rates = historicalByComposition.get(orderCompositionKey(order)) || [];
-    const rate = rates.length >= MINIMUM_HISTORICAL_SAMPLES ? median(rates) : null;
-    const payout = rate === null ? null : Math.round(order.totalPembayaran * rate);
-    return { ...order, shopeePayout: payout, shopeePayoutKind: payout === null ? null : 'historical_projection', historicalMethod: payout === null ? null : 'SKU_COMPOSITION_RECENT', historicalSampleCount: rates.length, estimatedShopeeNetProfitBeforeAds: payout === null ? null : payout - order.totalHpp };
-  });
-}
-
 function buildEstimationReport({
   orderRows = [],
-  historicalOrderRows = orderRows,
   skuRows = [],
   adsRows = [],
-  settlementRows = [],
   exceptionOrderNumbers = [],
   dateFrom = null,
   dateTo = null,
@@ -375,17 +325,12 @@ function buildEstimationReport({
   const dateRange = validateDateRange(dateFrom, dateTo);
   const skuIndex = buildSkuIndex(skuRows);
   const rawExceptionOrders = new Set(
-    exceptionOrderNumbers
-      .map((orderNumber) => normalizeText(orderNumber))
-      .filter(Boolean)
-      .map((orderNumber) => orderNumber.toLowerCase()),
+    exceptionOrderNumbers.map((orderNumber) => normalizeText(orderNumber)).filter(Boolean).map((orderNumber) => orderNumber.toLowerCase()),
   );
-  const historicalOrders = groupOrderRows(historicalOrderRows)
-    .map((group) => createOrderResult(group, skuIndex, rawExceptionOrders));
-  const allOrders = attachShopeePayouts(groupOrderRows(orderRows)
+  const allOrders = groupOrderRows(orderRows)
     .map((group) => createOrderResult(group, skuIndex, rawExceptionOrders))
     .filter((order) => !order.orderDate || isDateInRange(order.orderDate, dateRange))
-    .sort(sortOrdersDescending), historicalOrders, settlementRows);
+    .sort(sortOrdersDescending);
   const ads = aggregateAdsSpend(adsRows, dateRange);
 
   const summary = {
@@ -401,13 +346,6 @@ function buildEstimationReport({
     estimatedAdsPpn: 0,
     afterAds: 0,
     afterAdsAndPpn: 0,
-    finalSettlementPayout: 0,
-    projectedPendingPayout: 0,
-    projectedShopeePayout: 0,
-    estimatedShopeeNetProfitBeforeAds: 0,
-    estimatedShopeeNetProfitAfterAdsAndPpn: 0,
-    shopeeNetProfitOrderCount: 0,
-    unavailableShopeePayoutOrderCount: 0,
     adsDuplicateEventCount: ads.duplicateEventCount,
   };
   summary.afterAds = summary.estimatedGrossBeforeFeeAds - summary.adsSpend;
@@ -426,13 +364,6 @@ function buildEstimationReport({
       estimatedAdsPpn: 0,
       afterAds: 0,
       afterAdsAndPpn: 0,
-      finalSettlementPayout: 0,
-      projectedPendingPayout: 0,
-      projectedShopeePayout: 0,
-      estimatedShopeeNetProfitBeforeAds: 0,
-      estimatedShopeeNetProfitAfterAdsAndPpn: 0,
-      shopeeNetProfitOrderCount: 0,
-      unavailableShopeePayoutOrderCount: 0,
     };
     dailyMap.set(date, next);
     return next;
@@ -444,60 +375,23 @@ function buildEstimationReport({
     if (order.estimationStatus === ESTIMATION_STATUS.ESTIMABLE) {
       entry.estimatedOrderCount += 1;
       entry.estimatedGrossBeforeFeeAds += order.estimasiKotor || 0;
-      if (order.shopeePayoutKind === 'settlement_actual') entry.finalSettlementPayout += order.shopeePayout || 0;
-      if (order.shopeePayoutKind === 'historical_projection') entry.projectedPendingPayout += order.shopeePayout || 0;
-      entry.projectedShopeePayout += order.shopeePayout || 0;
-      if (order.estimatedShopeeNetProfitBeforeAds !== null) {
-        entry.estimatedShopeeNetProfitBeforeAds += order.estimatedShopeeNetProfitBeforeAds;
-        entry.shopeeNetProfitOrderCount += 1;
-      } else {
-        entry.unavailableShopeePayoutOrderCount += 1;
-      }
     } else if (order.estimationStatus === ESTIMATION_STATUS.HPP_INCOMPLETE) {
       entry.hppIncompleteOrderCount += 1;
     } else if (order.estimationStatus === ESTIMATION_STATUS.NEEDS_REVIEW) {
       entry.reviewOrderCount += 1;
     }
   }
-  for (const [date, spend] of ads.byDate.entries()) {
-    dailyEntry(date).adsSpend += spend;
-  }
+  for (const [date, spend] of ads.byDate.entries()) dailyEntry(date).adsSpend += spend;
   const daily = [...dailyMap.values()]
     .map((entry) => {
       const estimatedAdsPpn = calculateEstimatedAdsPpn(entry.adsSpend);
       const afterAds = entry.estimatedGrossBeforeFeeAds - entry.adsSpend;
-      return {
-        ...entry,
-        estimatedAdsPpn,
-        afterAds,
-        afterAdsAndPpn: afterAds - estimatedAdsPpn,
-        // Ads-only dates intentionally carry a negative net contribution so every
-        // in-scope Ads spend and daily-rounded PPN is deducted exactly once.
-        // An order day without a payout basis remains unavailable instead of zero.
-        estimatedShopeeNetProfitAfterAdsAndPpn: entry.unavailableShopeePayoutOrderCount > 0
-          ? null
-          : entry.shopeeNetProfitOrderCount
-          ? entry.estimatedShopeeNetProfitBeforeAds - entry.adsSpend - estimatedAdsPpn
-          : entry.estimatedOrderCount === 0 ? -entry.adsSpend - estimatedAdsPpn : null,
-      };
+      return { ...entry, estimatedAdsPpn, afterAds, afterAdsAndPpn: afterAds - estimatedAdsPpn };
     })
     .sort((left, right) => right.date.localeCompare(left.date));
 
   summary.estimatedAdsPpn = daily.reduce((total, entry) => total + entry.estimatedAdsPpn, 0);
   summary.afterAdsAndPpn = summary.afterAds - summary.estimatedAdsPpn;
-  summary.finalSettlementPayout = daily.reduce((total, entry) => total + entry.finalSettlementPayout, 0);
-  summary.projectedPendingPayout = daily.reduce((total, entry) => total + entry.projectedPendingPayout, 0);
-  summary.projectedShopeePayout = daily.reduce((total, entry) => total + entry.projectedShopeePayout, 0);
-  summary.shopeeNetProfitOrderCount = daily.reduce((total, entry) => total + entry.shopeeNetProfitOrderCount, 0);
-  summary.unavailableShopeePayoutOrderCount = daily.reduce((total, entry) => total + entry.unavailableShopeePayoutOrderCount, 0);
-  summary.estimatedShopeeNetProfitBeforeAds = summary.shopeeNetProfitOrderCount ? daily.reduce((total, entry) => total + entry.estimatedShopeeNetProfitBeforeAds, 0) : null;
-  // Summary always deducts every in-scope Ads event and its daily-rounded PPN once,
-  // even if a different order date lacks enough historical evidence for projection.
-  summary.estimatedShopeeNetProfitAfterAdsAndPpn = summary.unavailableShopeePayoutOrderCount > 0
-    ? null
-    : summary.shopeeNetProfitOrderCount
-    ? summary.estimatedShopeeNetProfitBeforeAds - summary.adsSpend - summary.estimatedAdsPpn
-    : null;
 
   const safePage = Number.isSafeInteger(Number(page)) && Number(page) > 0 ? Number(page) : 1;
   const safeLimit = Number.isSafeInteger(Number(limit)) && Number(limit) > 0 ? Number(limit) : 50;
@@ -507,24 +401,20 @@ function buildEstimationReport({
     dateRange,
     summary,
     daily,
-    orders: {
-      total: allOrders.length,
-      page: safePage,
-      limit: safeLimit,
-      data: allOrders.slice(offset, offset + safeLimit),
-    },
+    orders: { total: allOrders.length, page: safePage, limit: safeLimit, data: allOrders.slice(offset, offset + safeLimit) },
   };
 }
 
 module.exports = {
   ADS_PPN_RATE,
-  HISTORICAL_LOOKBACK_DAYS,
-  MINIMUM_HISTORICAL_SAMPLES,
+  ORDER_PROCESSING_FEE,
+  STANDARD_SHOPEE_FEE_RATES,
   ELIGIBLE_STATUSES,
   ESTIMATION_STATUS,
   aggregateAdsSpend,
   buildEstimationReport,
   buildSkuIndex,
+  calculateStandardShopeeFees,
   parseCalendarDate,
   resolveItemHpp,
   validateDateRange,
