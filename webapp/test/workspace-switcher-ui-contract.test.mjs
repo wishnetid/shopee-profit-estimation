@@ -15,6 +15,8 @@ test('workspace switcher uses an in-app workspace popover and keeps add-store in
   assert.match(source, /role="dialog"/);
   assert.match(source, /Tambah toko baru/);
   assert.match(source, /setStoreId\(String\(store\.id\)\)/);
+  assert.match(source, /disabled=\{loading\}/);
+  assert.doesNotMatch(source, /disabled=\{loading \|\| stores\.length === 0\}/);
   assert.doesNotMatch(source, /<select[\s\S]*id="active-store"/);
   assert.doesNotMatch(source, /semua upload baru masuk ke toko ini/);
 });

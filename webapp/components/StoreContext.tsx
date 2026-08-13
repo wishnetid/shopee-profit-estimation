@@ -167,7 +167,7 @@ export function StoreSwitcher() {
             aria-label="Pilih workspace toko"
             aria-haspopup="dialog"
             aria-expanded={open}
-            disabled={loading || stores.length === 0}
+            disabled={loading}
             onClick={() => { setMessage(''); setOpen(value => !value); }}
             className="group flex min-h-11 max-w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-left shadow-sm transition hover:border-purple-300 hover:bg-purple-50/40 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-purple-200 disabled:cursor-not-allowed disabled:opacity-60"
           >
