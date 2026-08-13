@@ -74,24 +74,35 @@ test('Settings API uses a non-reserved alias for row counts', () => {
   assert.doesNotMatch(source, /AS rows\b/);
 });
 
-test('Settings API keeps store reset scoped and rejects unknown reset actions', () => {
+test('Settings API clears every store-scoped parent and child while preserving shared Master SKU', () => {
   const source = fs.readFileSync(path.resolve(process.cwd(), 'app/api/settings/database/route.ts'), 'utf8');
+  const clearStoreSource = source.slice(source.indexOf("if (body.action !== 'clear_store')"));
+  const expectedDeletes = [
+    'income_penghasilan_raw', 'income_adjustments_raw', 'income_shipping_fee_discrepancies_raw', 'income_report_imports',
+    'balance_transactions_raw', 'balance_report_imports',
+    'order_cancellation_raw', 'order_cancellation_report_imports',
+    'order_failed_delivery_raw', 'order_failed_delivery_report_imports',
+    'order_return_refund_raw', 'order_return_refund_report_imports',
+    'ads_transactions_raw', 'ads_report_imports', 'order_all',
+  ];
   assert.match(source, /body\.action !== ['"]clear_store['"]/);
-  assert.match(source, /DELETE FROM order_all WHERE store_id = \?/);
-  assert.match(source, /DELETE FROM income_report_imports WHERE store_id = \?/);
-  assert.doesNotMatch(source, /DELETE FROM balance_transactions_raw/);
-  assert.doesNotMatch(source, /DELETE FROM balance_report_imports/);
-  assert.doesNotMatch(source, /DELETE FROM order_cancellation_report_imports/);
-  assert.doesNotMatch(source, /DELETE FROM order_failed_delivery_report_imports/);
-  assert.doesNotMatch(source, /DELETE FROM order_return_refund_report_imports/);
-  assert.doesNotMatch(source, /DELETE FROM ads_transactions_raw/);
-  assert.doesNotMatch(source, /DELETE FROM ads_report_imports/);
+  for (const table of expectedDeletes) assert.match(clearStoreSource, new RegExp(`DELETE FROM ${table}`));
+  assert.doesNotMatch(clearStoreSource, /DELETE FROM sku_master_raw/);
+  assert.doesNotMatch(clearStoreSource, /DELETE FROM sku_report_imports/);
+  for (const [child, parent] of [
+    ['income_penghasilan_raw', 'income_report_imports'],
+    ['balance_transactions_raw', 'balance_report_imports'],
+    ['order_cancellation_raw', 'order_cancellation_report_imports'],
+    ['order_failed_delivery_raw', 'order_failed_delivery_report_imports'],
+    ['order_return_refund_raw', 'order_return_refund_report_imports'],
+    ['ads_transactions_raw', 'ads_report_imports'],
+  ]) assert.ok(clearStoreSource.indexOf(`DELETE FROM ${child}`) < clearStoreSource.indexOf(`DELETE FROM ${parent}`), `${child} must delete before ${parent}`);
   assert.match(source, /Aksi reset tidak dikenali/);
   assert.doesNotMatch(source, /TRUNCATE TABLE/);
   assert.doesNotMatch(source, /clear_all/);
 });
 
-test('RAW packages block store deletion but stay outside the legacy clear-store action', () => {
+test('RAW packages block store deletion and Clear Data Toko Aktif removes them first', () => {
   const stores = fs.readFileSync(path.resolve(process.cwd(), 'app/api/stores/route.ts'), 'utf8');
   const page = fs.readFileSync(path.resolve(process.cwd(), 'app/settings/page.tsx'), 'utf8');
   assert.match(stores, /balance_package_count/);
@@ -99,7 +110,8 @@ test('RAW packages block store deletion but stay outside the legacy clear-store 
   assert.match(stores, /failed_delivery_package_count/);
   assert.match(stores, /return_refund_package_count/);
   assert.match(stores, /ads_package_count/);
-  assert.match(page, /Tombol clear toko hanya menghapus Order\.all dan package Income/);
+  assert.match(page, /seluruh data operasional toko/);
+  assert.match(page, /Master SKU shared tetap aman/);
 });
 
 test('Settings API provides an explicit confirmed global Master SKU reset that deletes children before parents', () => {

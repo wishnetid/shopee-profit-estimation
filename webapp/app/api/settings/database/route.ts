@@ -142,26 +142,52 @@ export async function POST(request: NextRequest) {
 
   try {
     await conn.beginTransaction();
-    const [beforeRows] = await conn.execute<Array<RowDataPacket & { order_count: number; income_package_count: number; income_penghasilan_count: number; income_adjustment_count: number; income_shipping_count: number }>>(`
+    const [beforeRows] = await conn.execute<Array<RowDataPacket & Record<string, number>>>(`
       SELECT
         (SELECT COUNT(*) FROM order_all WHERE store_id = ?) AS order_count,
         (SELECT COUNT(*) FROM income_report_imports WHERE store_id = ?) AS income_package_count,
         (SELECT COUNT(*) FROM income_penghasilan_raw r JOIN income_report_imports i ON i.id = r.income_report_import_id WHERE i.store_id = ?) AS income_penghasilan_count,
         (SELECT COUNT(*) FROM income_adjustments_raw r JOIN income_report_imports i ON i.id = r.income_report_import_id WHERE i.store_id = ?) AS income_adjustment_count,
-        (SELECT COUNT(*) FROM income_shipping_fee_discrepancies_raw r JOIN income_report_imports i ON i.id = r.income_report_import_id WHERE i.store_id = ?) AS income_shipping_count
-    `, [storeId, storeId, storeId, storeId, storeId]);
+        (SELECT COUNT(*) FROM income_shipping_fee_discrepancies_raw r JOIN income_report_imports i ON i.id = r.income_report_import_id WHERE i.store_id = ?) AS income_shipping_count,
+        (SELECT COUNT(*) FROM balance_report_imports WHERE store_id = ?) AS balance_package_count,
+        (SELECT COUNT(*) FROM balance_transactions_raw r JOIN balance_report_imports i ON i.id = r.balance_report_import_id WHERE i.store_id = ?) AS balance_transaction_count,
+        (SELECT COUNT(*) FROM order_cancellation_report_imports WHERE store_id = ?) AS cancellation_package_count,
+        (SELECT COUNT(*) FROM order_cancellation_raw r JOIN order_cancellation_report_imports i ON i.id = r.order_cancellation_report_import_id WHERE i.store_id = ?) AS cancellation_row_count,
+        (SELECT COUNT(*) FROM order_failed_delivery_report_imports WHERE store_id = ?) AS failed_delivery_package_count,
+        (SELECT COUNT(*) FROM order_failed_delivery_raw r JOIN order_failed_delivery_report_imports i ON i.id = r.order_failed_delivery_report_import_id WHERE i.store_id = ?) AS failed_delivery_row_count,
+        (SELECT COUNT(*) FROM order_return_refund_report_imports WHERE store_id = ?) AS return_refund_package_count,
+        (SELECT COUNT(*) FROM order_return_refund_raw r JOIN order_return_refund_report_imports i ON i.id = r.order_return_refund_report_import_id WHERE i.store_id = ?) AS return_refund_row_count,
+        (SELECT COUNT(*) FROM ads_report_imports WHERE store_id = ?) AS ads_package_count,
+        (SELECT COUNT(*) FROM ads_transactions_raw r JOIN ads_report_imports i ON i.id = r.ads_report_import_id WHERE i.store_id = ?) AS ads_transaction_count
+    `, Array(15).fill(storeId));
     const before = beforeRows[0];
 
     await conn.execute('DELETE FROM income_penghasilan_raw WHERE income_report_import_id IN (SELECT id FROM income_report_imports WHERE store_id = ?)', [storeId]);
     await conn.execute('DELETE FROM income_adjustments_raw WHERE income_report_import_id IN (SELECT id FROM income_report_imports WHERE store_id = ?)', [storeId]);
     await conn.execute('DELETE FROM income_shipping_fee_discrepancies_raw WHERE income_report_import_id IN (SELECT id FROM income_report_imports WHERE store_id = ?)', [storeId]);
     await conn.execute('DELETE FROM income_report_imports WHERE store_id = ?', [storeId]);
+
+    await conn.execute('DELETE FROM balance_transactions_raw WHERE balance_report_import_id IN (SELECT id FROM balance_report_imports WHERE store_id = ?)', [storeId]);
+    await conn.execute('DELETE FROM balance_report_imports WHERE store_id = ?', [storeId]);
+
+    await conn.execute('DELETE FROM order_cancellation_raw WHERE order_cancellation_report_import_id IN (SELECT id FROM order_cancellation_report_imports WHERE store_id = ?)', [storeId]);
+    await conn.execute('DELETE FROM order_cancellation_report_imports WHERE store_id = ?', [storeId]);
+
+    await conn.execute('DELETE FROM order_failed_delivery_raw WHERE order_failed_delivery_report_import_id IN (SELECT id FROM order_failed_delivery_report_imports WHERE store_id = ?)', [storeId]);
+    await conn.execute('DELETE FROM order_failed_delivery_report_imports WHERE store_id = ?', [storeId]);
+
+    await conn.execute('DELETE FROM order_return_refund_raw WHERE order_return_refund_report_import_id IN (SELECT id FROM order_return_refund_report_imports WHERE store_id = ?)', [storeId]);
+    await conn.execute('DELETE FROM order_return_refund_report_imports WHERE store_id = ?', [storeId]);
+
+    await conn.execute('DELETE FROM ads_transactions_raw WHERE ads_report_import_id IN (SELECT id FROM ads_report_imports WHERE store_id = ?)', [storeId]);
+    await conn.execute('DELETE FROM ads_report_imports WHERE store_id = ?', [storeId]);
+
     await conn.execute('DELETE FROM order_all WHERE store_id = ?', [storeId]);
     await conn.commit();
 
     return NextResponse.json({
       success: true,
-      message: `Data operasional toko berhasil di-clear. Master SKU shared tetap aman.`,
+      message: `Seluruh data operasional toko berhasil dihapus. Master SKU shared tetap aman.`,
       storeId,
       removed: Object.fromEntries(Object.entries(before).map(([key, value]) => [key, Number(value)])),
     });

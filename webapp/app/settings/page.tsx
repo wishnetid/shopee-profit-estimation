@@ -251,7 +251,7 @@ export default function SettingsPage() {
             <div>
               <p className="mb-1 font-semibold">Batas clear data toko</p>
               <p>
-                Tombol clear toko hanya menghapus Order.all dan package Income milik toko aktif. Master SKU shared tidak ikut dihapus.
+                Tombol clear toko menghapus seluruh data operasional toko aktif, termasuk Order.all serta seluruh RAW package dan transaksi turunannya. Master SKU shared tidak ikut dihapus.
                 {sharedTables.length > 0 ? ` ${sharedTables.length} tabel shared tetap dipertahankan.` : ''}
               </p>
             </div>
