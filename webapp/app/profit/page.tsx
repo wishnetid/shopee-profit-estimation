@@ -170,10 +170,7 @@ function ProfitEstimationContent({ storeId, activeStoreName }: { storeId: string
 
   return (
     <div className="p-4 lg:p-8"><div className="mx-auto max-w-7xl">
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-3"><div className="rounded-xl bg-purple-50 p-3 text-purple-700"><BarChart3 className="h-6 w-6" /></div><div><h1 className="text-2xl font-bold text-slate-900 lg:text-3xl">Profit & Estimasi</h1><p className="mt-1 text-sm text-slate-600">Monitoring estimasi kotor seller, HPP, dan Ads untuk {activeStoreName}.</p></div></div>
-        <span className="inline-flex w-fit rounded-full border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-700">Toko aktif: {activeStoreName}</span>
-      </div>
+      <div className="mb-6 flex items-start gap-3"><div className="rounded-xl bg-purple-50 p-3 text-purple-700"><BarChart3 className="h-6 w-6" /></div><div><h1 className="text-2xl font-bold text-slate-900 lg:text-3xl">Profit & Estimasi</h1><p className="mt-1 text-sm text-slate-600">Monitoring estimasi kotor seller, HPP, dan Ads untuk {activeStoreName}.</p></div></div>
       <div className="mb-5 flex gap-2 border-b border-slate-200">
         <button type="button" onClick={() => setTab('estimate')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'estimate' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Estimasi Kotor</button>
         <button type="button" onClick={() => setTab('actual')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'actual' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Profit Aktual</button>
