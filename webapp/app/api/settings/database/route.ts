@@ -6,21 +6,31 @@ import { requireStoreId } from '../../../../lib/store';
 const {
   isMutationAuthorized,
   isSameOriginMutation,
+  isValidBasicAuthorization,
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 } = require('../../../../lib/dashboard-auth.js') as {
-  isMutationAuthorized: (authorization: string | null, env?: NodeJS.ProcessEnv) => boolean;
+  isMutationAuthorized: (authorization: string | null, cookieHeader?: string | null, env?: NodeJS.ProcessEnv) => boolean;
   isSameOriginMutation: (origin: string | null, expectedOrigin: string) => boolean;
+  isValidBasicAuthorization: (authorization: string | null, username?: string, password?: string) => boolean;
 };
 
 function unauthorizedResponse() {
   return NextResponse.json(
     { success: false, error: 'Authentication required.' },
-    { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="Shopee Profit Estimation"' } },
+    { status: 401 },
   );
 }
 
 function isAuthorized(request: NextRequest) {
-  return isMutationAuthorized(request.headers.get('authorization'));
+  return isMutationAuthorized(request.headers.get('authorization'), request.headers.get('cookie'));
+}
+
+function isTrustedBasicApiClient(request: NextRequest) {
+  return isValidBasicAuthorization(
+    request.headers.get('authorization'),
+    process.env.DASHBOARD_BASIC_AUTH_USER,
+    process.env.DASHBOARD_BASIC_AUTH_PASSWORD,
+  );
 }
 
 export async function GET(request: NextRequest) {
@@ -75,13 +85,18 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   if (!isAuthorized(request)) return unauthorizedResponse();
-  if (!isSameOriginMutation(request.headers.get('origin'), request.nextUrl.origin)) {
+  const basicApiAuthorized = isTrustedBasicApiClient(request);
+  if (!basicApiAuthorized && !isSameOriginMutation(request.headers.get('origin'), request.nextUrl.origin)) {
     return NextResponse.json({ success: false, error: 'Cross-origin request rejected.' }, { status: 403 });
   }
 
   let body: { action?: string; storeId?: unknown; confirmation?: boolean };
   try {
-    body = await request.json() as { action?: string; storeId?: unknown; confirmation?: boolean };
+    const payload = await request.json() as unknown;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return NextResponse.json({ success: false, error: 'Malformed JSON.' }, { status: 400 });
+    }
+    body = payload as { action?: string; storeId?: unknown; confirmation?: boolean };
   } catch {
     return NextResponse.json({ success: false, error: 'Malformed JSON.' }, { status: 400 });
   }

@@ -40,10 +40,12 @@ const {
 const {
   isMutationAuthorized,
   isSameOriginMutation,
+  isValidBasicAuthorization,
   validateUploadFile,
 } = require('../../../lib/dashboard-auth.js') as {
-  isMutationAuthorized: (authorization: string | null, env?: NodeJS.ProcessEnv) => boolean;
+  isMutationAuthorized: (authorization: string | null, cookieHeader?: string | null, env?: NodeJS.ProcessEnv) => boolean;
   isSameOriginMutation: (origin: string | null, expectedOrigin: string) => boolean;
+  isValidBasicAuthorization: (authorization: string | null, username?: string, password?: string) => boolean;
   validateUploadFile: (file: { name: string; size: number; type: string } | null) => { valid: boolean; error: string | null };
 };
 
@@ -711,15 +713,20 @@ async function importOrderAll(
 function unauthorizedResponse() {
   return NextResponse.json(
     { error: 'Authentication required.' },
-    { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="Shopee Profit Estimation"' } },
+    { status: 401 },
   );
 }
 
 export async function POST(request: NextRequest) {
   let conn: Connection | null = null;
   try {
-    if (!isMutationAuthorized(request.headers.get('authorization'))) return unauthorizedResponse();
-    if (!isSameOriginMutation(request.headers.get('origin'), request.nextUrl.origin)) {
+    if (!isMutationAuthorized(request.headers.get('authorization'), request.headers.get('cookie'))) return unauthorizedResponse();
+    const basicApiAuthorized = isValidBasicAuthorization(
+      request.headers.get('authorization'),
+      process.env.DASHBOARD_BASIC_AUTH_USER,
+      process.env.DASHBOARD_BASIC_AUTH_PASSWORD,
+    );
+    if (!basicApiAuthorized && !isSameOriginMutation(request.headers.get('origin'), request.nextUrl.origin)) {
       return NextResponse.json({ error: 'Cross-origin request rejected.' }, { status: 403 });
     }
 

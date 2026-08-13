@@ -6,10 +6,12 @@ import { requireStoreId } from '../../../lib/store';
 const {
   isMutationAuthorized,
   isSameOriginMutation,
+  isValidBasicAuthorization,
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 } = require('../../../lib/dashboard-auth.js') as {
-  isMutationAuthorized: (authorization: string | null, env?: NodeJS.ProcessEnv) => boolean;
+  isMutationAuthorized: (authorization: string | null, cookieHeader?: string | null, env?: NodeJS.ProcessEnv) => boolean;
   isSameOriginMutation: (origin: string | null, expectedOrigin: string) => boolean;
+  isValidBasicAuthorization: (authorization: string | null, username?: string, password?: string) => boolean;
 };
 
 export const runtime = 'nodejs';
@@ -17,6 +19,14 @@ export const dynamic = 'force-dynamic';
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const clean = (value: unknown) => typeof value === 'string' ? value.trim() : '';
+
+function isTrustedBasicApiClient(request: NextRequest) {
+  return isValidBasicAuthorization(
+    request.headers.get('authorization'),
+    process.env.DASHBOARD_BASIC_AUTH_USER,
+    process.env.DASHBOARD_BASIC_AUTH_PASSWORD,
+  );
+}
 
 export async function GET() {
   try {
@@ -39,19 +49,24 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    if (!isMutationAuthorized(request.headers.get('authorization'))) {
+    if (!isMutationAuthorized(request.headers.get('authorization'), request.headers.get('cookie'))) {
       return NextResponse.json(
         { error: 'Authentication required.' },
-        { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="Shopee Profit Estimation"' } },
+        { status: 401 },
       );
     }
-    if (!isSameOriginMutation(request.headers.get('origin'), request.nextUrl.origin)) {
+    const basicApiAuthorized = isTrustedBasicApiClient(request);
+    if (!basicApiAuthorized && !isSameOriginMutation(request.headers.get('origin'), request.nextUrl.origin)) {
       return NextResponse.json({ error: 'Cross-origin request rejected.' }, { status: 403 });
     }
 
     let body: { storeName?: unknown; storeSlug?: unknown };
     try {
-      body = await request.json() as { storeName?: unknown; storeSlug?: unknown };
+      const payload = await request.json() as unknown;
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return NextResponse.json({ error: 'Malformed JSON.' }, { status: 400 });
+      }
+      body = payload as { storeName?: unknown; storeSlug?: unknown };
     } catch {
       return NextResponse.json({ error: 'Malformed JSON.' }, { status: 400 });
     }
@@ -90,16 +105,21 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  if (!isMutationAuthorized(request.headers.get('authorization'))) {
-    return NextResponse.json({ error: 'Authentication required.' }, { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="Shopee Profit Estimation"' } });
+  if (!isMutationAuthorized(request.headers.get('authorization'), request.headers.get('cookie'))) {
+    return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
   }
-  if (!isSameOriginMutation(request.headers.get('origin'), request.nextUrl.origin)) {
+  const basicApiAuthorized = isTrustedBasicApiClient(request);
+  if (!basicApiAuthorized && !isSameOriginMutation(request.headers.get('origin'), request.nextUrl.origin)) {
     return NextResponse.json({ error: 'Cross-origin request rejected.' }, { status: 403 });
   }
 
   let body: { storeId?: unknown; confirmation?: boolean };
   try {
-    body = await request.json() as { storeId?: unknown; confirmation?: boolean };
+    const payload = await request.json() as unknown;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return NextResponse.json({ error: 'Malformed JSON.' }, { status: 400 });
+    }
+    body = payload as { storeId?: unknown; confirmation?: boolean };
   } catch {
     return NextResponse.json({ error: 'Malformed JSON.' }, { status: 400 });
   }

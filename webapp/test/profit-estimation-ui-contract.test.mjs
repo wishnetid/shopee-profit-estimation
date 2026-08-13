@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const profitPagePath = new URL('../app/profit/page.tsx', import.meta.url);
-const layoutPath = new URL('../app/layout.tsx', import.meta.url);
+const layoutPath = new URL('../components/AppFrame.tsx', import.meta.url);
 
 test('Profit page separates Estimasi Kotor from locked Profit Aktual and uses an explicit manual load action', async () => {
   const source = await readFile(profitPagePath, 'utf8');
