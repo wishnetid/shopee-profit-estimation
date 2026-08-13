@@ -89,11 +89,14 @@ test('validateOrderAllHeaders rejects a changed export schema before import', ()
   assert.ok(result.missing.includes('Status Pesanan'));
 });
 
-test('validateOrderAllCompositeKeys rejects duplicate rows within one upload', () => {
-  const result = validateOrderAllCompositeKeys([
-    { 'No. Pesanan': 'ORDER-1', 'Nomor Referensi SKU': 'SKU-1', 'Nama Variasi': 'Hitam,XL' },
-    { 'No. Pesanan': 'ORDER-1', 'Nomor Referensi SKU': 'SKU-1', 'Nama Variasi': 'Hitam,XL' },
-  ]);
+test('validateOrderAllCompositeKeys rejects duplicate physical lines within one upload', () => {
+  const row = {
+    'No. Pesanan': 'ORDER-1',
+    'Nomor Referensi SKU': 'SKU-1',
+    'Nama Variasi': 'Hitam,XL',
+    'Harga Setelah Diskon': '82.500',
+  };
+  const result = validateOrderAllCompositeKeys([row, { ...row }]);
 
   assert.equal(result.valid, false);
   assert.equal(result.duplicateCount, 1);

@@ -44,11 +44,11 @@ CREATE TABLE IF NOT EXISTS order_all (
   status_pembatalan_pengembalian VARCHAR(100),
   no_resi VARCHAR(100),
   nama_produk TEXT,
-  nomor_referensi_sku VARCHAR(100),
+  nomor_referensi_sku VARCHAR(100) NOT NULL,
   sku_induk VARCHAR(100),
-  nama_variasi VARCHAR(255),
+  nama_variasi VARCHAR(255) NOT NULL,
   harga_awal DECIMAL(15,2),
-  harga_setelah_diskon DECIMAL(15,2),
+  harga_setelah_diskon DECIMAL(15,2) NOT NULL,
   jumlah INT,
   returned_quantity INT DEFAULT 0,
   subtotal_pesanan DECIMAL(15,2),
@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS order_all (
   source_snapshot_at DATETIME,
   source_snapshot_file VARCHAR(255),
   PRIMARY KEY (id),
-  UNIQUE KEY uk_order_item_store (store_id, no_pesanan, nomor_referensi_sku, nama_variasi),
+  UNIQUE KEY uk_order_item_store_price (store_id, no_pesanan, nomor_referensi_sku, nama_variasi, harga_setelah_diskon),
   KEY idx_order_all_store (store_id, waktu_pesanan_dibuat),
   CONSTRAINT fk_order_all_store FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

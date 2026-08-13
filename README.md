@@ -1,6 +1,6 @@
 # Shopee Profit Estimation
 
-**Last updated:** 2026-08-12 WIB
+**Last updated:** 2026-08-13 WIB
 
 **Production:** https://webapp-umber-five.vercel.app
 
@@ -8,11 +8,11 @@
 
 **Branch:** `master`
 
-**Code release commit:** `4e54c39` — `feat(upload): add reviewed bulk report queue`
+**Latest code release:** `1a8ea47` — `feat(profit): estimate ads PPN in daily summary`
 
-**Last code verification deployment:** `dpl_8sVCM8uuL71w15UV3qmgmh3nPz4b` — `Ready`
+**Last code verification deployment:** `dpl_Frw4Geu2zEawcpRqCooadBhXQSmX` — `Ready`, Production
 
-> Baca file ini penuh sebelum menyentuh project. App production mengelola RAW **Order.all**, **Income**, **Balance**, **order exceptions**, **Ads**, **Master SKU shared**, dan **multi-toko**. UI Profit tetap belum tersedia; tetapi kelayakan perhitungan per-order dari RAW sudah diuji read-only dengan kontrak pada bagian 5.
+> Baca file ini penuh sebelum menyentuh project. App production mengelola RAW **Order.all**, **Income**, **Balance**, **order exceptions**, **Ads**, **Master SKU shared**, dan **multi-toko**. `/profit` live sebagai **Profit & Estimasi** dengan tab **Estimasi Kotor** read-only; Profit Aktual tetap sengaja terkunci sampai kontrak settlement/return/QC disetujui.
 
 ---
 
@@ -52,13 +52,21 @@
 6. **RAW Expansion — source evidence per store**
    - Balance Transaction, Cancellation, Failed Delivery, Return/Refund, dan Ads Ledger tersedia pada Upload serta halaman `/balance`, `/exceptions`, dan `/ads`.
    - Semua report baru menggunakan preview-first, package SHA-256 per store, source-row provenance, dan preview ticket yang terikat store/hash/report.
-   - DDL sepuluh tabel RAW sudah dibuat dari backup tervalidasi. Production preview-only Balance lulus dengan reconciliation dan ledger continuity `matched`, tanpa write.
-   - Semua tabel RAW Expansion masih kosong sampai operator memberi approval import eksplisit.
+   - DDL tabel RAW sudah dibuat dari backup tervalidasi. Data operasional TACTICALIZED sudah diimport; package/count terbaru wajib dicek dari API production atau database read-only.
+
+7. **Profit & Estimasi — read-only**
+   - `/profit` memuat tab **Estimasi Kotor** secara manual; ia tidak melakukan import, mutation, atau perubahan RAW.
+   - `GET /api/profit-estimation` mengembalikan summary, Ringkasan Harian, dan detail order store-scoped.
+   - Estimasi tidak memakai Income, settlement `Penghasilan / Order`, atau cohort historis. Order eligible tetap mendapat angka bila Subtotal Pesanan, voucher seller, quantity, dan HPP valid.
+   - Basis per order adalah `Σ(Subtotal Pesanan item) − Σ(Voucher Ditanggung Penjual item)`, lalu dikurangi potongan standar Shopee dan HPP item.
+   - Ads Spend hanya berasal dari `Deduction for Product Ad` dengan nominal signed negatif.
+   - `Estimasi PPN Iklan (11%)` adalah alokasi dari Ads Spend harian, dibulatkan ke rupiah penuh per hari; ia bukan row pajak aktual dari Ads RAW.
+   - Summary PPN menjumlahkan alokasi harian agar selalu cocok dengan Ringkasan Harian. `Sisa Setelah Ads & PPN` mengurangi Ads Spend dan PPN tepat satu kali.
 
 ### Belum tersedia — jangan diasumsikan valid
 
-- UI/API Profit yang dipublikasikan; route Profit tetap guard `503 PROFIT_NOT_READY`.
-- Ads accounting layer dan alokasi biaya iklan ke order/item.
+- Profit Aktual per order/per hari dari settlement `Penghasilan / Order`; legacy endpoint Profit Aktual tetap guard `503 PROFIT_NOT_READY`.
+- Ads cashflow/accounting lengkap dan alokasi biaya iklan aktual ke order/item. Estimasi PPN harian bukan pengganti transaksi cash top-up.
 - Biaya eksternal per order: packaging tambahan, tenaga kerja, dan biaya operasional lain.
 - Keputusan QC persediaan retur: layak restock, rusak, atau hilang.
 - Multi-user ownership authorization per store.
@@ -73,10 +81,15 @@ Profit Bersih Produk Saat Ini
 = Dana Dilepas Shopee (Penghasilan / Order signed_total)
 - Σ(HPP Master × quantity item)
 
-Order masih proses pengiriman
-Estimasi Kotor Sementara
-= Total Pembayaran Pembeli
+Order eligible sebelum settlement
+Estimasi Kotor Setelah HPP
+= Estimasi Penghasilan Seller
 - Σ(HPP Master × quantity item)
+
+Estimasi Penghasilan Seller
+= Σ(Subtotal Pesanan item)
+- Σ(Voucher Ditanggung Penjual item)
+- Estimasi potongan standar Shopee
 
 Order retur/refund
 Kerugian Cash Settlement Shopee
@@ -94,13 +107,16 @@ Aturan interpretasi:
 - HPP memakai `Nomor Referensi SKU` terlebih dahulu, lalu `SKU Induk` sebagai fallback; Master SKU yang berisi alias ekuivalen adalah bukti mapping, bukan HPP tambahan untuk dijumlahkan.
 - Untuk retur, HPP hanya menjadi kerugian jika barang hilang/rusak/tidak layak dijual lagi. Barang yang lolos QC dan kembali ke stok tidak boleh mengurangi HPP kedua kali.
 - `Seller Fee` audit-only; jangan ditambahkan lagi ke settlement `Penghasilan`.
-- Packaging, tenaga kerja, dan ads belum termasuk hingga ada kontrak alokasi per order.
+- Packaging, tenaga kerja, dan Ads belum termasuk dalam Profit Aktual hingga ada kontrak alokasi per order.
+- Estimasi Kotor memakai Subtotal Pesanan seller, voucher seller, potongan standar Shopee, dan HPP; ia tidak menunggu Income/settlement/cohort historis.
+- Ads Spend dan Estimasi PPN Iklan 11% adalah angka agregat toko/hari; keduanya tidak dialokasikan ke order/item.
+- Kontrak formula dan batas model: `ESTIMATION-KOTOR-LOGIC.md`.
 
 Report yang dapat dihasilkan dari RAW sekarang:
 
 - Profit bersih aktual per order yang settlement dan HPP-nya terbukti.
 - Kerugian cash dari settlement Shopee, termasuk dampak refund/potongan yang sudah tercermin dalam settlement.
-- Estimasi kotor sementara untuk order yang belum dana-dilepas.
+- Estimasi kotor sementara untuk order yang belum dana-dilepas, serta ringkasan harian sebelum fee dengan Ads Spend dan Estimasi PPN Iklan.
 - Margin aktual/estimasi, rincian potongan Shopee, rekonsiliasi Penghasilan dengan Balance, serta status risiko Cancellation/Failed Delivery/Return/Refund/Adjustment.
 
 ### Snapshot runtime saat dokumentasi diperbarui
@@ -110,13 +126,13 @@ Report yang dapat dihasilkan dari RAW sekarang:
 - Nilai row/package bersifat dinamis. Query database read-only atau canonical production API sebelum membuat klaim count, package, atau periode terbaru.
 - Dokumentasi financial per-order di atas berasal dari probe database read-only terhadap data yang sudah tersimpan; tidak ada data ditulis atau diubah selama probe.
 
-Route dan halaman Profit sengaja mengembalikan:
+Route legacy Profit Aktual sengaja mengembalikan:
 
 ```text
 503 PROFIT_NOT_READY
 ```
 
-Itu adalah product guard, bukan masalah deployment.
+Itu adalah product guard, bukan masalah deployment. Halaman `/profit` sendiri adalah **Profit & Estimasi**; tab Estimasi Kotor tetap read-only dan bukan pengganti Profit Aktual.
 
 ---
 
@@ -455,37 +471,33 @@ DASHBOARD_AUTH_ENABLED
 
 ---
 
-## 9. Verifikasi yang Sudah Terbukti
+## 9. Verifikasi Release Terkini
 
-Code release Income legacy-fee:
-
-```text
-Income regression suite                        16/16 PASS
-npm test                                      64/65 PASS; satu live-fixture lama mengharuskan minimal dua store
-./node_modules/.bin/tsc --noEmit ...          PASS
-npm run build                                 PASS
-git diff --check                              PASS
-Independent read-only review                  PASS
-Production preview-only Income Mei            200; reconciliation matched; database tidak berubah
-Post-import source-to-DB audit                parent hash, source-row identity, dan child integrity PASS
-```
-
-Production behavior yang sudah terverifikasi:
+Code release Estimasi PPN Iklan:
 
 ```text
-Tanpa Basic Auth                              401
-/api/stores dengan Auth                       200
-Pagination invalid/unsafe                     400
-SKU importId invalid                          400
-Profit legacy                                 503 PROFIT_NOT_READY
-Store clear/reset/delete                      guarded confirmation + scope checks
-Income RAW                                  diisolasi per store saat diimport
-TACTICALIZED Income Mei                       satu package; reconciliation matched
-Income RAW active-section identity            source-row parity dan tanpa orphan
-Master SKU                                   tetap shared setelah clear/hapus store
+Commit                                      1a8ea47
+Deploy code verification                    dpl_Frw4Geu2zEawcpRqCooadBhXQSmX (Ready, Production)
+npm test                                    PASS
+TypeScript                                  PASS
+npm run lint                                PASS
+npm run build                               PASS
+git diff --check                            PASS
+Independent read-only review                PASS
 ```
 
-`npm run lint` masih memiliki baseline legacy (`any`, `require()`, React hook rule). Jangan menyebut lint sebagai PASS atau mencampurkannya dengan build/typecheck PASS.
+Smoke production authenticated:
+
+```text
+/profit                                     200
+/api/profit-estimation                      200
+PPN summary + Ringkasan Harian fields       present dan rekonsiliasi
+Tanggal kalender tidak valid                400
+Profit Aktual legacy                        503 PROFIT_NOT_READY
+Tanpa Basic Auth ke /profit                 401
+```
+
+Tidak ada import, mutation, migration, atau perubahan RAW saat release Estimasi PPN. Semua validasi runtime memakai `GET` read-only.
 
 ---
 

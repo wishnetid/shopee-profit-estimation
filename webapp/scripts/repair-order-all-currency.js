@@ -5,6 +5,12 @@
  *
  * Default mode is read-only dry-run. Use --apply only after a verified DB backup exists.
  * Source priority is the report window end date embedded in each Order.all filename.
+ *
+ * The current physical identity includes Harga Setelah Diskon. A pre-identity
+ * legacy row can contain a malformed stored price, so this tool permits a
+ * three-field fallback only when exactly one source line and one DB line share
+ * that legacy key. Promotion-split groups remain ambiguous and are never
+ * repaired automatically.
  */
 
 const fs = require('fs');
@@ -12,7 +18,11 @@ const path = require('path');
 const crypto = require('crypto');
 const mysql = require('mysql2/promise');
 const XLSX = require('xlsx');
-const { parseIdr } = require('../lib/order-all-import.js');
+const {
+  getOrderAllCompositeKeyFromExcelRow,
+  getOrderAllCompositeKeyFromStoredRow,
+  parseIdr,
+} = require('../lib/order-all-import.js');
 
 const APPLY = process.argv.includes('--apply');
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
@@ -48,10 +58,34 @@ function reportWindowEnd(fileName) {
   return match[1];
 }
 
+function normalizeLegacyKeyPart(value) {
+  const text = String(value ?? '').trim();
+  return text === '' ? null : text;
+}
+
+function getLegacyOrderKey(parts) {
+  const normalized = parts.map(normalizeLegacyKeyPart);
+  return normalized.some((value) => value === null) ? null : normalized.join('||');
+}
+
+function getLegacyOrderKeyFromExcelRow(row) {
+  return getLegacyOrderKey([
+    row['No. Pesanan'],
+    row['Nomor Referensi SKU'],
+    row['Nama Variasi'],
+  ]);
+}
+
+function getLegacyOrderKeyFromStoredRow(row) {
+  return getLegacyOrderKey([
+    row.no_pesanan,
+    row.nomor_referensi_sku,
+    row.nama_variasi,
+  ]);
+}
+
 function keyOf(row) {
-  return [row['No. Pesanan'], row['Nomor Referensi SKU'], row['Nama Variasi']]
-    .map((value) => String(value ?? '').trim())
-    .join('||');
+  return getOrderAllCompositeKeyFromExcelRow(row) || '(physical identity tidak valid)';
 }
 
 function parseInteger(value) {
@@ -64,6 +98,8 @@ function readLatestRawRows() {
     .filter((file) => /^Order\.all\.\d{8}_\d{8}\.xlsx$/.test(file))
     .sort((left, right) => reportWindowEnd(left).localeCompare(reportWindowEnd(right)) || left.localeCompare(right));
 
+  // Later snapshots replace the same physical line, while price-split lines
+  // stay independent because their full identity differs.
   const rows = new Map();
   for (const file of files) {
     const workbook = XLSX.readFile(path.join(SAMPLE_DIR, file));
@@ -71,14 +107,102 @@ function readLatestRawRows() {
     if (!sheet) throw new Error(`${file}: sheet orders not found`);
 
     for (const row of XLSX.utils.sheet_to_json(sheet, { defval: null })) {
-      const keyParts = [row['No. Pesanan'], row['Nomor Referensi SKU'], row['Nama Variasi']]
-        .map((value) => String(value ?? '').trim());
-      if (keyParts.some((value) => value === '')) throw new Error(`${file}: empty composite key`);
-      rows.set(keyParts.join('||'), { file, row });
+      const key = getOrderAllCompositeKeyFromExcelRow(row);
+      if (!key) throw new Error(`${file}: physical Order.all identity is incomplete`);
+      rows.set(key, { file, row });
     }
   }
 
   return { files, rows };
+}
+
+function addToGroup(groups, key, value) {
+  const existing = groups.get(key);
+  if (existing) existing.push(value);
+  else groups.set(key, [value]);
+}
+
+function matchSourceRowsToDbRows(sourceRows, dbRows) {
+  const sourceByPhysicalKey = new Map();
+  const sourceByLegacyKey = new Map();
+  for (const source of sourceRows) {
+    const physicalKey = getOrderAllCompositeKeyFromExcelRow(source.row);
+    const legacyKey = getLegacyOrderKeyFromExcelRow(source.row);
+    if (!physicalKey || !legacyKey) {
+      throw new Error(`${source.file || 'source'}: physical Order.all identity is incomplete`);
+    }
+    if (sourceByPhysicalKey.has(physicalKey)) {
+      throw new Error(`${source.file || 'source'}: duplicate physical Order.all identity`);
+    }
+    sourceByPhysicalKey.set(physicalKey, source);
+    addToGroup(sourceByLegacyKey, legacyKey, source);
+  }
+
+  const dbByPhysicalKey = new Map();
+  const dbByLegacyKey = new Map();
+  for (const dbRow of dbRows) {
+    const physicalKey = getOrderAllCompositeKeyFromStoredRow(dbRow);
+    const legacyKey = getLegacyOrderKeyFromStoredRow(dbRow);
+    if (!physicalKey || !legacyKey) {
+      throw new Error(`Database row ${dbRow.id}: physical Order.all identity is incomplete`);
+    }
+    if (dbByPhysicalKey.has(physicalKey)) {
+      throw new Error(`Database contains duplicate physical Order.all identity: ${physicalKey}`);
+    }
+    dbByPhysicalKey.set(physicalKey, dbRow);
+    addToGroup(dbByLegacyKey, legacyKey, dbRow);
+  }
+
+  const matches = [];
+  const missingInDb = [];
+  const ambiguousLegacyIdentity = [];
+  const matchedDbRows = new Set();
+
+  for (const [physicalKey, source] of sourceByPhysicalKey) {
+    const legacyKey = getLegacyOrderKeyFromExcelRow(source.row);
+    let dbRow = dbByPhysicalKey.get(physicalKey);
+    let matchMode = 'physical';
+
+    if (!dbRow) {
+      const sourceCandidates = sourceByLegacyKey.get(legacyKey) || [];
+      const dbCandidates = dbByLegacyKey.get(legacyKey) || [];
+      if (dbCandidates.length === 0) {
+        missingInDb.push({ key: physicalKey, file: source.file });
+        continue;
+      }
+      if (sourceCandidates.length !== 1 || dbCandidates.length !== 1) {
+        ambiguousLegacyIdentity.push({
+          legacyKey,
+          sourcePhysicalKey: physicalKey,
+          sourceCandidateCount: sourceCandidates.length,
+          dbCandidateCount: dbCandidates.length,
+        });
+        continue;
+      }
+      [dbRow] = dbCandidates;
+      matchMode = 'legacy_unambiguous_fallback';
+    }
+
+    if (matchedDbRows.has(dbRow)) {
+      ambiguousLegacyIdentity.push({
+        legacyKey,
+        sourcePhysicalKey: physicalKey,
+        sourceCandidateCount: (sourceByLegacyKey.get(legacyKey) || []).length,
+        dbCandidateCount: (dbByLegacyKey.get(legacyKey) || []).length,
+      });
+      continue;
+    }
+
+    matchedDbRows.add(dbRow);
+    matches.push({ source, dbRow, physicalKey, matchMode });
+  }
+
+  return {
+    matches,
+    missingInDb,
+    ambiguousLegacyIdentity,
+    unexpectedDbRows: dbRows.filter((row) => !matchedDbRows.has(row)),
+  };
 }
 
 function valuesFor(row) {
@@ -94,6 +218,40 @@ function valuesFor(row) {
 
 function differs(dbRow, expected) {
   return Object.entries(expected).some(([column, value]) => Number(dbRow[column]) !== value);
+}
+
+function buildRepairPlan(sourceRows, dbRows) {
+  const matching = matchSourceRowsToDbRows(sourceRows, dbRows);
+  const updates = [];
+  for (const match of matching.matches) {
+    const expected = valuesFor(match.source.row);
+    if (differs(match.dbRow, expected)) {
+      updates.push({
+        id: match.dbRow.id,
+        key: match.physicalKey,
+        file: match.source.file,
+        match_mode: match.matchMode,
+        expected,
+      });
+    }
+  }
+
+  return {
+    updates,
+    matching,
+    plan: {
+      mode: APPLY ? 'apply' : 'dry-run',
+      raw_latest_composite_rows: sourceRows.length,
+      db_rows: dbRows.length,
+      rows_requiring_currency_repair: updates.length,
+      missing_in_db: matching.missingInDb.length,
+      unexpected_db_rows: matching.unexpectedDbRows.length,
+      ambiguous_legacy_identity: matching.ambiguousLegacyIdentity.length,
+      plan_sha256: crypto.createHash('sha256').update(JSON.stringify(updates)).digest('hex'),
+      sample_updates: updates.slice(0, 3),
+      sample_ambiguous_legacy_identity: matching.ambiguousLegacyIdentity.slice(0, 3),
+    },
+  };
 }
 
 async function main() {
@@ -113,44 +271,19 @@ async function main() {
 
   try {
     const [dbRows] = await db.query(`
-      SELECT id, no_pesanan, nomor_referensi_sku, nama_variasi,
+      SELECT id, no_pesanan, nomor_referensi_sku, nama_variasi, harga_setelah_diskon,
         ${Object.values(NUMERIC_COLUMNS).join(', ')}
       FROM order_all
     `);
-    const dbByKey = new Map(dbRows.map((row) => [
-      [row.no_pesanan, row.nomor_referensi_sku, row.nama_variasi].map((value) => String(value ?? '').trim()).join('||'),
-      row,
-    ]));
-
-    const updates = [];
-    const missingInDb = [];
-    for (const [key, source] of rows) {
-      const current = dbByKey.get(key);
-      if (!current) {
-        missingInDb.push({ key, file: source.file });
-        continue;
-      }
-      const expected = valuesFor(source.row);
-      if (differs(current, expected)) updates.push({ id: current.id, key, file: source.file, expected });
-    }
-
-    const unexpectedDbRows = [...dbByKey.keys()].filter((key) => !rows.has(key));
-    const plan = {
-      mode: APPLY ? 'apply' : 'dry-run',
-      source_files_in_priority_order: files,
-      raw_latest_composite_rows: rows.size,
-      db_rows: dbRows.length,
-      rows_requiring_currency_repair: updates.length,
-      missing_in_db: missingInDb.length,
-      unexpected_db_rows: unexpectedDbRows.length,
-      plan_sha256: crypto.createHash('sha256').update(JSON.stringify(updates)).digest('hex'),
-      sample_updates: updates.slice(0, 3),
-    };
+    const { updates, matching, plan } = buildRepairPlan([...rows.values()], dbRows);
+    plan.source_files_in_priority_order = files;
     console.log(JSON.stringify(plan, null, 2));
 
     if (!APPLY) return;
-    if (missingInDb.length || unexpectedDbRows.length) {
-      throw new Error('Refusing repair because raw/DB composite key sets differ');
+    if (matching.missingInDb.length
+      || matching.unexpectedDbRows.length
+      || matching.ambiguousLegacyIdentity.length) {
+      throw new Error('Refusing repair because raw/DB physical identity sets are incomplete or ambiguous');
     }
 
     const updateColumns = Object.values(NUMERIC_COLUMNS);
@@ -175,7 +308,18 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error.stack || error.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error.stack || error.message);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  NUMERIC_COLUMNS,
+  buildRepairPlan,
+  getLegacyOrderKeyFromExcelRow,
+  getLegacyOrderKeyFromStoredRow,
+  matchSourceRowsToDbRows,
+  readLatestRawRows,
+};

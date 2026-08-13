@@ -142,23 +142,64 @@ function parseSnapshotAt(value) {
   return `${yearText}-${monthText}-${dayText} ${hourText}:${minuteText}:${secondText}`;
 }
 
+const ORDER_ALL_IDENTITY_COLUMNS = Object.freeze([
+  'no_pesanan',
+  'nomor_referensi_sku',
+  'nama_variasi',
+  'harga_setelah_diskon',
+]);
+
+function parseOrderAllDiscountedPrice(value) {
+  const sourceAmount = parseIdr(value);
+  if (sourceAmount !== null && sourceAmount >= 0) return sourceAmount;
+
+  // mysql2 normally returns DECIMAL as a dot-decimal string (for example
+  // "95500.00"), whereas Shopee exports Indonesian dot-thousands text
+  // ("95.500"). Preserve source parsing priority so "95.500" remains 95500.
+  const text = normalizeEmpty(value);
+  if (!text || !/^-?\d+(?:\.\d+)?$/.test(text)) return null;
+  const databaseAmount = Number(text);
+  return Number.isFinite(databaseAmount) && databaseAmount >= 0 ? databaseAmount : null;
+}
+
+function getOrderAllIdentityValues(row) {
+  const values = [
+    normalizeEmpty(row.no_pesanan),
+    normalizeEmpty(row.nomor_referensi_sku),
+    normalizeEmpty(row.nama_variasi),
+    parseOrderAllDiscountedPrice(row.harga_setelah_diskon),
+  ];
+  return values.some((value) => value === null) ? null : values;
+}
+
+function getOrderAllCompositeKeyFromStoredRow(row) {
+  const values = getOrderAllIdentityValues(row);
+  if (!values) return null;
+  const [noPesanan, nomorReferensiSku, namaVariasi, hargaSetelahDiskon] = values;
+  return [noPesanan, nomorReferensiSku, namaVariasi, hargaSetelahDiskon.toFixed(2)].join('||');
+}
+
+function getOrderAllCompositeKeyFromExcelRow(row) {
+  return getOrderAllCompositeKeyFromStoredRow({
+    no_pesanan: row['No. Pesanan'],
+    nomor_referensi_sku: row['Nomor Referensi SKU'],
+    nama_variasi: row['Nama Variasi'],
+    harga_setelah_diskon: row['Harga Setelah Diskon'],
+  });
+}
+
 function validateOrderAllCompositeKeys(rows) {
   const seen = new Set();
   const duplicates = [];
   const missing = [];
 
   rows.forEach((row, index) => {
-    const keyParts = [
-      normalizeEmpty(row['No. Pesanan']),
-      normalizeEmpty(row['Nomor Referensi SKU']),
-      normalizeEmpty(row['Nama Variasi']),
-    ];
-    if (keyParts.some((value) => value === null)) {
+    const key = getOrderAllCompositeKeyFromExcelRow(row);
+    if (!key) {
       missing.push(index + 2);
       return;
     }
 
-    const key = keyParts.join('||');
     if (seen.has(key)) duplicates.push({ row: index + 2, key });
     else seen.add(key);
   });
@@ -283,7 +324,12 @@ function shouldAllowImport({ newRows, changedRows }) {
 
 module.exports = {
   ORDER_ALL_HEADERS,
+  ORDER_ALL_IDENTITY_COLUMNS,
+  getOrderAllCompositeKeyFromExcelRow,
+  getOrderAllCompositeKeyFromStoredRow,
+  getOrderAllIdentityValues,
   parseIdr,
+  parseOrderAllDiscountedPrice,
   parseSnapshotAt,
   resolveOrderSnapshot,
   shouldAllowImport,

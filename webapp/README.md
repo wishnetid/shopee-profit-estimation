@@ -1,6 +1,6 @@
 # Shopee Profit Estimation — Web App
 
-Next.js 16 App Router dashboard for RAW Shopee Order.all, Income, and shared Master SKU management. Financial/profit calculation remains intentionally unavailable until its source contracts are analyzed and approved.
+Next.js 16 App Router dashboard for RAW Shopee Order.all, Income, shared Master SKU, dan monitoring Estimasi Kotor. Profit Aktual tetap sengaja unavailable sampai kontrak settlement, return, dan QC disetujui.
 
 **Production:** https://webapp-umber-five.vercel.app
 
@@ -20,18 +20,20 @@ npm run dev
 - **Order All:** Store-scoped current-state item snapshots.
 - **Income:** Store-scoped RAW packages; `Penghasilan / Order`, `Penghasilan / Sku`, Adjustment, and Shipping Fee Discrepancy stay separate.
 - **SKU Master:** Shared RAW source packages; no HPP mapping or profit join at this layer.
-- **Profit:** Explicit `PROFIT_NOT_READY` guard; UI/API calculator belum dipublikasikan. RAW sudah terbukti dapat mendukung probe read-only profit per-order, cash settlement return, dan estimasi sebelum fee.
+- **Profit & Estimasi:** `/profit` menyediakan Estimasi Kotor Setelah HPP manual-load, read-only, dan store-scoped. Basisnya adalah Subtotal Pesanan seller dikurangi voucher seller, potongan standar Shopee, dan HPP; tidak menunggu Income/settlement/cohort historis. Ringkasan Harian menampilkan Ads Spend, Estimasi PPN Iklan 11%, dan Sisa Setelah Ads & PPN. Profit Aktual legacy tetap `PROFIT_NOT_READY`.
 - **Settings:** Guarded store-scoped clear, shared SKU reset, and safe store deletion controls.
 
 ## Runtime Contract
 
-- Basic Auth is required for page and API access.
-- Every mutation additionally requires Basic Auth and same-origin validation.
+- Browser access memakai custom Login Page; sesi HTTP-only yang ditandatangani dibuat setelah dashboard credential valid.
+- Setiap mutasi dari browser membutuhkan sesi login dan validasi same-origin.
 - Income packages are identified by `(store_id, source_sha256)`; exact hash is a no-op only within the same store.
 - Income RAW child identity is `(income_report_import_id, source_excel_row)`.
 - When a legacy export has aggregate `Biaya Layanan`, validated XTRA/Gratis Ongkir breakdown labels remain in `raw_payload` but are excluded from the signed reconciliation checksum to prevent double counting.
 - `Summary 3. Total yang Dilepas` must reconcile with `Penghasilan / Order`; mismatches block import.
 - `Seller Fee` is audit-only and is not a materialized RAW transaction table yet.
+- Ads Spend hanya memakai `Deduction for Product Ad` bernilai signed negatif. Estimasi PPN Iklan dihitung 11% per hari, dibulatkan ke rupiah penuh, lalu dijumlahkan ke summary agar cocok dengan Ringkasan Harian.
+- Estimasi PPN bukan transaksi pajak RAW harian dan tidak boleh dianggap sebagai alokasi biaya aktual per order/item.
 
 ## Verification
 

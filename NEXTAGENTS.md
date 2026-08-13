@@ -8,9 +8,9 @@
 
 **Branch:** `master`
 
-**Code release:** `c41c890` — `feat(profit): add gross estimation dashboard`
+**Code release:** pending current estimation-logic release
 
-**Last code verification deployment:** `dpl_8pfdd8wtTBsjxsPAgn2DG3Z4cFBa` — `Ready`, Production
+**Last code verification deployment:** pending current estimation-logic release
 
 > Mulai dengan membaca `README.md` penuh, lalu file ini. RAW Order.all, Income, Balance, order exceptions, Ads, dan Master SKU shared sudah live. **Estimasi Kotor** sudah live di `/profit`; Profit Aktual tetap disengaja terkunci. Jangan migration, import, clear, reset, atau hapus store tanpa diskusi/approval.
 
@@ -49,8 +49,11 @@ Master SKU
 - `GET /api/profit-estimation` live, read-only, store-scoped. Ia menampilkan summary, daily aggregate, serta detail order paginated untuk monitoring Ads Spend.
 - Scope Estimasi Kotor bukan migration DB, bukan import, dan bukan perubahan RAW source.
 - Formula Estimasi Kotor: satu `Total Pembayaran` order dikurangi Σ(HPP × quantity). Bukan Profit Bersih.
+- Ads Spend hanya `Deduction for Product Ad` dengan nominal signed negatif.
+- Estimasi PPN Iklan = 11% Ads Spend per hari, dibulatkan ke rupiah penuh per hari; summary adalah jumlah seluruh PPN harian agar cocok dengan Ringkasan Harian.
+- Sisa Estimasi Setelah Ads & PPN = Estimasi Kotor − Ads Spend − Estimasi PPN. PPN ini alokasi estimasi, bukan row pajak aktual Ads RAW dan bukan biaya yang dialokasikan ke per order/item.
 - Legacy `/api/profit-calculation` dan `/api/profit-calculation/summary` tetap `503 PROFIT_NOT_READY`; itu adalah boundary Profit Aktual.
-- GitHub `master` memuat release `c41c890`; canonical production deployment `dpl_8pfdd8wtTBsjxsPAgn2DG3Z4cFBa` sudah Ready dan smoke test production lulus.
+- GitHub `master` memuat release `1a8ea47`; canonical production deployment `dpl_Frw4Geu2zEawcpRqCooadBhXQSmX` sudah Ready dan smoke test production lulus.
 - Master SKU tetap shared/global. State Order/Income/RAW terbaru wajib dicek dari database read-only atau API production karena data operasional dapat berubah.
 
 ### Belum selesai
@@ -247,48 +250,53 @@ Jangan membuat halaman Ads kedua untuk kalkulasi. `/ads` tetap halaman RAW/audit
 ### Kontrak angka yang disetujui
 
 ```text
-Estimasi Kotor Sebelum Fee & Ads per order
-= satu nilai Total Pembayaran order-level
-- Σ(HPP Master × jumlah item)
+Basis potongan standar Shopee
+= Σ(Subtotal Pesanan item)
+- Σ(Voucher Ditanggung Penjual item)
 
-Estimasi Kotor Harian
-= Σ Estimasi Kotor order eligible dan HPP-lengkap pada tanggal order
+Biaya Administrasi             = round(basis × 8,25%)
+Biaya Proses Pesanan           = Rp1.250 per order
+Biaya Gratis Ongkir XTRA       = round(basis × 5%)
+Biaya Layanan Promo XTRA       = round(basis × 4,5%)
+Premi                          = round(basis × 0,5%)
 
-Ads Spend Harian
-= Σ abs(Jumlah signed) untuk transaksi Ads
-  dengan deskripsi mulai "Deduction for Product Ad"
-  dan nilai signed negatif
+Estimasi Penghasilan Seller
+= basis - semua potongan standar
 
-Sisa Estimasi Setelah Ads per hari
-= Estimasi Kotor Harian - Ads Spend Harian
+Estimasi Kotor Setelah HPP per order
+= Estimasi Penghasilan Seller
+- Σ(HPP Master × quantity item)
+
+Sisa Setelah Ads & PPN per hari
+= Σ(Estimasi Kotor Setelah HPP order eligible)
+- Ads Spend Harian
+- Estimasi PPN Iklan Harian
 ```
 
-Label UI wajib memakai istilah berikut, bukan `Profit Bersih`:
+`Subtotal Pesanan` berada pada grain item dan dijumlahkan lintas seluruh item pesanan. Formula ini sengaja tidak memakai `Total Pembayaran Pembeli`: nominal buyer-side dapat memuat komponen ongkir, voucher buyer, atau biaya layanan buyer yang bukan basis penghasilan seller.
+
+Label UI:
 
 ```text
-Estimasi Kotor Sebelum Fee & Ads
+Estimasi Kotor Setelah HPP
 Ads Spend
-Sisa Estimasi Setelah Ads
+Estimasi PPN Iklan (11%)
+Sisa Setelah Ads & PPN
 Profit Aktual — Belum Tersedia
 ```
-
-`Sisa Estimasi Setelah Ads` adalah angka agregat hari/toko. Jangan mengalokasikan Ads Spend ke order atau item sampai ada relasi campaign/order yang terbukti.
 
 ### Batas data dan safety rule
 
 1. **Order eligible** hanya memiliki status `Perlu Dikirim`, `Sedang Dikirim`, `Telah Dikirim`, atau `Selesai`.
 2. Exclude order jika `Alasan Pembatalan` atau `Status Pembatalan/ Pengembalian` pada `Order.all` memiliki nilai bisnis. Perlakukan kosong, `-`, `N/A`, dan `null` sebagai blank saja.
-3. Sebagai guard tambahan, exclude juga seluruh `no_pesanan` yang ada pada RAW Cancellation, Return/Refund, atau Failed Delivery untuk toko aktif, walaupun current-state `Order.all` masih `Selesai`/`Telah Dikirim` dan marker-nya blank. RAW exception dapat lebih baru dari snapshot current-state.
-4. `returned_quantity > 0` pada salah satu item membuat seluruh order `Tidak Eligible`. Ini guard fail-closed walaupun marker return belum muncul atau RAW exception belum terimport.
-5. Satu order dapat punya banyak item. `Total Pembayaran` adalah nilai order-level dan **tidak boleh dijumlahkan per item row**.
-6. Bila satu order mempunyai `Total Pembayaran` berbeda, tanggal order tidak valid/berbeda, quantity tidak valid, atau HPP item tidak lengkap/ambigu, tampilkan sebagai `Perlu Review` / `HPP Belum Lengkap` dan exclude dari total Estimasi Kotor.
-7. HPP missing/ambiguous tidak boleh diperlakukan sebagai Rp0.
-8. Mapping HPP memakai `Nomor Referensi SKU` lebih dulu, lalu `SKU Induk` fallback. Pada masing-masing field, cari `SKU1` dulu lalu `SKU2` dari **Master SKU import terbaru** seperti perilaku `/api/sku`.
-9. Alias Master SKU dengan HPP sama adalah satu mapping. Satu alias yang menghasilkan HPP berbeda adalah conflict; jangan pilih arbitrer dan jangan masukkan ke total.
-10. Tanggal order harian berasal dari kalender source `DATE(Waktu Pesanan Dibuat)` dalam WIB. Tanggal Ads memakai `transaction_date` source. Jangan group melalui parsing ISO UTC di browser karena bisa menggeser hari.
-11. Hanya `Deduction for Product Ad` bernilai negatif yang menjadi Ads Spend. `Isi Saldo` adalah top-up, `ROAS Protection Free Ads Credit Rebate` adalah kredit, dan transaksi Ads lain tidak boleh diam-diam dianggap spend.
-12. Jika export Ads periodik overlap, deduplicate hanya event dengan `sequence_number` nonblank serta fingerprint sama: tanggal source, deskripsi, nominal signed, dan catatan. Event tanpa `sequence_number` tidak boleh otomatis dicollapse; ia tetap dihitung agar transaksi sah tidak hilang. Return `adsDuplicateEventCount` untuk audit.
-13. Packaging, tenaga kerja, biaya operasional lain, Seller Fee, Income Order/Sku, settlement, return QC, dan refund final tetap di luar fase ini.
+3. Exclude juga `no_pesanan` yang ada pada RAW Cancellation, Return/Refund, atau Failed Delivery untuk toko aktif. RAW exception dapat lebih baru dari current-state snapshot.
+4. `returned_quantity > 0` pada salah satu item membuat seluruh order `Tidak Eligible`.
+5. `Subtotal Pesanan`, Voucher Ditanggung Penjual, tanggal, quantity, dan mapping HPP harus valid. HPP missing/ambiguous tidak boleh menjadi Rp0.
+6. Mapping HPP memakai `Nomor Referensi SKU`, fallback `SKU Induk`; lalu `SKU1`, fallback `SKU2`, dari Master SKU import terbaru. Alias dengan HPP berbeda adalah conflict.
+7. Income `Penghasilan / Order`, settlement, dan cohort payout historis **bukan syarat** Estimasi Kotor. Missing Income tidak boleh membuat order eligible berubah menjadi `—`.
+8. Komisi atau program khusus seperti AMS belum dimasukkan sebagai potongan standar. Jangan memasukkan rate global tanpa bukti coverage order-level.
+9. Ads dan PPN tetap agregat toko/hari. Jangan alokasikan ke order/item tanpa relasi campaign/order yang terbukti.
+10. Packaging, tenaga kerja, biaya operasional lain, Seller Fee, settlement, return QC, dan refund final tetap di luar fase ini.
 
 ### Target source dan test
 
@@ -315,14 +323,14 @@ GET /api/profit-estimation?storeId=<id>&dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD&pa
 
 ### Implementasi, review, dan release evidence
 
-1. Test-first helper, route contract, dan UI contract sudah lulus; `npm test`: **105 pass, 0 fail, 2 skip** live-fixture lama.
-2. `npm run lint -- --quiet`, `npm run build`, serta `git diff --check` lulus sebelum release.
-3. Tiga independent review dilakukan. Review pertama menemukan omission RAW exception; review kedua memverifikasi fix tersebut; review final memverifikasi `returned_quantity > 0` juga menjadi `not_eligible`. Tidak ada issue high/medium tersisa.
-4. Source release `c41c890` dipush ke GitHub `master`; local `HEAD` dan `origin/master` sama.
-5. Deployment Production `dpl_8pfdd8wtTBsjxsPAgn2DG3Z4cFBa` Ready pada canonical alias.
-6. Smoke production dengan Basic Auth lulus: `/profit` `200`; `/api/profit-estimation` `200` dan menghasilkan summary/daily/order; tanggal invalid `400`; legacy `/api/profit-calculation` tetap `503 PROFIT_NOT_READY`; request tanpa Basic Auth ke `/profit` `401`.
+1. Regression mencakup kalkulasi standar, pembulatan PPN ke rupiah penuh, summary yang menjumlahkan PPN harian, dan kondisi tanpa Ads Spend.
+2. `npm test`, TypeScript, `npm run lint -- --quiet`, `npm run build`, serta `git diff --check` lulus sebelum release.
+3. Independent review final menyatakan PASS: Ads Spend tetap negative Product Ad saja, PPN terlabel estimasi, API/guard Profit Aktual tidak berubah, dan UI/table contract konsisten.
+4. Source release `1a8ea47` dipush ke GitHub `master`; local `HEAD` dan `origin/master` sama.
+5. Deployment Production `dpl_Frw4Geu2zEawcpRqCooadBhXQSmX` Ready pada canonical alias.
+6. Smoke production dengan Basic Auth lulus: `/profit` `200`; `/api/profit-estimation` `200`, memuat field PPN summary/daily, summary PPN cocok dengan jumlah harian, dan final summary konsisten; tanggal invalid `400`; legacy `/api/profit-calculation` tetap `503 PROFIT_NOT_READY`; request tanpa Basic Auth ke `/profit` `401`.
 7. Tidak ada real upload/import/mutasi DB pada validasi Estimasi Kotor. Semua evidence live adalah `GET` read-only.
-8. Backup handoff sebelum release dan setelah production verification tersimpan di `Archive/docs-backups/` serta SHA-256 diverifikasi. Archive tidak di-stage.
+8. Backup dokumentasi sebelum release ada di `Archive/docs-backups/ppn-ads-estimation-20260813-020631/`; SHA-256 dan byte equality telah diverifikasi. Archive tidak di-stage.
 
 ### Runtime note
 
@@ -501,10 +509,316 @@ Master SKU                                   tetap shared setelah clear/hapus st
 
 ---
 
-## 9. Next Scope — Diskusi Dulu
+## 9. Next Scope — Estimation Layer (Rencana, Belum Implementasi)
+
+> **Status:** Rencana hasil diskusi. Belum ada tabel baru, migration, route, UI, import, atau perubahan database yang dilakukan.
+>
+> **Tujuan fase ini:** membuat estimasi seller yang bisa diperbarui berdasarkan potongan yang terlihat pada detail pesanan Shopee. Fase ini **bukan** implementasi Profit Bersih, Profit Aktual, settlement final, atau accounting lengkap.
+
+### 9.1 Boundary database yang wajib dipertahankan
+
+Database yang dipakai tetap:
+
+```text
+supplie3_shopee_profit_estimation
+```
+
+Tabel existing dibaca read-only dan tidak boleh diubah strukturnya maupun datanya:
+
+```text
+order_all
+income_report_imports
+income_penghasilan_raw
+income_adjustments_raw
+income_shipping_fee_discrepancies_raw
+sku_report_imports
+sku_master_raw
+balance_report_imports
+balance_transactions_raw
+order_cancellation_report_imports
+order_cancellation_raw
+order_failed_delivery_report_imports
+order_failed_delivery_raw
+order_return_refund_report_imports
+order_return_refund_raw
+ads_report_imports
+ads_transactions_raw
+```
+
+Larangan migration fase ini:
+
+```text
+Tidak ada ALTER TABLE pada tabel existing.
+Tidak ada penambahan kolom pada order_all atau RAW lain.
+Tidak ada perubahan data Order.all, Income, SKU, Balance, Exception, atau Ads.
+Tidak ada penggantian/penimpaan RAW source.
+```
+
+Yang boleh ditambahkan hanya tabel baru dengan prefix `estimation_` di database yang sama. Detail DDL tetap harus disetujui dan diaudit sebelum migration.
+
+### 9.2 Tujuan data layer baru
+
+`Order.all` hanya menjadi sumber identitas dan data pesanan. `Master SKU` menjadi sumber HPP. Potongan seller yang terlihat pada Dashboard Shopee disimpan di layer estimasi terpisah agar:
+
+```text
+Order.all existing + Master SKU existing + Estimation layer baru
+→ Estimasi seller setelah potongan dan HPP
+```
+
+Settlement Income tidak menjadi syarat untuk menghitung estimasi fase ini. Order yang belum masuk Income tetap dapat memiliki estimasi jika basis seller dan HPP-nya tersedia.
+
+### 9.3 Kandidat struktur tabel baru
+
+Nama dan kolom final masih harus dibahas sebelum migration. Struktur konseptual yang disiapkan:
+
+#### `estimation_order_revisions`
+
+Satu row adalah satu snapshot/revisi potongan untuk satu pesanan pada satu store.
+
+```text
+id
+store_id
+no_pesanan
+revision_no
+revision_status              active | superseded
+source_type                   manual_screenshot pada fase awal
+source_file / source_reference
+source_sha256                 bila ada artifact sumber
+source_captured_at
+seller_subtotal_source
+source_estimated_income       nilai pembanding dari detail Shopee, bila tersedia
+notes
+created_at
+created_by
+```
+
+- Scope berdasarkan `store_id` dan `no_pesanan`.
+- Tidak membuat foreign key wajib ke `order_all`; Order.all adalah current-state snapshot yang dapat berubah, sedangkan histori revisi estimasi harus tetap dapat diaudit.
+- Parent revision lama tidak dihapus. Hanya revision terbaru yang berstatus `active`.
+- `source_estimated_income` adalah nilai audit/reconciliation dari screenshot, bukan angka yang boleh dijumlahkan lagi ke komponen potongan.
+
+#### `estimation_order_adjustments`
+
+Satu row adalah satu komponen signed di dalam revision tertentu.
+
+```text
+id
+estimation_order_revision_id
+component_group
+component_code
+component_label
+amount_signed
+source_label
+sort_order
+raw_payload / source_note
+created_at
+```
+
+Aturan komponen:
+
+- Potongan disimpan negatif, misalnya `-190059`.
+- Kredit/subsidi/kompensasi yang memang menambah penghasilan disimpan positif.
+- Tidak memakai daftar kolom tetap seperti `biaya_admin`, `biaya_layanan`, dan `premi`; komponen baru dapat ditambahkan tanpa mengubah schema.
+- Parent group seperti `Biaya Platform` tidak dijumlahkan jika child detailnya sudah disimpan. Hanya komponen kalkulasi leaf yang dihitung.
+- Potongan yang hilang pada screenshot update tidak dihapus dari revision lama; komponen tersebut tidak muncul atau dinonaktifkan di revision baru.
+- HPP bukan input potongan manual. HPP tetap dibaca dari Master SKU existing; keputusan apakah basis HPP perlu disnapshot di revision akan ditetapkan sebelum migration agar perubahan Master SKU tidak mengubah histori secara diam-diam.
+
+Perhitungan hasil tidak perlu menjadi source table terpisah pada fase pertama. Hasil dihitung dari active revision + data Order.all + HPP, lalu ditampilkan sebagai read view.
+
+### 9.4 Kontrak perhitungan estimasi
+
+Jika data seller lengkap:
+
+```text
+Estimasi Penghasilan Seller
+= seller_subtotal_source
++ Σ adjustment.amount_signed
+
+Estimasi Setelah HPP
+= Estimasi Penghasilan Seller
+- Σ(HPP Master × quantity item)
+```
+
+Aturan penting:
+
+1. Gunakan `Subtotal Pesanan` dari sisi seller/detail Shopee sebagai basis bila tersedia. Jangan mengganti basis seller dengan `Total Pembayaran Pembeli` tanpa label yang berbeda.
+2. `Total Pembayaran Pembeli` tetap dipertahankan sebagai data Order.all dan informasi pembanding, bukan otomatis sebagai `Estimasi Total Penghasilan Seller`.
+3. Satu nilai order-level tidak boleh dijumlahkan berulang pada setiap item row.
+4. HPP dihitung pada grain item/variasi, lalu dijumlahkan ke level order.
+5. Potongan yang belum diinput, ambigu, atau belum terbukti tidak boleh dianggap `Rp0`.
+6. Jika basis seller atau HPP belum lengkap, tampilkan `—`/`Potongan Belum Diinput`/`HPP Belum Lengkap`, bukan angka palsu.
+7. `Estimasi Setelah HPP` tidak boleh diberi label `Profit Bersih` atau `Profit Aktual` pada fase ini.
+8. Ads Spend dan Estimasi PPN tetap menjadi biaya agregat harian. Jangan dialokasikan ke order/item tanpa relasi campaign/order yang terbukti.
+9. Settlement `Income / Penghasilan / Order` dan proyeksi payout historis tetap di luar kontrak Estimasi Seller fase ini.
+
+Label UI yang direncanakan:
+
+```text
+Estimasi Kotor Sebelum Potongan
+Total Potongan Seller
+Estimasi Penghasilan Setelah Potongan
+HPP
+Estimasi Setelah HPP
+Potongan Belum Diinput
+HPP Belum Lengkap
+```
+
+Label `Estimasi Profit Bersih Shopee` tidak boleh dipakai untuk hasil fase ini.
+
+### 9.5 Letak dan bentuk UI
+
+Layer baru disimpan dan dilihat melalui halaman existing:
+
+```text
+/profit
+└── Profit & Estimasi
+    ├── Estimasi Kotor
+    ├── Potongan Estimasi
+    └── Profit Aktual — tetap terkunci
+```
+
+Tidak membuat menu global baru di bottom navigation, tidak menaruh data ini di Settings, dan tidak mencampurnya dengan halaman Income/Ads RAW.
+
+#### Daftar `Potongan Estimasi`
+
+Daftar store aktif dengan kolom konseptual:
+
+```text
+No. Pesanan
+Tanggal
+Status Order
+Subtotal Seller
+Total Potongan
+HPP
+Estimasi Setelah HPP
+Revision aktif
+Update terakhir
+Status kelengkapan
+```
+
+#### Detail pesanan
+
+Saat order dibuka, tampilkan:
+
+```text
+Data Order.all                 read-only
+Master SKU/HPP                 read-only
+Revision potongan aktif        read-only sebelum update
+Daftar komponen signed         detail leaf
+Total potongan
+Estimasi seller
+Estimasi setelah HPP
+Riwayat revisi
+```
+
+### 9.6 Mekanisme update melalui UI
+
+Update dilakukan melalui **form UI**, bukan edit database langsung:
+
+```text
+Profit & Estimasi
+→ Potongan Estimasi
+→ cari No. Pesanan
+→ buka detail
+→ klik “Buat Update/Revisi”
+→ form menyalin komponen revision aktif
+→ tambah/edit/nonaktifkan komponen
+→ lampirkan atau catat screenshot sumber
+→ lihat preview perubahan dan hasil estimasi
+→ simpan revision baru
+```
+
+Aturan revision:
+
+1. Revision aktif lama tidak diedit atau dihapus permanen.
+2. Nominal berubah → buat revision baru.
+3. Komponen baru → tambah row pada revision baru.
+4. Komponen dihilangkan → tidak dimasukkan pada revision baru atau ditandai removed melalui diff; row revision lama tetap utuh.
+5. Simpan parent revision dan seluruh child component dalam satu transaction pada tabel baru.
+6. Setelah berhasil, revision lama menjadi `superseded`, revision baru menjadi `active`.
+7. Summary dan detail hanya memakai satu active revision per `store_id + no_pesanan`.
+8. Preview wajib menampilkan diff sebelum save:
+
+```text
+Komponen ditambah
+Komponen diubah
+Komponen dihilangkan
+Total lama vs total baru
+Estimasi lama vs estimasi baru
+```
+
+Fase awal memakai update satu pesanan secara manual. OCR dan batch screenshot bukan bagian dari implementasi pertama; keduanya baru dibahas setelah flow manual terbukti.
+
+### 9.7 Candidate API contract
+
+Nama route masih dapat berubah saat desain final, tetapi boundary-nya:
+
+```text
+GET  /api/estimation-orders?storeId=<id>&search=<term>
+GET  /api/estimation-orders/<noPesanan>/revisions?storeId=<id>
+POST /api/estimation-orders/revisions/preview
+POST /api/estimation-orders/revisions
+```
+
+- Semua read wajib store-scoped.
+- Mutation wajib Basic Auth, same-origin, validasi order/store, dan payload validation.
+- `POST` revision tidak boleh mengubah tabel existing.
+- Tidak menyediakan `PUT`/`DELETE` yang merusak histori; perubahan memakai revision baru.
+- Preview tidak menulis database.
+- Save memakai satu transaction untuk parent revision + child adjustments.
+- Error/rollback harus meninggalkan revision aktif lama tetap utuh.
+
+### 9.8 Store lifecycle dan keamanan
+
+Tabel baru bersifat store-scoped dan harus diperhitungkan sebelum implementasi Settings:
+
+- `clear_store` harus menghapus child adjustment lalu parent revision untuk store aktif, hanya setelah kontrak destructive action disetujui.
+- Hapus store harus menolak store yang masih memiliki revision estimasi aktif/berhistori, atau menggunakan urutan delete yang telah diaudit.
+- Master SKU shared tidak ikut dihapus.
+- Tidak boleh melakukan clear, reset, atau delete selama pengembangan fitur tanpa approval eksplisit dan backup tervalidasi.
+- Data customer/alamat tidak perlu disalin ke tabel estimasi; simpan hanya identitas order dan field finansial yang diperlukan.
+
+### 9.9 Urutan implementasi setelah rencana disetujui
+
+```text
+1. Finalisasi field dan formula berdasarkan beberapa screenshot detail Shopee.
+2. Audit label sumber: seller subtotal, fee parent/child, voucher, subsidi, premi, dan total penghasilan.
+3. Finalisasi revision policy dan source-evidence policy.
+4. Audit DDL live read-only; pastikan hanya tabel estimation baru yang belum ada.
+5. Buat backup database tervalidasi sebelum migration.
+6. Buat migration create-only untuk tabel estimation baru saja.
+7. Verifikasi SHOW CREATE TABLE, index, unique key, dan foreign key tabel baru.
+8. Implement read-only query/API dan UI daftar/detail.
+9. Implement preview diff + save revision manual satu pesanan.
+10. Uji update, penambahan komponen, penghilangan komponen, rollback, dan store isolation.
+11. Integrasikan active revision ke summary Estimasi tanpa mengaktifkan Profit Aktual.
+12. Test real read path dan preview path; deploy hanya setelah approval eksplisit.
+```
+
+Selama langkah 1–3, tidak ada perubahan source atau database yang diperlukan. Selama langkah 4–12, setiap perubahan harus dibahas dan diverifikasi sesuai boundary project.
+
+### 9.10 Belum termasuk dalam fase ini
+
+```text
+Profit Bersih final
+Profit Aktual settlement
+Median payout pending
+Seller Fee sebagai accounting final
+Alokasi Ads ke order/item
+PPN cashflow/top-up aktual
+Packaging, tenaga kerja, overhead
+QC barang retur dan pembebanan HPP retur
+OCR otomatis
+Batch update banyak screenshot
+Multi-user authorization per store
+```
+
+### 9.11 Future source-analysis track
+
+Setelah Estimation Layer stabil, analisa berikut tetap dilakukan terpisah dan tidak boleh dicampur sebagai source profit otomatis:
 
 1. **Balance Transaction**
-   - Sheet/header, grain, tipe transaksi, sign, `No. Pesanan`, duplicate policy.
+   - Sheet/header, grain, tipe transaksi, sign, `No. Pesanan`, dan duplicate policy.
    - Bedakan settlement, adjustment, refund, dan biaya iklan dengan bukti source.
 
 2. **Return/refund, failed delivery, cancellation**
@@ -512,8 +826,8 @@ Master SKU                                   tetap shared setelah clear/hapus st
    - Jangan menyederhanakan menjadi satu status linear tanpa report finansial.
 
 3. **Financial layer**
-   - Diskusikan Income Order, Income Sku, HPP, ads, return, settlement, serta alokasi item.
-   - Baru bangun actual profit dan estimation profit.
+   - Diskusikan Income Order, Income Sku, HPP, Ads, return, settlement, serta alokasi item.
+   - Baru setelah itu bahas Profit Aktual atau Profit Bersih final.
 
 ## 10. Larangan Keras
 

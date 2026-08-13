@@ -43,6 +43,7 @@ const eslintConfig = defineConfig([
       "lib/sku-raw-import.js",
       "scripts/migrate-income-raw.js",
       "scripts/migrate-multi-store.js",
+      "scripts/migrate-order-all-price-identity.js",
       "scripts/migrate-order-all-snapshot-metadata.js",
       "scripts/migrate-sku-raw.js",
       "scripts/repair-order-all-currency.js",

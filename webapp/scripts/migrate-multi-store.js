@@ -11,6 +11,12 @@ const STORES = [
   { slug: 'tacticaluxe', name: 'TACTICALUXE' },
 ];
 const DEFAULT_OWNER = { username: 'yogaimawan', displayName: 'Yogi Imawan' };
+const ORDER_ALL_PRICE_UNIQUE_INDEX = 'uk_order_item_store_price';
+const ORDER_ALL_PRICE_IDENTITY_DEFINITIONS = {
+  nomor_referensi_sku: 'VARCHAR(100) NOT NULL',
+  nama_variasi: 'VARCHAR(255) NOT NULL',
+  harga_setelah_diskon: 'DECIMAL(15,2) NOT NULL',
+};
 
 function loadEnv(file = path.join(process.cwd(), '.env.local')) {
   const env = {};
@@ -127,15 +133,27 @@ async function verifyScopedKeyConflicts(conn, projectedDefaultStoreId = null) {
   const incomeParams = projectedDefaultStoreId == null ? [] : [projectedDefaultStoreId];
   const [[orderConflict]] = await conn.query(`
     SELECT COUNT(*) AS count FROM (
-      SELECT ${orderStoreExpression} AS scoped_store_id, no_pesanan, nomor_referensi_sku, nama_variasi, COUNT(*) AS duplicate_count
+      SELECT ${orderStoreExpression} AS scoped_store_id, no_pesanan, nomor_referensi_sku, nama_variasi, harga_setelah_diskon, COUNT(*) AS duplicate_count
       FROM order_all
-      GROUP BY scoped_store_id, no_pesanan, nomor_referensi_sku, nama_variasi
+      GROUP BY scoped_store_id, no_pesanan, nomor_referensi_sku, nama_variasi, harga_setelah_diskon
       HAVING duplicate_count > 1
       LIMIT 1
     ) conflicts
   `, orderParams);
   if (Number(orderConflict.count) > 0) {
-    throw new Error('Migration stopped: duplicate scoped Order.all keys must be resolved before index changes.');
+    throw new Error('Migration stopped: duplicate price-aware scoped Order.all keys must be resolved before index changes.');
+  }
+
+  const [[missingIdentityComponent]] = await conn.query(`
+    SELECT COUNT(*) AS count
+    FROM order_all
+    WHERE no_pesanan IS NULL OR TRIM(no_pesanan) = ''
+      OR nomor_referensi_sku IS NULL OR TRIM(nomor_referensi_sku) = ''
+      OR nama_variasi IS NULL OR TRIM(nama_variasi) = ''
+      OR harga_setelah_diskon IS NULL
+  `);
+  if (Number(missingIdentityComponent.count) > 0) {
+    throw new Error('Migration stopped: every Order.all price-aware identity component must be complete before index changes.');
   }
 
   const [[incomeConflict]] = await conn.query(`
@@ -155,9 +173,23 @@ async function verifyScopedKeyConflicts(conn, projectedDefaultStoreId = null) {
 async function ensureIndexesAndForeignKeys(conn) {
   // Add replacement indexes before dropping legacy uniqueness. If the new
   // scoped uniqueness fails, the old protection remains intact for retry.
-  if (!(await indexExists(conn, 'order_all', 'uk_order_item_store'))) {
-    await conn.query('ALTER TABLE order_all ADD UNIQUE KEY uk_order_item_store (store_id, no_pesanan, nomor_referensi_sku, nama_variasi)');
+  for (const [column, definition] of Object.entries(ORDER_ALL_PRICE_IDENTITY_DEFINITIONS)) {
+    const [rows] = await conn.query(
+      `SELECT is_nullable FROM information_schema.columns
+       WHERE table_schema = DATABASE() AND table_name = 'order_all' AND column_name = ?`,
+      [column],
+    );
+    if (rows.length !== 1) throw new Error(`Migration stopped: order_all.${column} is missing.`);
+    if (rows[0].is_nullable === 'YES') {
+      await conn.query(`ALTER TABLE order_all MODIFY COLUMN ${column} ${definition}`);
+    }
   }
+  if (!(await indexExists(conn, 'order_all', ORDER_ALL_PRICE_UNIQUE_INDEX))) {
+    await conn.query(
+      `ALTER TABLE order_all ADD UNIQUE KEY ${ORDER_ALL_PRICE_UNIQUE_INDEX} (store_id, no_pesanan, nomor_referensi_sku, nama_variasi, harga_setelah_diskon)`,
+    );
+  }
+  if (await indexExists(conn, 'order_all', 'uk_order_item_store')) await conn.query('ALTER TABLE order_all DROP INDEX uk_order_item_store');
   if (await indexExists(conn, 'order_all', 'uk_order_item')) await conn.query('ALTER TABLE order_all DROP INDEX uk_order_item');
   if (!(await indexExists(conn, 'order_all', 'idx_order_all_store'))) {
     await conn.query('ALTER TABLE order_all ADD KEY idx_order_all_store (store_id, waktu_pesanan_dibuat)');

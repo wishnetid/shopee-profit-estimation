@@ -6,12 +6,18 @@ import { requireStoreId } from '../../../lib/store';
 // Shared with node:test regression tests. The raw Shopee export uses IDR dot-thousands strings.
 
 const {
+  ORDER_ALL_IDENTITY_COLUMNS,
+  getOrderAllCompositeKeyFromStoredRow,
+  getOrderAllIdentityValues,
   parseIdr,
   parseSnapshotAt,
   resolveOrderSnapshot,
   validateOrderAllCompositeKeys,
   validateOrderAllHeaders,
 } = require('../../../lib/order-all-import.js') as {
+  ORDER_ALL_IDENTITY_COLUMNS: readonly string[];
+  getOrderAllCompositeKeyFromStoredRow: (row: Record<string, unknown>) => string | null;
+  getOrderAllIdentityValues: (row: Record<string, unknown>) => [string, string, string, number] | null;
   parseIdr: (value: unknown) => number | null;
   parseSnapshotAt: (value: unknown) => string | null;
   resolveOrderSnapshot: (
@@ -103,6 +109,7 @@ const { createPreviewTicket, verifyPreviewTicket } = require('../../../lib/uploa
 };
 
 const BATCH_SIZE = 100;
+const ORDER_ALL_DB_IDENTITY_COLUMN_SET = new Set<string>(['store_id', ...ORDER_ALL_IDENTITY_COLUMNS]);
 
 async function getConnection() {
   const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME } = process.env;
@@ -261,21 +268,36 @@ function getReportName(type: string): string {
 
 // ─── PREVIEW ───────────────────────────────────────────
 
-// Extract composite keys from Excel for order_all
-function extractOrderKeys(workbook: XLSX.WorkBook): string[][] {
+// Extract physical Order.all identities from Excel. `Harga Setelah Diskon` is
+// required because Shopee can split one SKU/variation into separate promo lines.
+function extractOrderKeys(workbook: XLSX.WorkBook): Array<[string, string, string, number]> {
   let sheetName = workbook.SheetNames.find(n => n.toLowerCase() === 'orders');
   if (!sheetName) sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
   const data = XLSX.utils.sheet_to_json(sheet) as any[];
-  return data.map(r => [
-    sanitize(r['No. Pesanan']),
-    sanitize(r['Nomor Referensi SKU']),
-    sanitize(r['Nama Variasi']),
-  ]).filter(k => k[0] && k[1] && k[2]);
+  return data
+    .map((row) => getOrderAllIdentityValues({
+      no_pesanan: sanitize(row['No. Pesanan']),
+      nomor_referensi_sku: sanitize(row['Nomor Referensi SKU']),
+      nama_variasi: sanitize(row['Nama Variasi']),
+      harga_setelah_diskon: sanitizeDecimal(row['Harga Setelah Diskon']),
+    }))
+    .filter((values): values is [string, string, string, number] => values !== null);
 }
 
-// Check which keys exist in DB, return full rows for overlap comparison
-async function fetchExistingRows(conn: Connection, keys: string[][], table: string, keyCols: string[], selectCols: string[], extraWhere = '', extraParams: unknown[] = []): Promise<Map<string, any>> {
+// Check which keys exist in DB, return full rows for overlap comparison.
+// Most callers use raw tuple joins; Order.all supplies a canonical price-aware
+// key because source IDR text and stored DECIMAL values have different formats.
+async function fetchExistingRows(
+  conn: Connection,
+  keys: ReadonlyArray<ReadonlyArray<unknown>>,
+  table: string,
+  keyCols: readonly string[],
+  selectCols: readonly string[],
+  extraWhere = '',
+  extraParams: unknown[] = [],
+  keyFromRow?: (row: Record<string, unknown>) => string | null,
+): Promise<Map<string, any>> {
   const existing = new Map<string, any>();
   if (keys.length === 0) return existing;
 
@@ -288,8 +310,8 @@ async function fetchExistingRows(conn: Connection, keys: string[][], table: stri
       [...flatParams, ...extraParams]
     ) as any[];
     for (const row of rows) {
-      const key = keyCols.map(c => row[c]).join('||');
-      existing.set(key, row);
+      const key = keyFromRow ? keyFromRow(row) : keyCols.map((column) => row[column]).join('||');
+      if (key) existing.set(key, row);
     }
   }
   return existing;
@@ -310,7 +332,8 @@ async function previewOrderAll(
   if (rawData.length === 0) return null;
 
   const headers = rawData[0] as string[];
-  const rows = rawData.slice(1);
+  const rows = rawData.slice(1)
+    .filter((row) => row.some((value) => value !== null && String(value).trim() !== ''));
   const headerMap: Record<string, number> = {};
   headers.forEach((header, index) => { if (header) headerMap[String(header).trim()] = index; });
 
@@ -329,10 +352,11 @@ async function previewOrderAll(
     conn,
     allKeys,
     'order_all',
-    ['no_pesanan', 'nomor_referensi_sku', 'nama_variasi'],
+    ORDER_ALL_IDENTITY_COLUMNS,
     [...ORDER_COLS, 'source_snapshot_at', 'source_snapshot_file'],
     'store_id = ?',
     [storeId],
+    getOrderAllCompositeKeyFromStoredRow,
   );
 
   let newCount = 0;
@@ -347,12 +371,13 @@ async function previewOrderAll(
     headers.forEach((header, index) => { if (header) excelRow[String(header).trim()] = rawDataRow[index]; });
     const importedValues = extractOrderRow(excelRow);
     const importedRow = orderValuesToRow(importedValues);
-    const keyParts = [
-      String(importedRow.no_pesanan || '').trim(),
-      String(importedRow.nomor_referensi_sku || '').trim(),
-      String(importedRow.nama_variasi || '').trim(),
-    ];
-    const dbRow = dbRows.get(keyParts.join('||'));
+    const identityValues = getOrderAllIdentityValues(importedRow);
+    const identityKey = getOrderAllCompositeKeyFromStoredRow(importedRow);
+    if (!identityValues || !identityKey) {
+      throw new Error('Order.all memiliki physical identity tidak valid setelah parsing.');
+    }
+    const [noPesanan, nomorReferensiSku, namaVariasi, hargaSetelahDiskon] = identityValues;
+    const dbRow = dbRows.get(identityKey);
 
     if (!dbRow) {
       newCount++;
@@ -387,9 +412,10 @@ async function previewOrderAll(
 
     if (changes.length > 0) {
       updatedRows.push({
-        no_pesanan: keyParts[0],
-        sku: keyParts[1],
-        variasi: keyParts[2],
+        no_pesanan: noPesanan,
+        sku: nomorReferensiSku,
+        variasi: namaVariasi,
+        harga_setelah_diskon: hargaSetelahDiskon,
         changes,
         regressions: changes.filter(change => change.protected).map(change => ({
           type: resolution.staleSnapshot ? 'stale_snapshot' : 'quality_downgrade',
@@ -603,20 +629,14 @@ async function importOrderAll(
   const placeholders = insertCols.map(() => '?').join(',');
   const cols = insertCols.join(',');
   const updateAssignments = insertCols
-    .filter(column => !['store_id', 'no_pesanan', 'nomor_referensi_sku', 'nama_variasi'].includes(column))
-    .map(column => `${column}=VALUES(${column})`)
+    .filter((column) => !ORDER_ALL_DB_IDENTITY_COLUMN_SET.has(column))
+    .map((column) => `${column}=VALUES(${column})`)
     .join(',\n           ');
   let newInserted = 0;
   let updatedCount = 0;
   let guardedRows = 0;
   let protectedFields = 0;
   const errors = 0;
-
-  const keyIdx = [
-    ORDER_COLS.indexOf('no_pesanan'),
-    ORDER_COLS.indexOf('nomor_referensi_sku'),
-    ORDER_COLS.indexOf('nama_variasi'),
-  ];
 
   // An import is one snapshot. Never leave the DB half-updated when a later batch fails.
   await conn.beginTransaction();
@@ -625,30 +645,30 @@ async function importOrderAll(
       const rawBatch = data.slice(i, i + BATCH_SIZE);
       const incoming = rawBatch.map((row, rowOffset) => {
         const values = extractOrderRow(row);
-        if (values[keyIdx[0]] == null || values[keyIdx[1]] == null || values[keyIdx[2]] == null) {
-          throw new Error(`Order.all row ${i + rowOffset + 2} tidak valid: No. Pesanan, Nomor Referensi SKU, dan Nama Variasi wajib terisi`);
+        const importedRow = orderValuesToRow(values);
+        const identityValues = getOrderAllIdentityValues(importedRow);
+        const identityKey = getOrderAllCompositeKeyFromStoredRow(importedRow);
+        if (!identityValues || !identityKey) {
+          throw new Error(`Order.all row ${i + rowOffset + 2} tidak valid: No. Pesanan, Nomor Referensi SKU, Nama Variasi, dan Harga Setelah Diskon wajib terisi`);
         }
-        return { values, row: orderValuesToRow(values) };
+        return { values, row: importedRow, identityValues, identityKey };
       });
       if (incoming.length === 0) continue;
 
-      const batchKeys = incoming.map(item => [
-        item.values[keyIdx[0]], item.values[keyIdx[1]], item.values[keyIdx[2]],
-      ]);
       const existingRows = await fetchExistingRows(
         conn,
-        batchKeys,
+        incoming.map((item) => item.identityValues),
         'order_all',
-        ['no_pesanan', 'nomor_referensi_sku', 'nama_variasi'],
+        ORDER_ALL_IDENTITY_COLUMNS,
         [...ORDER_COLS, 'source_snapshot_at', 'source_snapshot_file'],
         'store_id = ?',
         [storeId],
+        getOrderAllCompositeKeyFromStoredRow,
       );
 
       const valuesToWrite: unknown[][] = [];
       for (const item of incoming) {
-        const key = [item.values[keyIdx[0]], item.values[keyIdx[1]], item.values[keyIdx[2]]].join('||');
-        const existing = existingRows.get(key);
+        const existing = existingRows.get(item.identityKey);
 
         if (!existing) {
           valuesToWrite.push([storeId, ...item.values, sourceSnapshotAt, sourceSnapshotFile]);
