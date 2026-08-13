@@ -78,6 +78,17 @@ Sisa Setelah Ads & PPN
 
 Ads Spend dan PPN tetap biaya agregat toko/hari. Tidak dialokasikan ke order atau item.
 
+## Ringkasan Harian
+
+Semua total estimasi harian hanya menjumlahkan order berstatus `Siap Diestimasi` (`estimable`), sehingga order dengan HPP belum lengkap, perlu review, atau tidak eligible tidak mencemari angka keuangan. Kolom yang ditampilkan:
+
+- Jumlah Pesanan Siap Diestimasi.
+- Total Estimasi Potongan Standar Shopee.
+- Total Estimasi Penghasilan Seller.
+- Total HPP.
+- Total Estimasi Kotor Setelah HPP.
+- Ads Spend, Estimasi PPN Iklan, dan Sisa Setelah Ads & PPN sebagai biaya agregat harian.
+
 ## Batas model
 
 - Komisi AMS dan program khusus lain tidak dimasukkan sebagai rate standar sampai ada bukti coverage order-level.

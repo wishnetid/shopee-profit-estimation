@@ -128,6 +128,27 @@ test('buildEstimationReport keeps Ads and daily-rounded PPN as a separate daily 
   assert.equal(report.daily[0].afterAdsAndPpn, 59400);
 });
 
+test('buildEstimationReport exposes daily totals for standard deductions, seller income, and HPP from estimable orders only', () => {
+  const report = buildEstimationReport({
+    orderRows: [
+      orderRow({ no_pesanan: 'READY-ONE', subtotal_pesanan: '100000.00' }),
+      orderRow({ no_pesanan: 'READY-TWO', subtotal_pesanan: '200000.00', nomor_referensi_sku: 'SKU-SECOND', jumlah: 2 }),
+      orderRow({ no_pesanan: 'MISSING-HPP', subtotal_pesanan: '999999.00', nomor_referensi_sku: 'UNKNOWN' }),
+    ],
+    skuRows: [
+      skuRow({ harga: '10000.00' }),
+      skuRow({ sku1: 'SKU-SECOND', harga: '20000.00' }),
+    ],
+  });
+
+  const daily = report.daily[0];
+  assert.equal(daily.estimatedOrderCount, 2);
+  assert.equal(daily.estimatedStandardShopeeFees, 57250);
+  assert.equal(daily.estimatedSellerIncome, 242750);
+  assert.equal(daily.totalHpp, 50000);
+  assert.equal(daily.estimatedGrossBeforeFeeAds, 192750);
+});
+
 test('aggregateAdsSpend only counts negative Product Ad deductions and deduplicates sequenced overlap across packages', () => {
   const result = aggregateAdsSpend([
     { ads_report_import_id: 1, transaction_date: '2026-08-10', sequence_number: 17, description: 'Deduction for Product Ad', jumlah_signed: '-12500.00', note: 'Campaign A' },

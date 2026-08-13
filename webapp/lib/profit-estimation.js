@@ -359,6 +359,12 @@ function buildEstimationReport({
       estimatedOrderCount: 0,
       hppIncompleteOrderCount: 0,
       reviewOrderCount: 0,
+      sellerSubtotal: 0,
+      sellerVoucher: 0,
+      feeBase: 0,
+      estimatedStandardShopeeFees: 0,
+      estimatedSellerIncome: 0,
+      totalHpp: 0,
       estimatedGrossBeforeFeeAds: 0,
       adsSpend: 0,
       estimatedAdsPpn: 0,
@@ -374,6 +380,12 @@ function buildEstimationReport({
     const entry = dailyEntry(order.orderDate);
     if (order.estimationStatus === ESTIMATION_STATUS.ESTIMABLE) {
       entry.estimatedOrderCount += 1;
+      entry.sellerSubtotal += order.sellerSubtotal || 0;
+      entry.sellerVoucher += order.sellerVoucher || 0;
+      entry.feeBase += order.feeBase || 0;
+      entry.estimatedStandardShopeeFees += order.estimatedShopeeFees || 0;
+      entry.estimatedSellerIncome += order.estimatedSellerIncome || 0;
+      entry.totalHpp += order.totalHpp || 0;
       entry.estimatedGrossBeforeFeeAds += order.estimasiKotor || 0;
     } else if (order.estimationStatus === ESTIMATION_STATUS.HPP_INCOMPLETE) {
       entry.hppIncompleteOrderCount += 1;
