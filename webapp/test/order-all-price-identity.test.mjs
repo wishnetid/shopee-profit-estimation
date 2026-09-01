@@ -134,7 +134,7 @@ test('upload route uses the shared price-aware Order.all identity for preview lo
   assert.match(source, /ORDER_ALL_DB_IDENTITY_COLUMN_SET/);
   assert.match(source, /getOrderAllCompositeKeyFromStoredRow/);
   assert.match(source, /getOrderAllIdentityValues/);
-  assert.match(source, /ORDER_ALL_IDENTITY_COLUMNS,\s*\[\.\.\.ORDER_COLS, 'source_snapshot_at', 'source_snapshot_file'\]/);
+  assert.match(source, /ORDER_ALL_IDENTITY_COLUMNS,\s*\[\.\.\.ORDER_COLS, 'line_ordinal', 'source_snapshot_at', 'source_snapshot_file'\]/);
 });
 
 test('multi-store migration does not reintroduce the legacy three-part Order.all unique key', () => {
