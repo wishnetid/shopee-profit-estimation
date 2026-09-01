@@ -142,7 +142,18 @@ function parseSnapshotAt(value) {
   return `${yearText}-${monthText}-${dayText} ${hourText}:${minuteText}:${secondText}`;
 }
 
+// Shopee can emit several physical lines with the same order, SKU, variation,
+// and discounted price. Preserve every line by assigning its stable occurrence
+// ordinal within that base identity for each workbook snapshot.
 const ORDER_ALL_IDENTITY_COLUMNS = Object.freeze([
+  'no_pesanan',
+  'nomor_referensi_sku',
+  'nama_variasi',
+  'harga_setelah_diskon',
+  'line_ordinal',
+]);
+
+const ORDER_ALL_BASE_IDENTITY_COLUMNS = Object.freeze([
   'no_pesanan',
   'nomor_referensi_sku',
   'nama_variasi',
@@ -162,7 +173,7 @@ function parseOrderAllDiscountedPrice(value) {
   return Number.isFinite(databaseAmount) && databaseAmount >= 0 ? databaseAmount : null;
 }
 
-function getOrderAllIdentityValues(row) {
+function getOrderAllBaseIdentityValues(row) {
   const values = [
     normalizeEmpty(row.no_pesanan),
     normalizeEmpty(row.nomor_referensi_sku),
@@ -172,15 +183,31 @@ function getOrderAllIdentityValues(row) {
   return values.some((value) => value === null) ? null : values;
 }
 
-function getOrderAllCompositeKeyFromStoredRow(row) {
-  const values = getOrderAllIdentityValues(row);
+function getOrderAllIdentityValues(row) {
+  const baseValues = getOrderAllBaseIdentityValues(row);
+  const sourceOrdinal = row.line_ordinal;
+  const lineOrdinal = sourceOrdinal === undefined || sourceOrdinal === null ? 1 : Number(sourceOrdinal);
+  if (!baseValues || !Number.isInteger(lineOrdinal) || lineOrdinal < 1) return null;
+  return [...baseValues, lineOrdinal];
+}
+
+function getOrderAllBaseCompositeKeyFromStoredRow(row) {
+  const values = getOrderAllBaseIdentityValues(row);
   if (!values) return null;
   const [noPesanan, nomorReferensiSku, namaVariasi, hargaSetelahDiskon] = values;
   return [noPesanan, nomorReferensiSku, namaVariasi, hargaSetelahDiskon.toFixed(2)].join('||');
 }
 
-function getOrderAllCompositeKeyFromExcelRow(row) {
-  return getOrderAllCompositeKeyFromStoredRow({
+function getOrderAllCompositeKeyFromStoredRow(row) {
+  const baseKey = getOrderAllBaseCompositeKeyFromStoredRow(row);
+  const sourceOrdinal = row.line_ordinal;
+  const lineOrdinal = sourceOrdinal === undefined || sourceOrdinal === null ? 1 : Number(sourceOrdinal);
+  if (!baseKey || !Number.isInteger(lineOrdinal) || lineOrdinal < 1) return null;
+  return `${baseKey}||${lineOrdinal}`;
+}
+
+function getOrderAllBaseCompositeKeyFromExcelRow(row) {
+  return getOrderAllBaseCompositeKeyFromStoredRow({
     no_pesanan: row['No. Pesanan'],
     nomor_referensi_sku: row['Nomor Referensi SKU'],
     nama_variasi: row['Nama Variasi'],
@@ -188,27 +215,32 @@ function getOrderAllCompositeKeyFromExcelRow(row) {
   });
 }
 
-function validateOrderAllCompositeKeys(rows) {
-  const seen = new Set();
-  const duplicates = [];
-  const missing = [];
+// Compatibility helper for one-source-line callers. Workbook ingestion always
+// assigns ordinals across the complete sheet before using the identity.
+function getOrderAllCompositeKeyFromExcelRow(row) {
+  const baseKey = getOrderAllBaseCompositeKeyFromExcelRow(row);
+  return baseKey ? `${baseKey}||1` : null;
+}
 
-  rows.forEach((row, index) => {
-    const key = getOrderAllCompositeKeyFromExcelRow(row);
-    if (!key) {
-      missing.push(index + 2);
-      return;
-    }
-
-    if (seen.has(key)) duplicates.push({ row: index + 2, key });
-    else seen.add(key);
+function assignOrderAllLineOrdinals(rows) {
+  const occurrences = new Map();
+  return rows.map((row) => {
+    const baseKey = getOrderAllBaseCompositeKeyFromExcelRow(row);
+    if (!baseKey) return { row, baseKey: null, lineOrdinal: null };
+    const lineOrdinal = (occurrences.get(baseKey) || 0) + 1;
+    occurrences.set(baseKey, lineOrdinal);
+    return { row, baseKey, lineOrdinal };
   });
+}
 
+function validateOrderAllCompositeKeys(rows) {
+  const missing = [];
+  rows.forEach((row, index) => {
+    if (!getOrderAllBaseCompositeKeyFromExcelRow(row)) missing.push(index + 2);
+  });
   return {
-    valid: duplicates.length === 0 && missing.length === 0,
-    duplicateCount: duplicates.length,
+    valid: missing.length === 0,
     missingCount: missing.length,
-    duplicateSamples: duplicates.slice(0, 5),
     missingSamples: missing.slice(0, 5),
   };
 }
@@ -324,8 +356,12 @@ function shouldAllowImport({ newRows, changedRows }) {
 
 module.exports = {
   ORDER_ALL_HEADERS,
+  ORDER_ALL_BASE_IDENTITY_COLUMNS,
   ORDER_ALL_IDENTITY_COLUMNS,
+  assignOrderAllLineOrdinals,
   getOrderAllCompositeKeyFromExcelRow,
+  getOrderAllBaseCompositeKeyFromExcelRow,
+  getOrderAllBaseCompositeKeyFromStoredRow,
   getOrderAllCompositeKeyFromStoredRow,
   getOrderAllIdentityValues,
   parseIdr,

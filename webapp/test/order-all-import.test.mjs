@@ -89,7 +89,7 @@ test('validateOrderAllHeaders rejects a changed export schema before import', ()
   assert.ok(result.missing.includes('Status Pesanan'));
 });
 
-test('validateOrderAllCompositeKeys rejects duplicate physical lines within one upload', () => {
+test('validateOrderAllCompositeKeys accepts repeated physical lines within one Shopee upload', () => {
   const row = {
     'No. Pesanan': 'ORDER-1',
     'Nomor Referensi SKU': 'SKU-1',
@@ -98,8 +98,8 @@ test('validateOrderAllCompositeKeys rejects duplicate physical lines within one 
   };
   const result = validateOrderAllCompositeKeys([row, { ...row }]);
 
-  assert.equal(result.valid, false);
-  assert.equal(result.duplicateCount, 1);
+  assert.equal(result.valid, true);
+  assert.equal(result.missingCount, 0);
 });
 
 test('parseSnapshotAt rejects impossible calendar timestamps', () => {

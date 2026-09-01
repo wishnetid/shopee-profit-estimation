@@ -8,39 +8,12 @@ import orderAllImport from '../lib/order-all-import.js';
 const require = createRequire(import.meta.url);
 
 const {
-  getOrderAllCompositeKeyFromExcelRow,
+  assignOrderAllLineOrdinals,
   getOrderAllCompositeKeyFromStoredRow,
   validateOrderAllCompositeKeys,
 } = orderAllImport;
 
-test('Order.all accepts promotion-split lines with the same order SKU variation but different discounted prices', () => {
-  const result = validateOrderAllCompositeKeys([
-    {
-      'No. Pesanan': '2608137PTBR0W7',
-      'Nomor Referensi SKU': 'M-TAC Panjang',
-      'Nama Variasi': 'Hijau Army,XL',
-      'Harga Setelah Diskon': '95.500',
-      Jumlah: '6',
-    },
-    {
-      'No. Pesanan': '2608137PTBR0W7',
-      'Nomor Referensi SKU': 'M-TAC Panjang',
-      'Nama Variasi': 'Hijau Army,XL',
-      'Harga Setelah Diskon': '96.000',
-      Jumlah: '2',
-    },
-  ]);
-
-  assert.deepEqual(result, {
-    valid: true,
-    duplicateCount: 0,
-    missingCount: 0,
-    duplicateSamples: [],
-    missingSamples: [],
-  });
-});
-
-test('Order.all rejects an exact repeated physical line including discounted price', () => {
+test('Order.all accepts repeated source lines and assigns a stable ordinal per base identity', () => {
   const row = {
     'No. Pesanan': '2608137PTBR0W7',
     'Nomor Referensi SKU': 'M-TAC Panjang',
@@ -48,44 +21,35 @@ test('Order.all rejects an exact repeated physical line including discounted pri
     'Harga Setelah Diskon': '95.500',
   };
   const result = validateOrderAllCompositeKeys([row, { ...row }]);
+  const lines = assignOrderAllLineOrdinals([row, { ...row }]);
 
-  assert.equal(result.valid, false);
-  assert.equal(result.duplicateCount, 1);
-  assert.deepEqual(result.duplicateSamples.map((sample) => sample.row), [3]);
+  assert.equal(result.valid, true);
+  assert.deepEqual(lines.map((line) => line.lineOrdinal), [1, 2]);
 });
 
-test('Order.all requires a valid discounted price as part of its physical identity', () => {
-  const result = validateOrderAllCompositeKeys([
-    {
-      'No. Pesanan': '2608137PTBR0W7',
-      'Nomor Referensi SKU': 'M-TAC Panjang',
-      'Nama Variasi': 'Hijau Army,XL',
-      'Harga Setelah Diskon': '-',
-    },
-  ]);
+test('Order.all requires complete base identity fields', () => {
+  const result = validateOrderAllCompositeKeys([{
+    'No. Pesanan': '2608137PTBR0W7',
+    'Nomor Referensi SKU': 'M-TAC Panjang',
+    'Nama Variasi': 'Hijau Army,XL',
+    'Harga Setelah Diskon': '-',
+  }]);
 
   assert.equal(result.valid, false);
-  assert.equal(result.duplicateCount, 0);
   assert.equal(result.missingCount, 1);
   assert.deepEqual(result.missingSamples, [2]);
 });
 
-test('Order.all uses one canonical identity for source IDR text and stored DECIMAL values', () => {
-  const sourceKey = getOrderAllCompositeKeyFromExcelRow({
-    'No. Pesanan': '2608137PTBR0W7',
-    'Nomor Referensi SKU': 'M-TAC Panjang',
-    'Nama Variasi': 'Hijau Army,XL',
-    'Harga Setelah Diskon': '95.500',
-  });
+test('Order.all uses one canonical identity for stored DECIMAL price and ordinal', () => {
   const storedKey = getOrderAllCompositeKeyFromStoredRow({
     no_pesanan: '2608137PTBR0W7',
     nomor_referensi_sku: 'M-TAC Panjang',
     nama_variasi: 'Hijau Army,XL',
     harga_setelah_diskon: '95500.00',
+    line_ordinal: 2,
   });
 
-  assert.equal(sourceKey, storedKey);
-  assert.match(sourceKey, /95500\.00$/);
+  assert.match(storedKey, /95500\.00\|\|2$/);
 });
 
 test('price identity migration exposes the five-column index and dual explicit apply guard', () => {

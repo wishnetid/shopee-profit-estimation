@@ -90,10 +90,11 @@ CREATE TABLE IF NOT EXISTS order_all (
   metode_pembayaran VARCHAR(100),
   created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  line_ordinal INT UNSIGNED NOT NULL DEFAULT 1,
   source_snapshot_at DATETIME,
   source_snapshot_file VARCHAR(255),
   PRIMARY KEY (id),
-  UNIQUE KEY uk_order_item_store_price (store_id, no_pesanan, nomor_referensi_sku, nama_variasi, harga_setelah_diskon),
+  UNIQUE KEY uk_order_item_store_price (store_id, no_pesanan, nomor_referensi_sku, nama_variasi, harga_setelah_diskon, line_ordinal),
   KEY idx_order_all_store (store_id, waktu_pesanan_dibuat),
   CONSTRAINT fk_order_all_store FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

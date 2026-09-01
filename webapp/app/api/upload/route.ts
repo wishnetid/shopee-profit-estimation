@@ -7,6 +7,7 @@ import { requireStoreId } from '../../../lib/store';
 
 const {
   ORDER_ALL_IDENTITY_COLUMNS,
+  assignOrderAllLineOrdinals,
   getOrderAllCompositeKeyFromStoredRow,
   getOrderAllIdentityValues,
   parseIdr,
@@ -16,8 +17,9 @@ const {
   validateOrderAllHeaders,
 } = require('../../../lib/order-all-import.js') as {
   ORDER_ALL_IDENTITY_COLUMNS: readonly string[];
+  assignOrderAllLineOrdinals: (rows: Record<string, unknown>[]) => Array<{ row: Record<string, unknown>; baseKey: string | null; lineOrdinal: number | null }>;
   getOrderAllCompositeKeyFromStoredRow: (row: Record<string, unknown>) => string | null;
-  getOrderAllIdentityValues: (row: Record<string, unknown>) => [string, string, string, number] | null;
+  getOrderAllIdentityValues: (row: Record<string, unknown>) => [string, string, string, number, number] | null;
   parseIdr: (value: unknown) => number | null;
   parseSnapshotAt: (value: unknown) => string | null;
   resolveOrderSnapshot: (
@@ -231,12 +233,6 @@ function validateOrderAllWorkbook(workbook: XLSX.WorkBook) {
     .map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index]])));
   const keyValidation = validateOrderAllCompositeKeys(rows);
   if (!keyValidation.valid) {
-    if (keyValidation.duplicateCount > 0) {
-      return {
-        valid: false,
-        error: `Order.all ditolak: ditemukan duplicate composite key dalam workbook (contoh row Excel: ${keyValidation.duplicateSamples.map((sample) => sample.row).join(', ')}).`,
-      };
-    }
     return {
       valid: false,
       error: `Order.all ditolak: composite key wajib lengkap (contoh row Excel: ${keyValidation.missingSamples.join(', ')}).`,
@@ -268,21 +264,23 @@ function getReportName(type: string): string {
 
 // ─── PREVIEW ───────────────────────────────────────────
 
-// Extract physical Order.all identities from Excel. `Harga Setelah Diskon` is
-// required because Shopee can split one SKU/variation into separate promo lines.
-function extractOrderKeys(workbook: XLSX.WorkBook): Array<[string, string, string, number]> {
+// Shopee can repeat an otherwise identical physical item line. Its occurrence
+// ordinal is retained as part of the snapshot identity; it is never inferred by
+// editing the report.
+function extractOrderKeys(workbook: XLSX.WorkBook): Array<[string, string, string, number, number]> {
   let sheetName = workbook.SheetNames.find(n => n.toLowerCase() === 'orders');
   if (!sheetName) sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
-  const data = XLSX.utils.sheet_to_json(sheet) as any[];
-  return data
-    .map((row) => getOrderAllIdentityValues({
+  const data = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[];
+  return assignOrderAllLineOrdinals(data)
+    .map(({ row, lineOrdinal }) => getOrderAllIdentityValues({
       no_pesanan: sanitize(row['No. Pesanan']),
       nomor_referensi_sku: sanitize(row['Nomor Referensi SKU']),
       nama_variasi: sanitize(row['Nama Variasi']),
       harga_setelah_diskon: sanitizeDecimal(row['Harga Setelah Diskon']),
+      line_ordinal: lineOrdinal,
     }))
-    .filter((values): values is [string, string, string, number] => values !== null);
+    .filter((values): values is [string, string, string, number, number] => values !== null);
 }
 
 // Check which keys exist in DB, return full rows for overlap comparison.
@@ -366,11 +364,15 @@ async function previewOrderAll(
   let staleSnapshotCount = 0;
   const updatedRows: any[] = [];
 
-  for (const rawDataRow of rows) {
+  const previewExcelRows = rows.map((rawDataRow) => {
     const excelRow: Record<string, unknown> = {};
     headers.forEach((header, index) => { if (header) excelRow[String(header).trim()] = rawDataRow[index]; });
+    return excelRow;
+  });
+
+  for (const { row: excelRow, lineOrdinal } of assignOrderAllLineOrdinals(previewExcelRows)) {
     const importedValues = extractOrderRow(excelRow);
-    const importedRow = orderValuesToRow(importedValues);
+    const importedRow: Record<string, unknown> = { ...orderValuesToRow(importedValues), line_ordinal: lineOrdinal };
     const identityValues = getOrderAllIdentityValues(importedRow);
     const identityKey = getOrderAllCompositeKeyFromStoredRow(importedRow);
     if (!identityValues || !identityKey) {
@@ -624,8 +626,9 @@ async function importOrderAll(
   if (!sheetName) sheetName = workbook.SheetNames[0];
 
   const sheet = workbook.Sheets[sheetName];
-  const data = XLSX.utils.sheet_to_json(sheet) as any[];
-  const insertCols = ['store_id', ...ORDER_COLS, 'source_snapshot_at', 'source_snapshot_file'];
+  const sourceRows = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[];
+  const data = assignOrderAllLineOrdinals(sourceRows);
+  const insertCols = ['store_id', ...ORDER_COLS, 'line_ordinal', 'source_snapshot_at', 'source_snapshot_file'];
   const placeholders = insertCols.map(() => '?').join(',');
   const cols = insertCols.join(',');
   const updateAssignments = insertCols
@@ -643,15 +646,15 @@ async function importOrderAll(
   try {
     for (let i = 0; i < data.length; i += BATCH_SIZE) {
       const rawBatch = data.slice(i, i + BATCH_SIZE);
-      const incoming = rawBatch.map((row, rowOffset) => {
+      const incoming = rawBatch.map(({ row, lineOrdinal }, rowOffset) => {
         const values = extractOrderRow(row);
-        const importedRow = orderValuesToRow(values);
+        const importedRow: Record<string, unknown> = { ...orderValuesToRow(values), line_ordinal: lineOrdinal };
         const identityValues = getOrderAllIdentityValues(importedRow);
         const identityKey = getOrderAllCompositeKeyFromStoredRow(importedRow);
         if (!identityValues || !identityKey) {
           throw new Error(`Order.all row ${i + rowOffset + 2} tidak valid: No. Pesanan, Nomor Referensi SKU, Nama Variasi, dan Harga Setelah Diskon wajib terisi`);
         }
-        return { values, row: importedRow, identityValues, identityKey };
+        return { values, row: importedRow, identityValues, identityKey, lineOrdinal };
       });
       if (incoming.length === 0) continue;
 
@@ -671,7 +674,7 @@ async function importOrderAll(
         const existing = existingRows.get(item.identityKey);
 
         if (!existing) {
-          valuesToWrite.push([storeId, ...item.values, sourceSnapshotAt, sourceSnapshotFile]);
+          valuesToWrite.push([storeId, ...item.values, item.lineOrdinal, sourceSnapshotAt, sourceSnapshotFile]);
           newInserted++;
           continue;
         }
@@ -696,7 +699,7 @@ async function importOrderAll(
         const snapshotFile = writesProvenance
           ? sourceSnapshotFile
           : existing.source_snapshot_file;
-        valuesToWrite.push([storeId, ...resolvedValues, snapshotAt, snapshotFile]);
+        valuesToWrite.push([storeId, ...resolvedValues, item.lineOrdinal, snapshotAt, snapshotFile]);
         updatedCount++;
       }
 
