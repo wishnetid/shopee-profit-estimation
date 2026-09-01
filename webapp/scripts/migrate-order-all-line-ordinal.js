@@ -14,6 +14,13 @@ const path = require('path');
 const mysql = require('mysql2/promise');
 
 const INDEX_NAME = 'uk_order_item_store_price';
+// These were historical uniqueness constraints before price and source-line
+// ordinal became part of Order.all identity. Keeping either one makes MySQL
+// upsert an ordinal 2+ line into ordinal 1 instead of inserting it.
+const LEGACY_CONFLICTING_UNIQUE_INDEXES = Object.freeze([
+  'uk_order_item_store',
+  'uk_order_item',
+]);
 const IDENTITY = Object.freeze([
   'store_id',
   'no_pesanan',
@@ -55,15 +62,22 @@ function databaseConfig(env) {
   };
 }
 
-function indexDefinition(rows) {
+function indexDefinition(rows, indexName = INDEX_NAME) {
   const indexRows = rows
-    .filter((row) => row.index_name === INDEX_NAME)
+    .filter((row) => row.index_name === indexName)
     .sort((left, right) => Number(left.seq_in_index) - Number(right.seq_in_index));
   return {
     exists: indexRows.length > 0,
     nonUnique: indexRows.length ? Number(indexRows[0].non_unique) : null,
     columns: indexRows.map((row) => row.column_name),
   };
+}
+
+function legacyConflictingUniqueIndexes(rows) {
+  return LEGACY_CONFLICTING_UNIQUE_INDEXES.filter((indexName) => {
+    const definition = indexDefinition(rows, indexName);
+    return definition.exists && definition.nonUnique === 0;
+  });
 }
 
 function hasExpectedIndex(index) {
@@ -105,6 +119,7 @@ async function inspect(conn) {
       invalidRows: Number(counts.invalid_ordinal_rows || 0),
     } : { exists: false, columnType: null, isNullable: null, defaultValue: null, invalidRows: null },
     index: indexDefinition(indexes),
+    legacyConflictingUniqueIndexes: legacyConflictingUniqueIndexes(indexes),
   };
 }
 
@@ -114,6 +129,16 @@ function assertReady(state) {
   }
   if (state.index.exists && state.index.nonUnique !== 0) {
     throw new Error(`${INDEX_NAME} exists but is not unique.`);
+  }
+}
+
+function assertFinalIdentityState(state) {
+  assertReady(state);
+  if (!state.lineOrdinal.exists || state.lineOrdinal.isNullable || !hasExpectedIndex(state.index)) {
+    throw new Error('Migration verification failed: Order.all line identity is incomplete.');
+  }
+  if (state.legacyConflictingUniqueIndexes.length > 0) {
+    throw new Error(`Migration verification failed: legacy conflicting unique index(es) remain: ${state.legacyConflictingUniqueIndexes.join(', ')}.`);
   }
 }
 
@@ -130,6 +155,7 @@ async function main(argv = process.argv.slice(2)) {
         plannedActions: [
           'ADD COLUMN line_ordinal INT UNSIGNED NOT NULL DEFAULT 1 when missing',
           `DROP INDEX ${INDEX_NAME} and recreate it with (${IDENTITY.join(', ')}) when needed`,
+          `DROP legacy conflicting unique indexes when present: ${LEGACY_CONFLICTING_UNIQUE_INDEXES.join(', ')}`,
         ],
         before,
       }, null, 2));
@@ -153,11 +179,14 @@ async function main(argv = process.argv.slice(2)) {
       applied.push(`created ${INDEX_NAME}`);
     }
 
-    const after = await inspect(conn);
-    assertReady(after);
-    if (!after.lineOrdinal.exists || after.lineOrdinal.isNullable || !hasExpectedIndex(after.index)) {
-      throw new Error('Migration verification failed: Order.all line identity is incomplete.');
+    current = await inspect(conn);
+    for (const indexName of current.legacyConflictingUniqueIndexes) {
+      await conn.query(`ALTER TABLE order_all DROP INDEX ${indexName}`);
+      applied.push(`dropped legacy conflicting ${indexName}`);
     }
+
+    const after = await inspect(conn);
+    assertFinalIdentityState(after);
     console.log(JSON.stringify({ mode: 'apply', applied, before, after }, null, 2));
   } finally {
     await conn.end();
@@ -171,4 +200,16 @@ if (require.main === module) {
   });
 }
 
-module.exports = { IDENTITY, INDEX_NAME, assertReady, databaseConfig, inspect, isApplyConfirmed, loadEnv, main };
+module.exports = {
+  IDENTITY,
+  INDEX_NAME,
+  LEGACY_CONFLICTING_UNIQUE_INDEXES,
+  assertFinalIdentityState,
+  assertReady,
+  databaseConfig,
+  inspect,
+  isApplyConfirmed,
+  legacyConflictingUniqueIndexes,
+  loadEnv,
+  main,
+};

@@ -52,6 +52,22 @@ test('Order.all uses one canonical identity for stored DECIMAL price and ordinal
   assert.match(storedKey, /95500\.00\|\|2$/);
 });
 
+test('line-ordinal migration removes legacy unique indexes that would collapse repeated source lines', () => {
+  const migration = awaitableRequire('../scripts/migrate-order-all-line-ordinal.js');
+  assert.deepEqual(migration.IDENTITY, [
+    'store_id', 'no_pesanan', 'nomor_referensi_sku', 'nama_variasi', 'harga_setelah_diskon', 'line_ordinal',
+  ]);
+  assert.match(
+    fs.readFileSync(path.resolve(process.cwd(), 'scripts/migrate-order-all-line-ordinal.js'), 'utf8'),
+    /LEGACY_CONFLICTING_UNIQUE_INDEXES[\s\S]*uk_order_item_store[\s\S]*uk_order_item/,
+  );
+  assert.throws(() => migration.assertFinalIdentityState({
+    lineOrdinal: { exists: true, isNullable: false, invalidRows: 0 },
+    index: { exists: true, nonUnique: 0, columns: migration.IDENTITY },
+    legacyConflictingUniqueIndexes: ['uk_order_item_store'],
+  }), /legacy conflicting unique index/);
+});
+
 test('price identity migration exposes the five-column index and dual explicit apply guard', () => {
   const migration = awaitableRequire('../scripts/migrate-order-all-price-identity.js');
   assert.deepEqual(migration.ORDER_ALL_PRICE_IDENTITY, [
