@@ -59,6 +59,7 @@ test('buildEstimationReport derives gross estimation from seller subtotal, selle
   assert.equal(order.estimatedSellerIncome, 1882065);
   assert.equal(order.totalHpp, 1500000);
   assert.equal(order.estimasiKotor, 382065);
+  assert.equal(report.summary.totalHpp, 1500000);
   assert.equal(report.summary.estimatedGrossBeforeFeeAds, 382065);
 });
 

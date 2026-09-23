@@ -50,6 +50,7 @@ type EstimationPayload = {
     hppIncompleteOrderCount: number;
     reviewOrderCount: number;
     excludedOrderCount: number;
+    totalHpp: number;
     estimatedGrossBeforeFeeAds: number;
     adsSpend: number;
     adsPpnRate: number;
@@ -202,8 +203,9 @@ function ProfitEstimationContent({ storeId, activeStoreName }: { storeId: string
         {!data && !loading && !error && <section className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">Tentukan rentang bila diperlukan, lalu tekan <b>Muat Estimasi</b>.</section>}
         {loading && <section className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Menghitung Estimasi Kotor dan Ads Spend…</section>}
         {data && !loading && <>
-          <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <SummaryCard label="Estimasi Kotor Setelah HPP" value={formatIdr(data.summary.estimatedGrossBeforeFeeAds)} detail={`${data.summary.estimatedOrderCount} order dengan basis dan HPP lengkap`} tone="purple" />
+            <SummaryCard label="Total HPP" value={formatIdr(data.summary.totalHpp)} detail={`${data.summary.estimatedOrderCount} order siap diestimasi`} tone="slate" />
             <SummaryCard label="Ads Spend" value={formatIdr(data.summary.adsSpend)} detail="Deduction for Product Ad negatif" tone="rose" />
             <SummaryCard label="Estimasi PPN Iklan (11%)" value={formatIdr(data.summary.estimatedAdsPpn)} detail="Alokasi harian, bukan pajak RAW" tone="amber" />
             <SummaryCard label="Sisa Setelah Ads & PPN" value={formatIdr(data.summary.afterAdsAndPpn)} detail="Estimasi Kotor dikurangi biaya agregat Ads" tone="indigo" />

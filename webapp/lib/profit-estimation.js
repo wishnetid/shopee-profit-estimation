@@ -340,6 +340,7 @@ function buildEstimationReport({
     hppIncompleteOrderCount: allOrders.filter((order) => order.estimationStatus === ESTIMATION_STATUS.HPP_INCOMPLETE).length,
     reviewOrderCount: allOrders.filter((order) => order.estimationStatus === ESTIMATION_STATUS.NEEDS_REVIEW).length,
     excludedOrderCount: allOrders.filter((order) => order.estimationStatus === ESTIMATION_STATUS.NOT_ELIGIBLE).length,
+    totalHpp: allOrders.reduce((total, order) => total + (order.totalHpp || 0), 0),
     estimatedGrossBeforeFeeAds: allOrders.reduce((total, order) => total + (order.estimasiKotor || 0), 0),
     adsSpend: ads.total,
     adsPpnRate: ADS_PPN_RATE,
