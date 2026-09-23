@@ -58,8 +58,10 @@ test('buildEstimationReport derives gross estimation from seller subtotal, selle
   });
   assert.equal(order.estimatedShopeeFees, 421685);
   assert.equal(order.estimatedSellerIncome, 1882065);
+  assert.equal(order.totalQuantity, 24);
   assert.equal(order.totalHpp, 1500000);
   assert.equal(order.estimasiKotor, 382065);
+  assert.equal(report.summary.totalPcs, 24);
   assert.equal(report.summary.totalHpp, 1500000);
   assert.equal(report.summary.uniqueOrderCount, 1);
   assert.equal(report.summary.uniqueResiCount, 1);

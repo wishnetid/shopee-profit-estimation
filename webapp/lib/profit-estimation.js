@@ -184,6 +184,7 @@ function createOrderResult(group, skuIndex, exceptionOrderNumbers) {
   if (statuses.length > 1 && hasEligibleStatus && !allEligibleStatuses) addReason(reasons, 'STATUS_PESANAN_TIDAK_KONSISTEN');
 
   const itemMappings = [];
+  let totalQuantity = 0;
   let totalHpp = 0;
   let hppMissing = false;
   let hppConflict = false;
@@ -207,6 +208,7 @@ function createOrderResult(group, skuIndex, exceptionOrderNumbers) {
       quantityInvalid = true;
       continue;
     }
+    totalQuantity += quantity;
     if (mapping.kind === 'conflict') {
       hppConflict = true;
       continue;
@@ -258,6 +260,7 @@ function createOrderResult(group, skuIndex, exceptionOrderNumbers) {
     orderDate,
     statusPesanan: statuses.length === 1 ? statuses[0] : statuses.join(' / ') || null,
     itemCount: rows.length,
+    totalQuantity: quantityInvalid ? null : totalQuantity,
     sellerSubtotal,
     sellerVoucher,
     feeBase,
@@ -344,6 +347,7 @@ function buildEstimationReport({
     excludedOrderCount: allOrders.filter((order) => order.estimationStatus === ESTIMATION_STATUS.NOT_ELIGIBLE).length,
     uniqueOrderCount: allOrders.filter((order) => order.no_pesanan).length,
     uniqueResiCount: new Set(allOrders.flatMap((order) => order.resiNumbers)).size,
+    totalPcs: allOrders.reduce((total, order) => total + (order.totalQuantity || 0), 0),
     totalHpp: allOrders.reduce((total, order) => total + (order.totalHpp || 0), 0),
     estimatedGrossBeforeFeeAds: allOrders.reduce((total, order) => total + (order.estimasiKotor || 0), 0),
     adsSpend: ads.total,
