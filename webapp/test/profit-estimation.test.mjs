@@ -83,6 +83,21 @@ test('buildEstimationReport counts every item subtotal once but never needs Inco
   assert.equal(order.estimationStatus, ESTIMATION_STATUS.ESTIMABLE);
 });
 
+test('resi state stays available per unique order for API filtering', () => {
+  const report = buildEstimationReport({
+    orderRows: [
+      orderRow({ no_pesanan: 'WITH-RESI', no_resi: 'SPX-1' }),
+      orderRow({ no_pesanan: 'WITH-RESI', nama_variasi: 'Hijau,L', no_resi: 'SPX-1' }),
+      orderRow({ no_pesanan: 'WITHOUT-RESI', nama_variasi: 'Navy,M', no_resi: null }),
+    ],
+    skuRows: [skuRow()],
+  });
+  const byOrder = Object.fromEntries(report.orders.data.map((row) => [row.no_pesanan, row]));
+
+  assert.deepEqual(byOrder['WITH-RESI'].resiNumbers, ['SPX-1']);
+  assert.deepEqual(byOrder['WITHOUT-RESI'].resiNumbers, []);
+});
+
 test('buildEstimationReport keeps HPP mapping and invalid seller basis fail-closed', () => {
   const report = buildEstimationReport({
     orderRows: [

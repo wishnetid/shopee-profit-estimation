@@ -41,6 +41,7 @@ type EstimationPayload = {
   storeId: number;
   availableStatuses: string[];
   selectedStatuses: string[];
+  resiFilter: 'all' | 'with' | 'without';
   skuImport: { id: number; sourceFile: string; importedAt: string } | null;
   dateRange: { dateFrom: string | null; dateTo: string | null };
   summary: {
@@ -136,6 +137,7 @@ function ProfitEstimationContent({ storeId, activeStoreName }: { storeId: string
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [resiFilter, setResiFilter] = useState<'all' | 'with' | 'without'>('all');
   const [data, setData] = useState<EstimationPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -157,6 +159,7 @@ function ProfitEstimationContent({ storeId, activeStoreName }: { storeId: string
       if (dateFrom) params.set('dateFrom', dateFrom);
       if (dateTo) params.set('dateTo', dateTo);
       selectedStatuses.forEach((status) => params.append('status', status));
+      if (resiFilter !== 'all') params.set('resiFilter', resiFilter);
       const response = await fetch(`/api/profit-estimation?${params}`, { cache: 'no-store' });
       const body = await response.json() as EstimationPayload & { error?: string };
       if (requestId !== requestSequence.current) return;
@@ -168,7 +171,7 @@ function ProfitEstimationContent({ storeId, activeStoreName }: { storeId: string
     } finally {
       if (requestId === requestSequence.current) setLoading(false);
     }
-  }, [dateFrom, dateTo, limit, selectedStatuses, storeId]);
+  }, [dateFrom, dateTo, limit, resiFilter, selectedStatuses, storeId]);
 
   const toggleStatus = (status: string) => {
     setSelectedStatuses((current) => current.includes(status)
@@ -200,7 +203,8 @@ function ProfitEstimationContent({ storeId, activeStoreName }: { storeId: string
           <div className="flex gap-2"><button type="button" onClick={() => void load(1, limit)} disabled={!storeId || loading} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />{loading ? 'Memuat…' : 'Muat Estimasi'}</button><button type="button" onClick={resetResult} disabled={!data && !error && !loading} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Reset</button></div>
         </div>
         <fieldset className="mt-4 border-t border-slate-100 pt-4"><div className="flex flex-wrap items-center justify-between gap-2"><legend className="text-sm font-medium text-slate-700">Status Shopee <span className="font-normal text-slate-400">(opsional, bisa pilih lebih dari satu)</span></legend><button type="button" onClick={() => { setSelectedStatuses([]); resetResult(); }} disabled={selectedStatuses.length === 0} className="text-xs font-semibold text-purple-700 hover:text-purple-800 disabled:cursor-not-allowed disabled:text-slate-400">Pilih Semua</button></div><div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">{statusOptions.map((status) => <label key={status} className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={selectedStatuses.includes(status)} onChange={() => toggleStatus(status)} className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500" />{status}</label>)}</div></fieldset>
-        <p className="mt-3 text-xs leading-5 text-slate-500">Status kosong berarti semua status. Filter berlaku untuk kalkulasi dan tabel order. Ads Spend serta PPN tetap biaya agregat toko pada tanggal yang sama.</p></section>
+        <fieldset className="mt-4 border-t border-slate-100 pt-4"><legend className="text-sm font-medium text-slate-700">No. Resi <span className="font-normal text-slate-400">(opsional)</span></legend><div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">{([{ value: 'all', label: 'Semua Pesanan' }, { value: 'with', label: 'Hanya yang memiliki No. Resi' }, { value: 'without', label: 'Hanya yang belum memiliki No. Resi' }] as const).map((option) => <label key={option.value} className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700"><input type="radio" name="resi-filter" value={option.value} checked={resiFilter === option.value} onChange={() => { setResiFilter(option.value); resetResult(); }} className="h-4 w-4 border-slate-300 text-purple-600 focus:ring-purple-500" />{option.label}</label>)}</div></fieldset>
+        <p className="mt-3 text-xs leading-5 text-slate-500">Filter berlaku untuk kalkulasi dan tabel order. Ads Spend serta PPN tetap biaya agregat toko pada tanggal yang sama.</p></section>
         {error && <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
         {!data && !loading && !error && <section className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">Tentukan rentang bila diperlukan, lalu tekan <b>Muat Estimasi</b>.</section>}
         {loading && <section className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Menghitung Estimasi Kotor dan Ads Spend…</section>}

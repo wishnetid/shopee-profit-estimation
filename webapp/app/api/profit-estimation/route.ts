@@ -104,6 +104,13 @@ export async function GET(request: NextRequest) {
     scopedOrderParams.push(...selectedStatuses);
   }
 
+  const resiFilter = sp.get('resiFilter');
+  if (resiFilter !== null && resiFilter !== 'all' && resiFilter !== 'with' && resiFilter !== 'without') {
+    return NextResponse.json({ error: 'Filter No. Resi tidak valid.' }, { status: 400 });
+  }
+  if (resiFilter === 'with') scopedOrderFilters.push(`NULLIF(TRIM(scoped.no_resi), '') IS NOT NULL`);
+  if (resiFilter === 'without') scopedOrderFilters.push(`NULLIF(TRIM(scoped.no_resi), '') IS NULL`);
+
   if (dateRange.dateFrom) {
     scopedOrderFilters.push('DATE(scoped.waktu_pesanan_dibuat) >= ?');
     scopedOrderParams.push(dateRange.dateFrom);
@@ -231,6 +238,7 @@ export async function GET(request: NextRequest) {
       storeId: storeCheck.storeId,
       availableStatuses,
       selectedStatuses,
+      resiFilter: resiFilter || 'all',
       skuImport: skuImport ? {
         id: skuImport.id,
         sourceFile: skuImport.source_file,
