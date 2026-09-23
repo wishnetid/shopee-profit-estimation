@@ -95,6 +95,23 @@ test('buildEstimationReport keeps HPP mapping and invalid seller basis fail-clos
   assert.equal(byOrder['MISSING-SUBTOTAL'].estimasiKotor, null);
 });
 
+test('buildEstimationReport supports a caller-scoped multi-status order set without changing eligibility safeguards', () => {
+  const allRows = [
+    orderRow({ no_pesanan: 'NEED-SHIP', status_pesanan: 'Perlu Dikirim', subtotal_pesanan: '100000.00' }),
+    orderRow({ no_pesanan: 'IN-TRANSIT', status_pesanan: 'Sedang Dikirim', subtotal_pesanan: '200000.00' }),
+    orderRow({ no_pesanan: 'CANCELLED', status_pesanan: 'Batal', alasan_pembatalan: 'Dibatalkan', subtotal_pesanan: '300000.00' }),
+  ];
+  const selectedStatuses = new Set(['Perlu Dikirim', 'Sedang Dikirim']);
+  const report = buildEstimationReport({
+    orderRows: allRows.filter((row) => selectedStatuses.has(row.status_pesanan)),
+    skuRows: [skuRow({ harga: '10000.00' })],
+  });
+
+  assert.equal(report.summary.totalOrderCount, 2);
+  assert.equal(report.summary.estimatedOrderCount, 2);
+  assert.deepEqual(report.orders.data.map((order) => order.statusPesanan), ['Perlu Dikirim', 'Sedang Dikirim']);
+});
+
 test('buildEstimationReport excludes cancellation, return, failed-delivery, and returned quantity from totals', () => {
   const report = buildEstimationReport({
     orderRows: [

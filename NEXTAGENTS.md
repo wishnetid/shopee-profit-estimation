@@ -311,7 +311,7 @@ webapp/app/layout.tsx                           label nav Profit & Estimasi
 Target API read-only:
 
 ```text
-GET /api/profit-estimation?storeId=<id>&dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD&page=<n>&limit=<n>
+GET /api/profit-estimation?storeId=<id>&dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD&status=<Status%20Shopee>&status=<Status%20Shopee>&page=<n>&limit=<n>
 ```
 
 - `storeId` wajib divalidasi memakai boundary existing `requireStoreId`.

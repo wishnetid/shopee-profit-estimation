@@ -56,7 +56,7 @@
 
 7. **Profit & Estimasi — read-only**
    - `/profit` memuat tab **Estimasi Kotor** secara manual; ia tidak melakukan import, mutation, atau perubahan RAW.
-   - `GET /api/profit-estimation` mengembalikan summary, Ringkasan Harian, dan detail order store-scoped.
+   - `GET /api/profit-estimation` mengembalikan summary, Ringkasan Harian, dan detail order store-scoped. Filter `status` dapat diulang untuk multi-select Status Shopee; scope filter berlaku ke kalkulasi order sementara Ads Spend/PPN tetap agregat toko per tanggal.
    - Estimasi tidak memakai Income, settlement `Penghasilan / Order`, atau cohort historis. Order eligible tetap mendapat angka bila Subtotal Pesanan, voucher seller, quantity, dan HPP valid.
    - Basis per order adalah `Σ(Subtotal Pesanan item) − Σ(Voucher Ditanggung Penjual item)`, lalu dikurangi potongan standar Shopee dan HPP item.
    - Ads Spend hanya berasal dari `Deduction for Product Ad` dengan nominal signed negatif.

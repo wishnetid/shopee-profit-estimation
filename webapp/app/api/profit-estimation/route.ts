@@ -91,6 +91,17 @@ export async function GET(request: NextRequest) {
   const scopedOrderParams: Array<number | string> = [storeCheck.storeId as number];
   const adsFilters = ['i.store_id = ?'];
   const adsParams: Array<number | string> = [storeCheck.storeId as number];
+  const selectedStatuses = [...new Set(
+    sp.getAll('status').map((value) => value.trim()).filter(Boolean),
+  )];
+  if (selectedStatuses.length > 50) {
+    return NextResponse.json({ error: 'Terlalu banyak Status Shopee dipilih.' }, { status: 400 });
+  }
+
+  if (selectedStatuses.length > 0) {
+    scopedOrderFilters.push(`TRIM(COALESCE(scoped.status_pesanan, '')) IN (${selectedStatuses.map(() => '?').join(', ')})`);
+    scopedOrderParams.push(...selectedStatuses);
+  }
 
   if (dateRange.dateFrom) {
     scopedOrderFilters.push('DATE(scoped.waktu_pesanan_dibuat) >= ?');
@@ -122,6 +133,14 @@ export async function GET(request: NextRequest) {
           ORDER BY id ASC
         `, [skuImport.id]))[0]
       : [];
+
+    const [availableStatusRows] = await conn.query<Array<RowDataPacket & { status_pesanan: string | null }>>(`
+      SELECT DISTINCT TRIM(status_pesanan) AS status_pesanan
+      FROM order_all
+      WHERE store_id = ? AND NULLIF(TRIM(status_pesanan), '') IS NOT NULL
+      ORDER BY status_pesanan ASC
+    `, [storeCheck.storeId as number]);
+    const availableStatuses = availableStatusRows.map((row) => row.status_pesanan).filter((status): status is string => Boolean(status));
 
     const [orderRows] = await conn.query<OrderRow[]>(`
       SELECT
@@ -208,6 +227,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       storeId: storeCheck.storeId,
+      availableStatuses,
+      selectedStatuses,
       skuImport: skuImport ? {
         id: skuImport.id,
         sourceFile: skuImport.source_file,
