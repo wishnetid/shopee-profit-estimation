@@ -168,6 +168,7 @@ function createOrderResult(group, skuIndex, exceptionOrderNumbers) {
     return returnedQuantity !== null && returnedQuantity > 0;
   });
   const hasRawException = Boolean(group.no_pesanan && exceptionOrderNumbers.has(group.no_pesanan.toLowerCase()));
+  const resiNumbers = [...new Set(rows.map((row) => normalizeText(row.no_resi)).filter(Boolean))];
   const hasEligibleStatus = statuses.some((status) => ELIGIBLE_STATUSES.has(status));
   const allEligibleStatuses = !hasMissingStatus && statuses.length > 0 && statuses.every((status) => ELIGIBLE_STATUSES.has(status));
   const orderDate = !hasMissingDate && dates.length === 1 ? dates[0] : null;
@@ -253,6 +254,7 @@ function createOrderResult(group, skuIndex, exceptionOrderNumbers) {
 
   return {
     no_pesanan: group.no_pesanan,
+    resiNumbers,
     orderDate,
     statusPesanan: statuses.length === 1 ? statuses[0] : statuses.join(' / ') || null,
     itemCount: rows.length,
@@ -340,6 +342,8 @@ function buildEstimationReport({
     hppIncompleteOrderCount: allOrders.filter((order) => order.estimationStatus === ESTIMATION_STATUS.HPP_INCOMPLETE).length,
     reviewOrderCount: allOrders.filter((order) => order.estimationStatus === ESTIMATION_STATUS.NEEDS_REVIEW).length,
     excludedOrderCount: allOrders.filter((order) => order.estimationStatus === ESTIMATION_STATUS.NOT_ELIGIBLE).length,
+    uniqueOrderCount: allOrders.filter((order) => order.no_pesanan).length,
+    uniqueResiCount: new Set(allOrders.flatMap((order) => order.resiNumbers)).size,
     totalHpp: allOrders.reduce((total, order) => total + (order.totalHpp || 0), 0),
     estimatedGrossBeforeFeeAds: allOrders.reduce((total, order) => total + (order.estimasiKotor || 0), 0),
     adsSpend: ads.total,

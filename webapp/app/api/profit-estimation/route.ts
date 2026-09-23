@@ -29,6 +29,7 @@ type OrderRow = RowDataPacket & {
   status_pesanan: string | null;
   alasan_pembatalan: string | null;
   status_pembatalan_pengembalian: string | null;
+  no_resi: string | null;
   subtotal_pesanan: string | number | null;
   voucher_ditanggung_penjual: string | number | null;
   waktu_pesanan_dibuat: string | null;
@@ -148,6 +149,7 @@ export async function GET(request: NextRequest) {
         o.status_pesanan,
         o.alasan_pembatalan,
         o.status_pembatalan_pengembalian,
+        o.no_resi,
         o.subtotal_pesanan,
         o.voucher_ditanggung_penjual,
         DATE_FORMAT(o.waktu_pesanan_dibuat, '%Y-%m-%d %H:%i:%s') AS waktu_pesanan_dibuat,

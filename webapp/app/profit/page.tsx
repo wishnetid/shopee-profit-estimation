@@ -50,6 +50,8 @@ type EstimationPayload = {
     hppIncompleteOrderCount: number;
     reviewOrderCount: number;
     excludedOrderCount: number;
+    uniqueOrderCount: number;
+    uniqueResiCount: number;
     totalHpp: number;
     estimatedGrossBeforeFeeAds: number;
     adsSpend: number;
@@ -204,6 +206,8 @@ function ProfitEstimationContent({ storeId, activeStoreName }: { storeId: string
         {loading && <section className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Menghitung Estimasi Kotor dan Ads Spend…</section>}
         {data && !loading && <>
           <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <SummaryCard label="No. Pesanan (Unik)" value={data.summary.uniqueOrderCount.toLocaleString('id-ID')} detail="Order unik dalam scope filter" tone="slate" />
+            <SummaryCard label="No. Resi (Unik)" value={data.summary.uniqueResiCount.toLocaleString('id-ID')} detail="Resi terisi unik dalam scope filter" tone="slate" />
             <SummaryCard label="Estimasi Kotor Setelah HPP" value={formatIdr(data.summary.estimatedGrossBeforeFeeAds)} detail={`${data.summary.estimatedOrderCount} order dengan basis dan HPP lengkap`} tone="purple" />
             <SummaryCard label="Total HPP" value={formatIdr(data.summary.totalHpp)} detail={`${data.summary.estimatedOrderCount} order siap diestimasi`} tone="slate" />
             <SummaryCard label="Ads Spend" value={formatIdr(data.summary.adsSpend)} detail="Deduction for Product Ad negatif" tone="rose" />

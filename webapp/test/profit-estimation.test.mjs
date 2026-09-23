@@ -16,6 +16,7 @@ function orderRow(overrides = {}) {
     status_pesanan: 'Perlu Dikirim',
     alasan_pembatalan: null,
     status_pembatalan_pengembalian: null,
+    no_resi: 'SPX-ORDER-1',
     subtotal_pesanan: '200000.00',
     voucher_ditanggung_penjual: '0.00',
     waktu_pesanan_dibuat: '2026-08-10 09:00:00',
@@ -60,6 +61,8 @@ test('buildEstimationReport derives gross estimation from seller subtotal, selle
   assert.equal(order.totalHpp, 1500000);
   assert.equal(order.estimasiKotor, 382065);
   assert.equal(report.summary.totalHpp, 1500000);
+  assert.equal(report.summary.uniqueOrderCount, 1);
+  assert.equal(report.summary.uniqueResiCount, 1);
   assert.equal(report.summary.estimatedGrossBeforeFeeAds, 382065);
 });
 
