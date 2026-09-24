@@ -46,9 +46,9 @@ export async function GET(request: NextRequest) {
       balanceRows = rows;
     }
     const exceptionEvidenceRows = [
-      ...returnRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'return_refund', source_status: row.status_pembatalan_pengembalian })),
-      ...failedRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'failed_delivery', source_status: row.status_klaim })),
-      ...cancellationRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'cancellation', source_status: row.status_pembatalan_pengembalian })),
+      ...returnRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'return_refund', source_status: row.source_status })),
+      ...failedRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'failed_delivery', source_status: row.source_status })),
+      ...cancellationRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'cancellation', source_status: row.source_status })),
       ...adjustmentRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'adjustment', source_status: null })),
     ];
     const report = buildProfitActualReport({ orderRows, skuRows, settlementRows, settlementExistenceRows, balanceRows, exceptionEvidenceRows, exceptionOrderNumbers: exceptionRows.map((row) => String(row.no_pesanan || '')) }) as { orders: Array<{ no_pesanan: string }>; [key: string]: unknown };
