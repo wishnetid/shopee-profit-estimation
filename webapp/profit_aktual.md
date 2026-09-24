@@ -280,6 +280,14 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Test/deploy: koneksi canonical DB melalui Windows berhasil; tidak ada data DB yang diubah.
 - Next step: implementasi Fase 1 additive, tanpa migration/schema change: endpoint read-only + tab Profit Aktual dengan summary, bucket, dan detail order settled normal.
 
+### 2026-09-25 — Estimasi Order Belum Selesai
+
+- Scope additive pada tab `Profit Pesanan`: section amber **Estimasi Order Belum Selesai** dipisahkan dari kartu Profit Aktual dan Cakupan Finansial.
+- Kontrak read-only/store-scoped: hanya bucket `pending`; total pesanan unik, PCS, `Total Pembayaran` sekali per No. Pesanan, serta Estimasi Kotor tanpa Ads memakai resolver HPP dan fee standar yang sama dengan Estimasi Kotor existing.
+- Guardrail: Income settlement, My Balance, Ads/PPN Ads, refund, Adjustment, dan Profit Aktual Normal tidak dipakai atau diubah. Bila nominal/HPP/basis ada yang tidak valid, total terkait fail-closed menjadi `—`, bukan Rp0.
+- Validasi live TACTICALIZED September 2026: 172 order / 301 PCS; Nominal Belum Selesai Rp23.551.634; Estimasi Profit Belum Selesai Rp3.859.354. Semua basis nilai/HPP valid pada snapshot DB saat validasi.
+- Test/deploy: `npm test` 146 pass / 2 skipped; `npm run build` berhasil; production API tervalidasi pada 25-09-2026. Commit `e2942cf`; production `/profit` di-deploy.
+
 ### 2026-09-24 — Fase 1 implemented (pending production verification)
 
 - Endpoint baru `GET /api/profit-calculation`, read-only dan store-scoped. Mengambil hanya `Penghasilan / Order` sebagai settlement, memakai resolver HPP aplikasi (`Nomor Referensi SKU` dulu, lalu `SKU Induk`), dan membentuk exception dari Cancellation + Failed Delivery + Return/Refund.
