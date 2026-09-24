@@ -313,18 +313,25 @@ test('live unique keys include store scope for current-state and package identit
   assert.deepEqual(incomeColumns, ['store_id', 'source_sha256']);
 });
 
-test('legacy profit API routes are disabled until the RAW financial contract is approved', () => {
+test('Profit Aktual route is read-only, store-scoped, uses the approved RAW sources, and preserves WIB cohort boundaries', () => {
   const route = fs.readFileSync(path.resolve(process.cwd(), 'app/api/profit-calculation/route.ts'), 'utf8');
-  const summaryRoute = fs.readFileSync(path.resolve(process.cwd(), 'app/api/profit-calculation/summary/route.ts'), 'utf8');
-  assert.match(route, /PROFIT_NOT_READY/);
-  assert.match(summaryRoute, /PROFIT_NOT_READY/);
-  assert.doesNotMatch(route, /FROM orders/);
-  assert.doesNotMatch(summaryRoute, /FROM orders/);
+  assert.match(route, /requireStoreId/);
+  assert.match(route, /income_penghasilan_raw/);
+  assert.match(route, /lihat_berdasarkan=.*Order/);
+  assert.match(route, /order_cancellation_raw/);
+  assert.match(route, /order_failed_delivery_raw/);
+  assert.match(route, /order_return_refund_raw/);
+  assert.match(route, /DATE_SUB\(CONCAT\(\?, \\' 00:00:00\\'\), INTERVAL 7 HOUR\)/);
+  assert.doesNotMatch(route, /INSERT INTO|UPDATE |DELETE FROM/);
 });
 
-test('Profit page clearly marks the financial layer as unavailable', () => {
+test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor stays present', () => {
   const source = fs.readFileSync(path.resolve(process.cwd(), 'app/profit/page.tsx'), 'utf8');
-  assert.match(source, /PROFIT_NOT_READY|belum tersedia/i);
-  assert.match(source, /Balance|HPP|return|refund/i);
-  assert.doesNotMatch(source, /Net Payout - HPP/);
+  const panel = fs.readFileSync(path.resolve(process.cwd(), 'components/ProfitActualPanel.tsx'), 'utf8');
+  assert.match(source, /Estimasi Kotor/);
+  assert.match(source, /Profit Aktual/);
+  assert.match(source, /ProfitActualPanel/);
+  assert.match(panel, /\/api\/profit-calculation/);
+  assert.match(panel, /Penghasilan \/ Order/);
+  assert.match(panel, /return\/failed delivery/i);
 });

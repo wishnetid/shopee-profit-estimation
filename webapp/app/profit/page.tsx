@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, BarChart3, ChevronLeft, ChevronRight, LockKeyhole, RefreshCw } from 'lucide-react';
+import { AlertTriangle, BarChart3, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { useStore } from '@/components/StoreContext';
+import ProfitActualPanel from '@/components/ProfitActualPanel';
 
 type EstimationStatus = 'estimable' | 'hpp_incomplete' | 'needs_review' | 'not_eligible';
 
@@ -196,7 +197,7 @@ function ProfitEstimationContent({ storeId, activeStoreName }: { storeId: string
         <button type="button" onClick={() => setTab('estimate')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'estimate' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Estimasi Kotor</button>
         <button type="button" onClick={() => setTab('actual')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'actual' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Profit Aktual</button>
       </div>
-      {tab === 'actual' ? <section className="rounded-xl border border-slate-200 bg-white p-5 lg:p-6"><div className="flex items-start gap-3"><div className="rounded-lg bg-slate-100 p-2 text-slate-600"><LockKeyhole className="h-5 w-5" /></div><div><h2 className="font-semibold text-slate-900">Profit Aktual — Belum Tersedia</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Fase ini menunggu kontrak settlement `Penghasilan / Order`, return/refund, QC stok, serta biaya eksternal. Estimasi Kotor bukan pengganti angka profit aktual.</p></div></div></section> : <>
+      {tab === 'actual' ? <ProfitActualPanel storeId={storeId} /> : <>
         <section className="mb-5 rounded-xl border border-purple-200 bg-purple-50 p-4 lg:p-5"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-purple-700" /><div className="text-sm leading-6 text-purple-950"><h2 className="font-semibold">Estimasi Kotor Setelah HPP</h2><p>Basis memakai Subtotal Pesanan seller, dikurangi voucher seller, potongan standar Shopee, lalu HPP item. Tidak menunggu Income, settlement, atau cohort historis. Komisi program khusus seperti AMS belum masuk estimasi standar.</p></div></div></section>
         <section className="mb-5 rounded-xl border border-slate-200 bg-white p-4 lg:p-5"><div className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
           <label className="text-sm font-medium text-slate-700">Dari tanggal <span className="font-normal text-slate-400">(opsional)</span><input type="date" value={dateFrom} onChange={(event) => updateDate('from', event.target.value)} className="mt-1.5 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-100" /></label>

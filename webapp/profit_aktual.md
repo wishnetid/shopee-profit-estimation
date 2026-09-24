@@ -244,6 +244,26 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Test/deploy: `npm test` 132 pass, 2 live-DB check skipped; `npm run build` berhasil. Lint global masih gagal pada file lama di `app/api/internal/order-all-line-ordinal-migration/route.ts` dan `scripts/migrate-order-all-line-ordinal.js`, tidak terkait perubahan Income.
 - Next step: deploy perbaikan parser; setelah itu preview ulang lalu import Income melalui aplikasi sebelum audit cohort Fase 0.
 
+### 2026-09-24 — Fase 0 audit cohort Agustus via canonical DB
+
+- Input/report: audit read-only database `supplie3_shopee_profit_estimation` melalui SSH tunnel VPS → Windows → cPanel MySQL. Store `TACTICALIZED` (`store_id=1`).
+- Coverage: `Order.all` cohort dibuat 1–31 Agustus 2026 berisi 756 order / 989 physical item row: 600 `Selesai`, 139 `Batal`, dan 2 `Sedang Dikirim`. Income package #12 periode 1 Agustus–24 September, checksum matched: 1.120 `Order`, 1.437 `Sku`, 6 Adjustment, 2 Shipping Fee Discrepancy. Balance package #4 status reconciliation dan ledger continuity `matched`. Ads package #12 tersedia tetapi tetap di luar alokasi Fase 1.
+- Verifikasi: 600 order `Selesai` masing-masing mempunyai tepat satu `Penghasilan / Order`, total Rp72.992.154; tidak ada duplicate settlement row. Semua 587 order settled non-exception punya mapping HPP valid lewat `Nomor Referensi SKU`: 753 item row / 1.042 pcs. Balance menemukan seluruh 1.120 settlement order ID; 1.119 nominal exact match.
+- Temuan/mismatch: 13 order `Selesai` tersettle dengan total Rp333.138 beririsan Return/Refund, sehingga dikeluarkan dari normal dan tetap bucket `Perlu Finalisasi Exception`. Balance mismatch satu order `260814BQYKUWFW`: Income -Rp959 vs net Balance Rp4.041 karena Balance memuat transaksi masuk dan keluar; tidak dipakai untuk mengubah settlement. 139 order batal tanpa settlement; 2 sedang dikirim tanpa settlement. Failed Delivery ada 17 order / 18 row dan Return/Refund ada 13 order / 17 row; exception visibility tetap wajib dipisah dari actual normal.
+- Keputusan yang disetujui: bukti cukup untuk kontrak Fase 1 read-only: 587 order `Profit Aktual Tersettle Normal`, settlement Rp72.659.016 sebelum HPP; 2 `Belum Tersettle`; 13 `Perlu Finalisasi Exception`; 139 `Tidak Ada Profit — Batal`. Adjustment, Ads, PPN Ads, Balance mismatch, failed delivery dan return/refund tidak dialokasikan ke normal profit.
+- Perubahan source/schema/code: belum ada. Audit hanya SELECT/read-only.
+- Test/deploy: koneksi canonical DB melalui Windows berhasil; tidak ada data DB yang diubah.
+- Next step: implementasi Fase 1 additive, tanpa migration/schema change: endpoint read-only + tab Profit Aktual dengan summary, bucket, dan detail order settled normal.
+
+### 2026-09-24 — Fase 1 implemented (pending production verification)
+
+- Endpoint baru `GET /api/profit-calculation`, read-only dan store-scoped. Mengambil hanya `Penghasilan / Order` sebagai settlement, memakai resolver HPP aplikasi (`Nomor Referensi SKU` dulu, lalu `SKU Induk`), dan membentuk exception dari Cancellation + Failed Delivery + Return/Refund.
+- Kalender cohort menggunakan batas WIB eksplisit (`UTC+7`), tidak memakai `DATE()` server-dependent.
+- UI tab `Profit Aktual` dibuat additive pada halaman `/profit`; Estimasi Kotor tidak diubah. Summary menampilkan profit normal, settlement, HPP, serta bucket review; tabel tetap memperlihatkan seluruh order cohort dengan bucket masing-masing.
+- Verifikasi canonical DB sebelum UI: 741 unique order / 972 physical item row; 587 settled normal, 2 pending, 13 exception, 139 batal; settlement normal Rp72.659.016, HPP Rp59.152.500, Profit Aktual Normal Rp13.506.516.
+- Test: `npm test` 132 pass, 2 live-DB test skipped. `npm run build` berhasil. Tidak ada migration, import, atau mutasi database.
+- Next step: commit/push, Production deployment, API smoke test dan browser visual QA.
+
 ### Format progress berikutnya
 
 Tambahkan entri baru di bawah ini setiap ada langkah bermakna:
