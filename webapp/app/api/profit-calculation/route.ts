@@ -3,7 +3,7 @@ import type { RowDataPacket } from 'mysql2/promise';
 import { getConnection } from '../../../lib/db';
 import { requireStoreId } from '../../../lib/store';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { buildProfitActualReport } = require('../../../lib/profit-actual.js') as { buildProfitActualReport: (input: { orderRows: RowDataPacket[]; skuRows: RowDataPacket[]; settlementRows: RowDataPacket[]; settlementExistenceRows?: RowDataPacket[]; exceptionOrderNumbers: string[]; exceptionEvidenceRows?: Array<{ no_pesanan?: unknown; source_type?: unknown; source_status?: unknown }>; balanceRows?: RowDataPacket[] }) => unknown };
+const { buildProfitActualReport } = require('../../../lib/profit-actual.js') as { buildProfitActualReport: (input: { orderRows: RowDataPacket[]; skuRows: RowDataPacket[]; settlementRows: RowDataPacket[]; settlementExistenceRows?: RowDataPacket[]; exceptionOrderNumbers: string[]; exceptionEvidenceRows?: Array<{ no_pesanan?: unknown; source_type?: unknown; source_status?: unknown; return_type?: unknown; stock_status?: unknown }>; balanceRows?: RowDataPacket[] }) => unknown };
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
       balanceRows = rows;
     }
     const exceptionEvidenceRows = [
-      ...returnRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'return_refund', source_status: row.source_status })),
+      ...returnRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'return_refund', source_status: row.source_status, return_type: row.return_type, stock_status: row.stock_status })),
       ...failedRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'failed_delivery', source_status: row.source_status })),
       ...cancellationRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'cancellation', source_status: row.source_status })),
       ...adjustmentRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'adjustment', source_status: null })),

@@ -416,6 +416,26 @@ Tambahkan entri baru di bawah ini setiap ada langkah bermakna:
 
 ---
 
+### 2026-09-25 — Status `Cash Final Negatif` untuk return penuh selesai
+
+- Scope: status finansial baru pada `Profit Pesanan`; read-only, tanpa schema migration dan tanpa perubahan Estimasi Kotor.
+- Hanya berlaku bila seluruh evidence cocok secara ketat:
+  1. hanya ada evidence `return_refund` pada order;
+  2. status return `Dana Dikembalikan ke Pembeli`;
+  3. tipe `Seluruh Pesanan`;
+  4. status kirim return `Pengiriman pengembalian barang selesai`;
+  5. settlement `Penghasilan / Order` negatif;
+  6. satu-satunya My Balance order-linked adalah `Penghasilan dari Pesanan` keluar yang nilainya persis sama dengan settlement.
+- Status yang ditampilkan:
+  ```text
+  Cash Final Negatif
+  Return penuh selesai; cash outcome final, QC barang menunggu
+  ```
+- Tidak menghitung/menampilkan HPP terpakai, profit, atau margin; tidak masuk `Profit Aktual Normal`, `Profit Retur Parsial`, `Settlement Tercatat`, `Profit Terhitung`, maupun `Cakupan Cash`.
+- Tidak lagi masuk backlog `Belum Ada Jawaban`; cash outcome telah terjawab, sementara QC fisik tetap dikelola pada tab `Retur & Refund`.
+- Guardrail fail-closed: mutasi My Balance tambahan (mis. penyesuaian/kompensasi), status return/logistik berbeda, return parsial, atau settlement/balance tidak persis cocok tetap `Perlu Audit`.
+- Pilot evidence: order `2608139M8365AV` — return penuh selesai, refund pembeli, parcel tertracking sampai alamat return, Income/My Balance `-Rp47.813`, dan belum ada adjustment.
+
 ### 2026-09-24 — Sub-status Return Dibatalkan — Cash Cocok
 
 - Scope: sub-status evidence-only pada `Profit Pesanan`, tidak ada schema/migration atau perubahan formula Profit Aktual.

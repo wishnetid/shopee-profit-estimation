@@ -407,6 +407,37 @@ test('Return cancelled cash matched remains Perlu Audit but gets a non-financial
   assert.equal(withOutgoing.orders[0].exceptionSubstatus, null);
 });
 
+test('Completed full return with final negative cash gets Cash Final Negatif, not Perlu Audit', () => {
+  const report = buildProfitActualReport({
+    skuRows: [{ sku1: 'FULL-RETURN', sku2: '', harga: 52500 }],
+    settlementRows: [{ no_pesanan: 'FULL-RETURN-ORDER', signed_total: -47813, tanggal_dana_dilepaskan: '2026-08-25' }],
+    exceptionOrderNumbers: ['FULL-RETURN-ORDER'],
+    exceptionEvidenceRows: [{ no_pesanan: 'FULL-RETURN-ORDER', source_type: 'return_refund', source_status: 'Dana Dikembalikan ke Pembeli', return_type: 'Seluruh Pesanan', stock_status: 'Pengiriman pengembalian barang selesai' }],
+    balanceRows: [{ no_pesanan: 'FULL-RETURN-ORDER', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: -47813 }],
+    orderRows: [{ no_pesanan: 'FULL-RETURN-ORDER', status_pesanan: 'Selesai', nomor_referensi_sku: 'FULL-RETURN', sku_induk: '', jumlah: 1, returned_quantity: 1, waktu_pesanan_selesai: '2026-08-25 00:22:00', waktu_pesanan_dibuat: '2026-08-13' }],
+  });
+  assert.equal(report.orders[0].bucket, 'full_return_cash_final_negative');
+  assert.equal(report.orders[0].profitActual, null);
+  assert.equal(report.orders[0].provisionalProfit, null);
+  assert.equal(report.summary.fullReturnCashFinalNegative, 1);
+  assert.equal(report.summary.fullReturnCashFinalNegativePcs, 1);
+  assert.equal(report.summary.fullReturnCashFinalNegativeOutcome, -47813);
+  assert.equal(report.summary.exception, 0);
+  assert.equal(report.summary.profitComputable, 0);
+  assert.equal(report.summary.hppApplied, 0);
+  assert.equal(report.summary.unresolvedOrders, 0);
+  assert.equal(report.summary.unresolvedPcs, 0);
+  const unsafe = buildProfitActualReport({
+    skuRows: [{ sku1: 'FULL-RETURN', sku2: '', harga: 52500 }],
+    settlementRows: [{ no_pesanan: 'UNSAFE', signed_total: -47813, tanggal_dana_dilepaskan: '2026-08-25' }],
+    exceptionOrderNumbers: ['UNSAFE'],
+    exceptionEvidenceRows: [{ no_pesanan: 'UNSAFE', source_type: 'return_refund', source_status: 'Dana Dikembalikan ke Pembeli', return_type: 'Seluruh Pesanan', stock_status: 'Pengiriman pengembalian barang selesai' }],
+    balanceRows: [{ no_pesanan: 'UNSAFE', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: -47813 }, { no_pesanan: 'UNSAFE', type_transaksi: 'Penyesuaian', jumlah_signed: 5000 }],
+    orderRows: [{ no_pesanan: 'UNSAFE', status_pesanan: 'Selesai', nomor_referensi_sku: 'FULL-RETURN', sku_induk: '', jumlah: 1, returned_quantity: 1, waktu_pesanan_selesai: '2026-08-25 00:22:00', waktu_pesanan_dibuat: '2026-08-13' }],
+  });
+  assert.equal(unsafe.orders[0].bucket, 'exception');
+});
+
 test('Profit Aktual reports a settled partial return as provisional cash profit when My Balance settlement remains intact', () => {
   const input = {
     skuRows: [{ sku1: 'SOLD', sku2: '', harga: 52500 }, { sku1: 'RETURNED', sku2: '', harga: 50000 }],
@@ -582,7 +613,9 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(panel, /Cakupan Cash/);
   assert.match(panel, /Belum Ada Jawaban/);
   assert.match(panel, /\['unresolved', 'Belum Ada Jawaban'\]/);
-  assert.match(panel, /\['settled_normal', 'partial_return_provisional', 'batal'\]/);
+  assert.match(panel, /\['settled_normal', 'partial_return_provisional', 'full_return_cash_final_negative', 'batal'\]/);
+  assert.match(panel, /Cash Final Negatif/);
+  assert.match(panel, /fullReturnCashFinalNegativeOutcome/);
   assert.match(panel, /settlementRecorded/);
   assert.match(panel, /profitComputable/);
   assert.match(panel, /unresolvedOrders/);
