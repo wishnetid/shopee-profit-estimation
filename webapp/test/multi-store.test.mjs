@@ -359,6 +359,19 @@ test('Profit Aktual route is read-only, store-scoped, uses the approved RAW sour
   assert.doesNotMatch(route, /INSERT INTO|UPDATE |DELETE FROM/);
 });
 
+test('Profit Aktual reports settlement excluded from normal profit separately', () => {
+  const report = buildProfitActualReport({
+    skuRows: [{ sku1: 'RETURN-SKU', sku2: '', harga: 10000 }],
+    settlementRows: [{ no_pesanan: 'RETURNED', signed_total: 64066, tanggal_dana_dilepaskan: '2026-09-04' }],
+    exceptionOrderNumbers: ['RETURNED'],
+    orderRows: [{ no_pesanan: 'RETURNED', status_pesanan: 'Selesai', nomor_referensi_sku: 'RETURN-SKU', sku_induk: '', jumlah: 1, waktu_pesanan_selesai: '2026-09-04 19:00:00', waktu_pesanan_dibuat: '2026-09-01' }],
+  });
+  assert.equal(report.summary.settledNormal, 0);
+  assert.equal(report.summary.settlement, 0);
+  assert.equal(report.summary.exception, 1);
+  assert.equal(report.summary.settlementExcluded, 64066);
+});
+
 test('Profit Aktual separates completed-unsettled orders from ordinary pending orders', () => {
   const report = buildProfitActualReport({
     skuRows: [{ sku1: 'REF-1', sku2: '', harga: 10000 }],
@@ -383,7 +396,11 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(panel, /Penghasilan \/ Order/);
   assert.match(source, /Retur & Refund/);
   assert.match(source, /Selesai Belum Cair/);
-  assert.match(source, /Exception/);
+  assert.match(source, /Settlement Dikecualikan/);
+  assert.match(panel, /settlementExcluded/);
+  assert.match(panel, /Lihat detail/);
+  assert.match(panel, /Item order/);
+  assert.match(panel, /Qty retur/);
   assert.match(source, /view="actual"/);
   assert.match(source, /view="completed_unsettled"/);
   assert.match(source, /view="exception"/);

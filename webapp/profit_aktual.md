@@ -302,6 +302,13 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Tabel `Profit Pesanan Selesai` memakai bounded scroll container: tinggi area kira-kira sembilan baris data dan scrollbar vertikal untuk baris lain.
 - Header tabel dibuat sticky saat scroll. Tidak ada pagination atau limit API tambahan; seluruh hasil tetap tersedia melalui scroll.
 
+### 2026-09-24 — Settlement Dikecualikan dan detail retur
+
+- Tab audit `Exception` diganti label bisnis **Settlement Dikecualikan**: settlement cair yang tidak masuk Profit Aktual normal karena return/refund, failed delivery, pembatalan, atau HPP review.
+- Profit Aktual menampilkan kartu `Settlement Dikecualikan` berisi jumlah settlement dan jumlah pesanan terdampak. Nilai ini tidak dijumlahkan ke settlement normal, HPP, atau profit normal.
+- Setiap baris audit dapat dibuka untuk memperlihatkan settlement/release date, source exception, No. Pengembalian, qty/nilai, status QC, dan seluruh item Order.all beserta qty order, qty retur, dan status retur.
+- Return QC tetap bukti operasional saja. Tidak ada alokasi otomatis refund maupun HPP sampai kebijakan finansial retur disetujui.
+
 ### 2026-09-24 — Koreksi kalender timestamp Order.all
 
 - Audit terhadap workbook `Order.all.20260901_20260924.xlsx` dan DB canonical membuktikan nilai `DATETIME` `Order.all` dipersist persis seperti kalender lokal Seller Centre; nilainya bukan UTC yang harus ditambah/dikurangi tujuh jam.
