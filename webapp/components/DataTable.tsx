@@ -35,12 +35,6 @@ export default function DataTable({
 
   const totalPages = Math.ceil(totalRows / limit);
 
-  const handleLimitChange = (newLimit: number) => {
-    setLimit(newLimit);
-    setPage(1);
-    onPageChange(1, newLimit);
-  };
-
   const handlePageChange = (newPage: number) => {
     setPage(newPage);
     onPageChange(newPage, limit);
@@ -91,28 +85,9 @@ export default function DataTable({
             </div>
           </div>
 
-          {/* Bottom row: rows per page + stats */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-slate-500">Rows:</span>
-              {[10, 50, 100].map((size) => (
-                <button
-                  key={size}
-                  onClick={() => handleLimitChange(size)}
-                  className={`px-2.5 py-1 text-xs rounded-md border transition-colors ${
-                    limit === size
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  {size}
-                </button>
-              ))}
-            </div>
-            <div className="text-xs text-slate-500">
-              {data.length > 0 ? (page - 1) * limit + 1 : 0}–
-              {Math.min(page * limit, totalRows)} / {totalRows}
-            </div>
+          <div className="text-right text-xs text-slate-500">
+            {data.length > 0 ? (page - 1) * limit + 1 : 0}–
+            {Math.min(page * limit, totalRows)} / {totalRows}
           </div>
         </div>
       </div>
