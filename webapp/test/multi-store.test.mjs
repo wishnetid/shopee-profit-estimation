@@ -410,8 +410,10 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(source, /Profit Aktual/);
   assert.match(source, /ProfitActualPanel/);
   assert.match(panel, /\/api\/profit-calculation/);
-  assert.match(panel, /Cohort Pesanan — Waktu Pesanan Dibuat/);
-  assert.match(panel, /Filter Settlement — Tanggal Dana Dilepaskan/);
+  assert.match(panel, /Cohort Pesanan/);
+  assert.match(panel, /Berdasarkan Waktu Pesanan Dibuat/);
+  assert.match(panel, /Filter Settlement/);
+  assert.match(panel, /Berdasarkan Tanggal Dana Dilepaskan/);
   assert.match(panel, /releaseDateFrom/);
   assert.match(panel, /releaseDateTo/);
   assert.match(panel, /Mode: irisan cohort order \+ cash release/);

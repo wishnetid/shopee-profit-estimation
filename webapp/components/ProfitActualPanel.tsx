@@ -63,18 +63,27 @@ export default function ProfitActualPanel({ storeId, view }: { storeId: string; 
 
   return <>
     <section className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950"><b>{title}.</b><p className="mt-1">{description}</p></section>
-    <section className="mb-5 rounded-xl border border-slate-200 bg-white p-4">
-      <div className="grid gap-4 xl:grid-cols-[1fr_1fr_auto] xl:items-end">
-        <fieldset className="grid gap-3 sm:grid-cols-2"><legend className="mb-1 text-sm font-semibold text-slate-800">Cohort Pesanan — Waktu Pesanan Dibuat</legend>
-          <DateInput label="Dari tanggal pesanan dibuat" value={dateFrom} onChange={(value) => { setDateFrom(value); clear(); }} />
-          <DateInput label="Sampai tanggal pesanan dibuat" value={dateTo} onChange={(value) => { setDateTo(value); clear(); }} />
+    <section className="mb-5 overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="grid gap-px bg-slate-200 lg:grid-cols-2">
+        <fieldset className="bg-white p-4 sm:p-5"><legend className="sr-only">Cohort Pesanan</legend>
+          <p className="text-sm font-semibold text-slate-900">Cohort Pesanan</p>
+          <p className="mt-1 text-xs text-slate-500">Berdasarkan Waktu Pesanan Dibuat.</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <DateInput label="Dari tanggal pesanan dibuat" value={dateFrom} onChange={(value) => { setDateFrom(value); clear(); }} />
+            <DateInput label="Sampai tanggal pesanan dibuat" value={dateTo} onChange={(value) => { setDateTo(value); clear(); }} />
+          </div>
         </fieldset>
-        <fieldset className="grid gap-3 sm:grid-cols-2"><legend className="mb-1 text-sm font-semibold text-slate-800">Filter Settlement — Tanggal Dana Dilepaskan <span className="font-normal text-slate-500">(opsional)</span></legend>
-          <DateInput label="Dari tanggal dana dilepas" value={releaseDateFrom} onChange={(value) => { setReleaseDateFrom(value); clear(); }} />
-          <DateInput label="Sampai tanggal dana dilepas" value={releaseDateTo} onChange={(value) => { setReleaseDateTo(value); clear(); }} />
-          <p className="sm:col-span-2 text-xs text-slate-500">Jika terisi, hasil adalah irisan cohort pesanan dan settlement yang dilepas pada rentang ini.</p>
+        <fieldset className="bg-white p-4 sm:p-5"><legend className="sr-only">Filter Settlement</legend>
+          <p className="text-sm font-semibold text-slate-900">Filter Settlement <span className="font-normal text-slate-500">— opsional</span></p>
+          <p className="mt-1 text-xs text-slate-500">Berdasarkan Tanggal Dana Dilepaskan. Hasil menjadi irisan dengan cohort pesanan.</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <DateInput label="Dari tanggal dana dilepas" value={releaseDateFrom} onChange={(value) => { setReleaseDateFrom(value); clear(); }} />
+            <DateInput label="Sampai tanggal dana dilepas" value={releaseDateTo} onChange={(value) => { setReleaseDateTo(value); clear(); }} />
+          </div>
         </fieldset>
-        <button onClick={() => void load()} disabled={!storeId || loading} className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{loading ? 'Memuat…' : `Muat ${title}`}</button>
+      </div>
+      <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-4 py-3 sm:px-5">
+        <button onClick={() => void load()} disabled={!storeId || loading} className="w-full rounded-lg bg-purple-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">{loading ? 'Memuat…' : `Muat ${title}`}</button>
       </div>
     </section>
     {error && <p className="mb-4 text-sm text-red-700">{error}</p>}
