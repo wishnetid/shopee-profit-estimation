@@ -26,6 +26,8 @@ export async function GET(request: NextRequest) {
     const [orderRows] = await conn.query<RowDataPacket[]>('SELECT no_pesanan,status_pesanan,nomor_referensi_sku,sku_induk,nama_produk,nama_variasi,jumlah,returned_quantity,status_pembatalan_pengembalian,waktu_pesanan_selesai,DATE_FORMAT(waktu_pesanan_dibuat, \'%Y-%m-%d\') waktu_pesanan_dibuat FROM order_all WHERE store_id=? AND waktu_pesanan_dibuat >= CONCAT(?, \' 00:00:00\') AND waktu_pesanan_dibuat < DATE_ADD(CONCAT(?, \' 00:00:00\'), INTERVAL 1 DAY)', [storeId, from, to]);
     const settlementSql = 'SELECT p.no_pesanan,p.signed_total,DATE_FORMAT(p.tanggal_dana_dilepaskan, \'%Y-%m-%d\') tanggal_dana_dilepaskan FROM income_penghasilan_raw p JOIN income_report_imports i ON i.id=p.income_report_import_id WHERE i.store_id=? AND p.lihat_berdasarkan=\'Order\'';
     const [settlementExistenceRows] = await conn.query<RowDataPacket[]>(settlementSql, [storeId]);
+    // Penghasilan / SKU is audit evidence for partial-return allocation only. Never add it to Penghasilan / Order.
+    const [skuAllocationRows] = await conn.query<RowDataPacket[]>(`SELECT p.no_pesanan,p.nama_produk,p.id_produk,p.signed_total,DATE_FORMAT(p.tanggal_dana_dilepaskan, '%Y-%m-%d') tanggal_dana_dilepaskan FROM income_penghasilan_raw p JOIN income_report_imports i ON i.id=p.income_report_import_id WHERE i.store_id=? AND p.lihat_berdasarkan='Sku'`, [storeId]);
     const releaseConditions: string[] = [];
     const releaseParams: string[] = [String(storeId)];
     if (releaseFrom) { releaseConditions.push('p.tanggal_dana_dilepaskan >= CONCAT(?, \' 00:00:00\')'); releaseParams.push(releaseFrom); }
@@ -42,6 +44,9 @@ export async function GET(request: NextRequest) {
       .filter((row) => cohort.has(String(row.no_pesanan || '').trim()))
       .map((row) => ({ noPesanan: String(row.no_pesanan || '').trim(), sourceType: row.source_type, sourceReference: row.source_reference || null, sourceStatus: row.source_status || null, returnType: row.return_type || null, returnVariant: row.return_variant || null, reason: row.reason || null, quantity: row.quantity == null ? null : Number(row.quantity), amount: row.amount == null ? null : Number(row.amount), stockStatus: row.stock_status || null, sourceFile: row.source_file }));
     const orderItems = orderRows.map((row) => ({ noPesanan: String(row.no_pesanan || '').trim(), productName: row.nama_produk || null, skuReference: row.nomor_referensi_sku || null, variation: row.nama_variasi || null, quantity: Number(row.jumlah || 0), returnedQuantity: Number(row.returned_quantity || 0), returnStatus: row.status_pembatalan_pengembalian || null }));
+    const skuAllocations = skuAllocationRows
+      .filter((row) => cohort.has(String(row.no_pesanan || '').trim()))
+      .map((row) => ({ noPesanan: String(row.no_pesanan || '').trim(), productName: row.nama_produk || null, productId: row.id_produk || null, amount: Number(row.signed_total || 0), releaseDate: row.tanggal_dana_dilepaskan || null }));
     const [qcRows] = await conn.query<RowDataPacket[]>('SELECT no_pengembalian, qc_status, qc_note, DATE_FORMAT(updated_at, \'%Y-%m-%d %H:%i\') updated_at FROM return_qc_decisions WHERE store_id=?', [storeId]);
     const qcByReturn = new Map(qcRows.map((row) => [String(row.no_pengembalian), row]));
     const returnQcReview = exceptionDetails.filter((row) => row.sourceType === 'return_refund').map((row) => {
@@ -50,6 +55,6 @@ export async function GET(request: NextRequest) {
         reviewStatus: qc ? 'Keputusan QC internal tersimpan.' : 'Belum ada keputusan QC internal.',
         financialTreatment: 'Tidak dialokasikan ke Profit Aktual Normal.' };
     });
-    return NextResponse.json({ success: true, storeId, dateRange: { dateFrom: from, dateTo: to, releaseDateFrom: releaseFrom || null, releaseDateTo: releaseTo || null }, ...report, exceptionDetails, orderItems, returnQcReview });
+    return NextResponse.json({ success: true, storeId, dateRange: { dateFrom: from, dateTo: to, releaseDateFrom: releaseFrom || null, releaseDateTo: releaseTo || null }, ...report, exceptionDetails, orderItems, skuAllocations, returnQcReview });
   } catch (error) { console.error('Profit actual API error:', error); return NextResponse.json({ error: 'Gagal memuat Profit Aktual.' }, { status: 500 }); } finally { conn.release(); }
 }

@@ -302,6 +302,15 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Tabel `Profit Pesanan Selesai` memakai bounded scroll container: tinggi area kira-kira sembilan baris data dan scrollbar vertikal untuk baris lain.
 - Header tabel dibuat sticky saat scroll. Tidak ada pagination atau limit API tambahan; seluruh hasil tetap tersedia melalui scroll.
 
+### 2026-09-24 — Retur Parsial: Profit Menunggu Alokasi
+
+- Settlement dengan return parsial tidak lagi dipresentasikan sebagai exception generik. Jika sebuah order memiliki `Penghasilan / Order` yang cair, `returned_quantity > 0`, dan masih ada pcs non-retur, API memberi bucket `partial_return_pending_allocation`.
+- Bucket ini tetap dikecualikan dari **Profit Aktual Normal**, Total HPP normal, dan Profit normal. Ia terlihat pada kartu serta klasifikasi **Retur Parsial — Menunggu Alokasi** di tab Settlement Dikecualikan.
+- UI menampilkan dana settlement order, jumlah pcs tetap terjual versus pcs retur, return/refund detail, dan QC. Ini menghindari kesan bahwa seluruh order otomatis rugi atau bahwa settlement belum cair.
+- API juga mengirim `Penghasilan / SKU` sebagai **bukti audit alokasi**. Nilai view SKU tidak pernah dijumlahkan lagi ke `Penghasilan / Order` dan tidak otomatis menjadi profit final. UI menunjukkan total SKU dan selisih terhadap settlement Order agar mismatch terlihat.
+- Validasi live `260901UY5MGHJX`: settlement Order/My Balance Rp64.066; 2 pcs order, 1 pcs W-TAC tetap terjual, 1 pcs BLACKHAWK diretur; Penghasilan/SKU W-TAC Rp63.756 dan BLACKHAWK -Rp408, total Rp63.348, sehingga masih ada selisih Rp718 terhadap settlement Order. Profit final tetap ditahan sampai rekonsiliasi selisih dan QC return/policy HPP diputuskan.
+- Tidak ada schema/migration atau perubahan angka Profit Aktual Normal. Klasifikasi dan bukti ini read-only.
+
 ### 2026-09-24 — Cakupan Cohort: Total Pesanan dan Total Pcs
 
 - Tab **Profit Aktual** menambahkan strip **Cakupan Cohort** di atas kartu finansial agar volume order tidak disalahartikan sebagai jumlah order yang sudah profit/settle.
