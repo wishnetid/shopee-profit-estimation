@@ -2,6 +2,10 @@ const { buildSkuIndex, resolveItemHpp } = require('./profit-estimation.js');
 
 function text(value) { const valueText = String(value ?? '').trim(); return valueText && valueText !== '-' ? valueText : null; }
 function amount(value) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
+function outgoingReason(events) {
+  const reasons = [...new Set(events.filter((row) => amount(row.jumlah_signed) < 0).map((row) => text(row.description) || text(row.type_transaksi) || 'Mutasi keluar'))];
+  return reasons.length > 2 ? `${reasons.slice(0, 2).join(' · ')} + ${reasons.length - 2} lainnya` : reasons.join(' · ');
+}
 
 function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlementExistenceRows = settlementRows, exceptionOrderNumbers, balanceRows = [] }) {
   const skuIndex = buildSkuIndex(skuRows);
@@ -48,7 +52,7 @@ function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlemen
     if (bucket === 'settled_normal') { summary.settledNormal++; summary.settledNormalPcs += orderedPcs; if (profitActual < 0) summary.settledNormalLoss++; summary.settlement += settlement; summary.hpp += totalHpp; summary.profit += profitActual; }
     else if (bucket === 'partial_return_provisional') { summary.partialReturnProvisional++; summary.partialReturnOrderedPcs += orderedPcs; summary.partialReturnNonReturnedPcs += orderedPcs - returnedPcs; summary.partialReturnReturnedPcs += returnedPcs; summary.partialReturnSettlement += settlement || 0; summary.partialReturnHpp += nonReturnedHpp; summary.partialReturnProfit += provisionalProfit || 0; }
     else if (bucket === 'completed_unsettled') { summary.completedUnsettled++; summary.completedUnsettledPcs += orderedPcs; } else if (bucket === 'settlement_outside_release_range') { summary.settlementOutsideReleaseRange++; summary.settlementOutsideReleaseRangePcs += orderedPcs; } else if (bucket === 'pending') { summary.pending++; summary.pendingPcs += orderedPcs; } else if (bucket === 'exception' || bucket === 'hpp_issue') { summary.exception++; summary.exceptionPcs += orderedPcs; summary.settlementExcluded += settlement || 0; } else { summary.cancelled++; summary.cancelledPcs += orderedPcs; }
-    return { no_pesanan: group.no_pesanan, orderDate: String(first.waktu_pesanan_dibuat).slice(0, 10), statusPesanan: text(first.status_pesanan), itemCount: group.rows.length, orderedPcs, returnedPcs, nonReturnedPcs: orderedPcs - returnedPcs, totalHpp, nonReturnedHpp, settlement, releaseDate: settlementRow?.tanggal_dana_dilepaskan || null, balanceOutgoing: balance.outgoing, balanceOrderIncomeOutgoing: balance.orderIncomeOutgoing, balanceAdjustmentOutgoing: balance.adjustmentOutgoing, balanceOtherOutgoing: balance.otherOutgoing, balanceNet: balance.net, profitActual, provisionalProfit, bucket };
+    return { no_pesanan: group.no_pesanan, orderDate: String(first.waktu_pesanan_dibuat).slice(0, 10), statusPesanan: text(first.status_pesanan), itemCount: group.rows.length, orderedPcs, returnedPcs, nonReturnedPcs: orderedPcs - returnedPcs, totalHpp, nonReturnedHpp, settlement, releaseDate: settlementRow?.tanggal_dana_dilepaskan || null, balanceOutgoing: balance.outgoing, balanceOrderIncomeOutgoing: balance.orderIncomeOutgoing, balanceAdjustmentOutgoing: balance.adjustmentOutgoing, balanceOtherOutgoing: balance.otherOutgoing, balanceOutgoingReason: outgoingReason(balance.events), balanceNet: balance.net, profitActual, provisionalProfit, bucket };
   }).sort((a, b) => b.orderDate.localeCompare(a.orderDate) || b.no_pesanan.localeCompare(a.no_pesanan));
   const computable = orders.filter((order) => order.bucket === 'settled_normal' || order.bucket === 'partial_return_provisional');
   summary.cashCoveredOrders = computable.length;

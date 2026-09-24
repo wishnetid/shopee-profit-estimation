@@ -387,6 +387,16 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Audit canonical cohort Agustus 2026: 756 order; mutasi negatif terkait 27 order. Seluruh 27 memiliki evidence exception: 8 pembalikan `Penghasilan dari Pesanan` total -Rp198.916 dan 19 Penyesuaian keluar total -Rp9.190. Tidak ada nilai ini yang otomatis dipotong dari Profit Aktual Normal.
 - Policy gate: kategori biaya premi pesanan gagal terkirim tetap hanya cash-adjustment audit sampai kebijakan eksplisit menetapkan apakah dan kapan dibebankan ke profit final. Tidak ada policy finansial otomatis pada rilis ini.
 
+### 2026-09-24 — Audit inventory My Balance dan pengayaan Profit Pesanan
+
+- Input/report: `my_balance_transaction_report.shopee.20260801_20260924.xlsx`, package Balance #4, read-only audit canonical DB lewat Windows OpenVPN SSH bridge.
+- Coverage: 1.341 ledger row, 1 Agustus–24 September 2026, summary/ledger continuity `matched`.
+- Verifikasi: mutasi aktual hanya enam kombinasi tipe/arah: Penghasilan dari Pesanan masuk/keluar; Penyesuaian masuk/keluar; Pembayaran dengan Saldo Penjual keluar; Penarikan Dana keluar. Semua berstatus `Transaksi Selesai`.
+- Temuan: `Pembayaran dengan Saldo Penjual` berdeskripsi `Isi Ulang Saldo Iklan/Koin Penjual`, 153 row total -Rp15.873.000 dan tidak punya No. Pesanan. Ini adalah perpindahan dana My Balance ke saldo Iklan/Koin, bukan bukti Ads Spend atau biaya per pesanan. Ads RAW terpisah mencatat `Deduction for Product Ad (Auto Bidding - GMV Max)` -Rp13.169.722 dan `Pengurangan untuk Iklan Toko (Bidding Manual)` -Rp1.129.365 untuk coverage import yang sama; tidak boleh dialokasikan ke order/SKU.
+- Temuan order-linked: seluruh `Penyesuaian` keluar yang terimpor berdeskripsi biaya premi Pesanan Gagal Terkirim; tetap cashflow audit, bukan profit final otomatis. Penyesuaian masuk meliputi kompensasi pesanan hilang, kompensasi kemasan program garansi bebas pengembalian, dan refund PPh 22.
+- Perubahan code: Profit Pesanan menampilkan `Dana Dilepas`, `Margin` hanya pada profit valid/final-sementara, alasan raw mutasi keluar di Keterangan, serta jumlah row yang sedang dimuat. Tidak mengubah formula maupun summary Profit Aktual.
+- Next step: taxonomy ledger read-only perlu persetujuan user sebelum membuat tab My Balance Analisis.
+
 ### Format progress berikutnya
 
 Tambahkan entri baru di bawah ini setiap ada langkah bermakna:
