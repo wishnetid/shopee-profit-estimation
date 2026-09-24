@@ -22,7 +22,7 @@ function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlemen
     const key = text(row.no_pesanan); if (!key) continue;
     const group = groups.get(key) || { no_pesanan: key, rows: [] }; group.rows.push(row); groups.set(key, group);
   }
-  const summary = { cohortOrders: 0, cohortPcs: 0, settledNormal: 0, completedUnsettled: 0, settlementOutsideReleaseRange: 0, pending: 0, exception: 0, partialReturnProvisional: 0, partialReturnSettlement: 0, partialReturnHpp: 0, partialReturnProfit: 0, cancelled: 0, settlement: 0, settlementExcluded: 0, hpp: 0, profit: 0 };
+  const summary = { cohortOrders: 0, cohortPcs: 0, settledNormal: 0, settledNormalLoss: 0, completedUnsettled: 0, settlementOutsideReleaseRange: 0, pending: 0, exception: 0, partialReturnProvisional: 0, partialReturnSettlement: 0, partialReturnHpp: 0, partialReturnProfit: 0, cancelled: 0, settlement: 0, settlementExcluded: 0, hpp: 0, profit: 0 };
   const orders = [...groups.values()].map((group) => {
     const first = group.rows[0]; const settlementRow = settlementByOrder.get(group.no_pesanan); const settlementExistsRow = settlementExistsByOrder.get(group.no_pesanan); const isException = exceptions.has(group.no_pesanan.toLowerCase());
     summary.cohortOrders++;
@@ -44,7 +44,7 @@ function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlemen
     const settlement = settlementRow ? amount(settlementRow.signed_total) : null;
     const profitActual = bucket === 'settled_normal' && settlement !== null ? settlement - totalHpp : null;
     const provisionalProfit = bucket === 'partial_return_provisional' && settlement !== null ? settlement - nonReturnedHpp : null;
-    if (bucket === 'settled_normal') { summary.settledNormal++; summary.settlement += settlement; summary.hpp += totalHpp; summary.profit += profitActual; }
+    if (bucket === 'settled_normal') { summary.settledNormal++; if (profitActual < 0) summary.settledNormalLoss++; summary.settlement += settlement; summary.hpp += totalHpp; summary.profit += profitActual; }
     else if (bucket === 'partial_return_provisional') { summary.partialReturnProvisional++; summary.partialReturnSettlement += settlement || 0; summary.partialReturnHpp += nonReturnedHpp; summary.partialReturnProfit += provisionalProfit || 0; }
     else if (bucket === 'completed_unsettled') summary.completedUnsettled++; else if (bucket === 'settlement_outside_release_range') summary.settlementOutsideReleaseRange++; else if (bucket === 'pending') summary.pending++; else if (bucket === 'exception' || bucket === 'hpp_issue') { summary.exception++; summary.settlementExcluded += settlement || 0; } else summary.cancelled++;
     return { no_pesanan: group.no_pesanan, orderDate: String(first.waktu_pesanan_dibuat).slice(0, 10), statusPesanan: text(first.status_pesanan), itemCount: group.rows.length, orderedPcs, returnedPcs, nonReturnedPcs: orderedPcs - returnedPcs, totalHpp, nonReturnedHpp, settlement, releaseDate: settlementRow?.tanggal_dana_dilepaskan || null, balanceOutgoing: balance.outgoing, balanceNet: balance.net, profitActual, provisionalProfit, bucket };

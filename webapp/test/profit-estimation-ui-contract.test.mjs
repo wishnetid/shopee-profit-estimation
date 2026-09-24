@@ -5,12 +5,13 @@ import { readFile } from 'node:fs/promises';
 const profitPagePath = new URL('../app/profit/page.tsx', import.meta.url);
 const layoutPath = new URL('../components/AppFrame.tsx', import.meta.url);
 
-test('Profit page separates Estimasi Kotor from locked Profit Aktual and uses an explicit manual load action', async () => {
+test('Profit page keeps Estimasi Kotor separate and makes unified Profit Pesanan the default financial view', async () => {
   const source = await readFile(profitPagePath, 'utf8');
 
   assert.match(source, /Profit & Estimasi/);
   assert.match(source, /Estimasi Kotor/);
-  assert.match(source, /Profit Aktual/);
+  assert.match(source, /Profit Pesanan/);
+  assert.match(source, /setTab\('orders'\)/);
   assert.match(source, /Muat Estimasi/);
   assert.match(source, /\/api\/profit-estimation/);
   assert.match(source, /setData\(null\)/);

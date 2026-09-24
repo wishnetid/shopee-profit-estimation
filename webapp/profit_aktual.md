@@ -363,6 +363,16 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Contoh validasi: `260901UY5MGHJX`: settlement/My Balance masuk Rp64.066, W-TAC non-retur HPP Rp52.500, BLACKHAWK retur 1 pcs, tidak ada balance keluar dalam coverage; profit sementara Rp11.566.
 - QC fisik masih manual dan hanya menjadi keputusan inventory/loss pada policy berikutnya; fitur ini tidak otomatis menyatakan barang retur benar-benar masuk stok.
 
+### 2026-09-24 — Profit Pesanan unified financial view
+
+- Default tab `/profit` sekarang **Profit Pesanan**. Tab sebelumnya yang memecah Profit Aktual, Profit Retur Parsial, Selesai Belum Cair, dan Settlement Dikecualikan dihapus dari navigasi utama; perhitungan/API tetap read-only dan tidak berubah.
+- Satu tabel membentuk satu baris per `No. Pesanan` dalam cohort `Waktu Pesanan Dibuat`. Kolomnya: status finansial, settlement Income, net My Balance, HPP yang dipakai, profit, keterangan, serta `Lihat detail` untuk item dan evidence exception.
+- Aturan tampilan: profit normal dan profit retur parsial sementara menampilkan angka; angka negatif tetap merah karena sudah dapat dihitung. Untuk order menunggu settlement, belum selesai, batal, HPP belum valid, cair di luar filter, atau perlu audit, kolom profit memakai `—`, bukan Rp0.
+- Status filter tersedia di tabel: Semua, Profit Aktual, Profit Sementara, Menunggu Settlement, Cair di Luar Filter, Perlu Audit, HPP Belum Valid, Belum Selesai, dan Batal.
+- Summary tetap memisahkan Profit Aktual Normal, Profit Retur Parsial, menunggu settlement, perlu audit, belum selesai, dan batal. Profit parsial tidak dijumlahkan diam-diam ke Profit Aktual Normal.
+- Detail order menampilkan settlement/release, My Balance net dan keluar, HPP seluruh/non-retur, qty, evidence exception, dan item order. Retur & Refund tetap khusus QC fisik; Rekonsiliasi My Balance tetap untuk investigasi ledger yang lebih detail.
+- Validasi canonical: cohort 1 September 2026 memiliki 25 Profit Aktual Normal, 1 Profit Sementara (`260901UY5MGHJX`, Rp11.566), dan 6 batal. Cohort Agustus 2026 memiliki 596 normal, 2 profit sementara total -Rp7.890, 11 perlu audit, 4 belum selesai, dan 143 batal.
+
 ### 2026-09-24 — Rekonsiliasi Settlement & My Balance (read-only)
 
 - Tab baru **Rekonsiliasi My Balance** ditambahkan di `/profit`; tidak mengubah Estimasi Kotor, Profit Aktual Normal, HPP normal, Settlement Dikecualikan, atau Return QC.

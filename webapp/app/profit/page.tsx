@@ -136,7 +136,7 @@ export default function ProfitPage() {
 }
 
 function ProfitEstimationContent({ storeId, activeStoreName }: { storeId: string; activeStoreName: string }) {
-  const [tab, setTab] = useState<'estimate' | 'actual' | 'partial_return' | 'completed_unsettled' | 'exception' | 'returns' | 'reconciliation'>('estimate');
+  const [tab, setTab] = useState<'estimate' | 'orders' | 'returns' | 'reconciliation'>('orders');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
@@ -194,16 +194,13 @@ function ProfitEstimationContent({ storeId, activeStoreName }: { storeId: string
   return (
     <div className="p-4 lg:p-8"><div className="mx-auto max-w-7xl">
       <div className="mb-6 flex items-start gap-3"><div className="rounded-xl bg-purple-50 p-3 text-purple-700"><BarChart3 className="h-6 w-6" /></div><div><h1 className="text-2xl font-bold text-slate-900 lg:text-3xl">Profit & Estimasi</h1><p className="mt-1 text-sm text-slate-600">Monitoring estimasi kotor seller, HPP, dan Ads untuk {activeStoreName}.</p></div></div>
-      <div className="mb-5 flex gap-2 border-b border-slate-200">
+      <div className="mb-5 flex flex-wrap gap-2 border-b border-slate-200">
+        <button type="button" onClick={() => setTab('orders')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'orders' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Profit Pesanan</button>
         <button type="button" onClick={() => setTab('estimate')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'estimate' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Estimasi Kotor</button>
-        <button type="button" onClick={() => setTab('actual')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'actual' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Profit Aktual</button>
-        <button type="button" onClick={() => setTab('partial_return')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'partial_return' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Profit Retur Parsial</button>
-        <button type="button" onClick={() => setTab('completed_unsettled')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'completed_unsettled' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Selesai Belum Cair</button>
-        <button type="button" onClick={() => setTab('exception')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'exception' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Settlement Dikecualikan</button>
         <button type="button" onClick={() => setTab('returns')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'returns' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Retur & Refund</button>
         <button type="button" onClick={() => setTab('reconciliation')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'reconciliation' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Rekonsiliasi My Balance</button>
       </div>
-      {tab === 'actual' ? <ProfitActualPanel storeId={storeId} view="actual" /> : tab === 'partial_return' ? <ProfitActualPanel storeId={storeId} view="partial_return" /> : tab === 'completed_unsettled' ? <ProfitActualPanel storeId={storeId} view="completed_unsettled" /> : tab === 'exception' ? <ProfitActualPanel storeId={storeId} view="exception" /> : tab === 'returns' ? <ProfitActualPanel storeId={storeId} view="returns" /> : tab === 'reconciliation' ? <SettlementBalanceReconciliationPanel storeId={storeId} /> : <>
+      {tab === 'orders' ? <ProfitActualPanel storeId={storeId} view="orders" /> : tab === 'returns' ? <ProfitActualPanel storeId={storeId} view="returns" /> : tab === 'reconciliation' ? <SettlementBalanceReconciliationPanel storeId={storeId} /> : <>
         <section className="mb-5 rounded-xl border border-purple-200 bg-purple-50 p-4 lg:p-5"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-purple-700" /><div className="text-sm leading-6 text-purple-950"><h2 className="font-semibold">Estimasi Kotor Setelah HPP</h2><p>Basis memakai Subtotal Pesanan seller, dikurangi voucher seller, potongan standar Shopee, lalu HPP item. Tidak menunggu Income, settlement, atau cohort historis. Komisi program khusus seperti AMS belum masuk estimasi standar.</p></div></div></section>
         <section className="mb-5 rounded-xl border border-slate-200 bg-white p-4 lg:p-5"><div className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
           <label className="text-sm font-medium text-slate-700">Dari tanggal <span className="font-normal text-slate-400">(opsional)</span><input type="date" value={dateFrom} onChange={(event) => updateDate('from', event.target.value)} className="mt-1.5 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-100" /></label>
