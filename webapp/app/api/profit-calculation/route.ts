@@ -32,6 +32,11 @@ export async function GET(request: NextRequest) {
     const exceptionDetails = [...returnRows, ...failedRows, ...cancellationRows, ...adjustmentRows]
       .filter((row) => cohort.has(String(row.no_pesanan || '').trim()))
       .map((row) => ({ noPesanan: String(row.no_pesanan || '').trim(), sourceType: row.source_type, sourceReference: row.source_reference || null, sourceStatus: row.source_status || null, reason: row.reason || null, quantity: row.quantity == null ? null : Number(row.quantity), amount: row.amount == null ? null : Number(row.amount), stockStatus: row.stock_status || null, sourceFile: row.source_file }));
-    return NextResponse.json({ success: true, storeId, dateRange: { dateFrom: from, dateTo: to }, ...report, exceptionDetails });
+    const returnQcReview = exceptionDetails.filter((row) => row.sourceType === 'return_refund').map((row) => ({
+      ...row,
+      reviewStatus: row.stockStatus ? 'Status barang dari report Shopee — tetap perlu verifikasi QC internal.' : 'Belum ada source QC internal.',
+      financialTreatment: 'Tidak dialokasikan ke Profit Aktual Normal.',
+    }));
+    return NextResponse.json({ success: true, storeId, dateRange: { dateFrom: from, dateTo: to }, ...report, exceptionDetails, returnQcReview });
   } catch (error) { console.error('Profit actual API error:', error); return NextResponse.json({ error: 'Gagal memuat Profit Aktual.' }, { status: 500 }); } finally { conn.release(); }
 }

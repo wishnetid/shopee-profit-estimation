@@ -271,7 +271,14 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Coverage cohort Agustus: Return/Refund 17 row / 13 order / nilai refund Rp1.883.773; Failed Delivery 18 row / 17 order; Cancellation 192 row / 139 order; Adjustment 1 row / 1 order / Rp5.000. Angka tersebut hanya visibility/reconciliation, bukan alokasi profit.
 - Guardrail: Return tetap `Menunggu QC / N/A` bila status stok tidak tersedia; Adjustment tidak ditambahkan atau dikurangkan otomatis; cancellation/failed delivery tidak membatalkan atau mengubah Settlement normal secara baru.
 - Test/deploy: `npm test` dan `npm run build` sudah berhasil setelah implementasi Fase 2. Tidak ada migration/import/mutasi DB.
-- Next step: commit/push, Production deployment dan visual QA; setelah itu Fase 3 hanya dapat dimulai setelah policy/proses QC return disepakati.
+- Next step: Fase 3 review-only karena belum ada source QC internal.
+
+### 2026-09-24 — Fase 3 Return QC review-only
+
+- Keputusan user: belum ada source QC; aplikasi hanya membangun review tanpa menyimpan keputusan QC.
+- Scope: endpoint mengeluarkan `returnQcReview` dari Return/Refund RAW yang sudah termasuk cohort. UI menampilkan No. Pengembalian, qty, alasan, status barang dari Shopee, status review, dan perlakuan finansial.
+- Guardrail: tidak ada tabel/schema/migration QC, tidak ada tombol save/edit, dan tidak ada perubahan HPP, settlement, maupun Profit Aktual Normal. Status barang Shopee bukan keputusan QC internal.
+- Next step: bila proses QC nyata sudah tersedia, sepakati source dan status restock/rusak/hilang/belum dinilai sebelum membangun persistence dan finality.
 
 ### Format progress berikutnya
 
