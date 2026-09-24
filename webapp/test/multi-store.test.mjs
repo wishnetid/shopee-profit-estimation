@@ -322,6 +322,10 @@ test('Order All exposes the complete business RAW contract, including buyer deli
   }
   assert.doesNotMatch(ordersPage, /source_snapshot_file/);
   assert.doesNotMatch(ordersPage, /line_ordinal/);
+  assert.match(ordersPage, /boundedScroll/);
+  const dataTable = fs.readFileSync(path.resolve(process.cwd(), 'components/DataTable.tsx'), 'utf8');
+  assert.match(dataTable, /max-h-\[437px\] overflow-auto/);
+  assert.match(dataTable, /sticky top-0 z-10/);
 });
 
 test('Profit Aktual route is read-only, store-scoped, uses the approved RAW sources, and preserves WIB cohort boundaries', () => {

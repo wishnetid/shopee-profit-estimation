@@ -15,6 +15,7 @@ interface DataTableProps {
   onPageChange: (page: number, limit: number) => void;
   onSearch: (queries: string[]) => void;
   onSort: (column: string, direction: 'asc' | 'desc') => void;
+  boundedScroll?: boolean;
 }
 
 export default function DataTable({
@@ -24,6 +25,7 @@ export default function DataTable({
   onPageChange,
   onSearch,
   onSort,
+  boundedScroll = false,
 }: DataTableProps) {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(50);
@@ -116,9 +118,9 @@ export default function DataTable({
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto">
+      <div className={boundedScroll ? 'max-h-[437px] overflow-auto' : 'overflow-x-auto'}>
         <table className="w-full min-w-[600px]">
-          <thead className="bg-slate-50 border-b border-slate-200">
+          <thead className={boundedScroll ? 'sticky top-0 z-10 bg-slate-50 border-b border-slate-200' : 'bg-slate-50 border-b border-slate-200'}>
             <tr>
               {columns.map((column) => (
                 <th

@@ -71,6 +71,7 @@ export default function OrdersPage() {
           columns={ORDER_COLUMNS}
           data={data}
           totalRows={totalRows}
+          boundedScroll
           onPageChange={(page, limit) => void fetchData(page, limit)}
           onSearch={(queries) => void fetchData(1, 50, queries)}
           onSort={(column, direction) => void fetchData(1, 50, [], column, direction)}
