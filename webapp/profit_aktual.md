@@ -424,7 +424,7 @@ Tambahkan entri baru di bawah ini setiap ada langkah bermakna:
 - Temuan/mismatch: `Isi Ulang Saldo Iklan/Koin Penjual` My Balance sebesar -Rp15.873.000 adalah transfer ke saldo Iklan/Koin, bukan biaya Ads. Ads aktual dibaca eksklusif dari event pengurangan Ads RAW. Tidak ada event Ads overlap yang didedupe pada coverage ini.
 - Keputusan yang disetujui: taxonomy A–F disetujui sebagai layer klasifikasi read-only; tidak ada alokasi Ads ke order/SKU dan tidak ada perubahan Profit Pesanan/Estimasi Kotor.
 - Perubahan source/schema/code: tambah tab `My Balance Analisis`, API GET store-scoped `/api/my-balance-analysis`, dan builder `lib/my-balance-analysis.js`; tidak ada schema atau migration.
-- Test/deploy: pending commit/push dan validasi production.
+- Test/deploy: commit `51da4d7`, push `master`, dan production endpoint tervalidasi dengan 1.341 ledger row serta 96 Ads event.
 - Next step: audit detail harian Ads sebagai biaya store/day; setiap kebijakan alokasi profit/order harus disetujui terpisah.
 
 ---
