@@ -1,7 +1,39 @@
-const { buildSkuIndex, resolveItemHpp } = require('./profit-estimation.js');
+// Reuse exactly the existing Estimasi Kotor HPP resolver and standard fee schedule.
+const { buildSkuIndex, resolveItemHpp, calculateStandardShopeeFees } = require('./profit-estimation.js');
 
 function text(value) { const valueText = String(value ?? '').trim(); return valueText && valueText !== '-' ? valueText : null; }
 function amount(value) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
+
+function strictFinite(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function singleFinite(rows, field) {
+  const values = rows.map((row) => strictFinite(row[field]));
+  return values.every((value) => value !== null) && new Set(values).size === 1 && values[0] >= 0 ? values[0] : null;
+}
+
+function buildPendingEstimate(rows, skuIndex) {
+  const totalPayment = singleFinite(rows, 'total_pembayaran');
+  const subtotalValues = rows.map((row) => strictFinite(row.subtotal_pesanan));
+  const voucherValues = rows.map((row) => strictFinite(row.voucher_ditanggung_penjual));
+  if (subtotalValues.some((value) => value === null || value < 0) || voucherValues.some((value) => value === null || value < 0)) return { totalPayment, estimasiProfit: null };
+  const sellerSubtotal = subtotalValues.reduce((total, value) => total + value, 0);
+  const sellerVoucher = voucherValues.reduce((total, value) => total + value, 0);
+  let hpp = 0;
+  for (const row of rows) {
+    const quantity = strictFinite(row.jumlah);
+    const mapping = resolveItemHpp(row, skuIndex);
+    if (!Number.isInteger(quantity) || quantity <= 0 || mapping.kind !== 'resolved' || mapping.price === null) return { totalPayment, estimasiProfit: null };
+    hpp += mapping.price * quantity;
+  }
+  const feeBase = sellerSubtotal - sellerVoucher;
+  if (feeBase < 0) return { totalPayment, estimasiProfit: null };
+  const fees = Object.values(calculateStandardShopeeFees(feeBase)).reduce((total, fee) => total + fee, 0);
+  return { totalPayment, estimasiProfit: feeBase - fees - hpp };
+}
 function outgoingReason(events) {
   const reasons = [...new Set(events.filter((row) => amount(row.jumlah_signed) < 0).map((row) => text(row.description) || text(row.type_transaksi) || 'Mutasi keluar'))];
   return reasons.length > 2 ? `${reasons.slice(0, 2).join(' · ')} + ${reasons.length - 2} lainnya` : reasons.join(' · ');
@@ -39,7 +71,7 @@ function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlemen
     const key = text(row.no_pesanan); if (!key) continue;
     const group = groups.get(key) || { no_pesanan: key, rows: [] }; group.rows.push(row); groups.set(key, group);
   }
-  const summary = { cohortOrders: 0, cohortPcs: 0, settledNormal: 0, settledNormalPcs: 0, settledNormalLoss: 0, completedUnsettled: 0, completedUnsettledPcs: 0, settlementOutsideReleaseRange: 0, settlementOutsideReleaseRangePcs: 0, pending: 0, pendingPcs: 0, exception: 0, exceptionPcs: 0, fullReturnCashFinalNegative: 0, fullReturnCashFinalNegativePcs: 0, fullReturnCashFinalNegativeOutcome: 0, fullReturnCashFinalNegativeAssumedStock: 0, fullReturnCashFinalNegativeAssumedStockPcs: 0, fullReturnCashFinalNegativeAssumedStockOutcome: 0, fullReturnCashFinalPositive: 0, fullReturnCashFinalPositivePcs: 0, fullReturnCashFinalPositiveOutcome: 0, partialReturnProvisional: 0, partialReturnOrderedPcs: 0, partialReturnNonReturnedPcs: 0, partialReturnReturnedPcs: 0, partialReturnSettlement: 0, partialReturnHpp: 0, partialReturnProfit: 0, cancelled: 0, cancelledPcs: 0, cancelledBeforeShipment: 0, cancelledBeforeShipmentPcs: 0, cancelledAfterFailedDelivery: 0, cancelledAfterFailedDeliveryPcs: 0, settlement: 0, settlementExcluded: 0, hpp: 0, profit: 0, settlementRecorded: 0, cashCoveredOrders: 0, cashCoveredPcs: 0, hppApplied: 0, profitComputable: 0, unresolvedOrders: 0, unresolvedPcs: 0, balanceOutgoingOrders: 0, balanceOutgoingTotal: 0, balanceOrderIncomeOutgoing: 0, balanceAdjustmentOutgoing: 0, balanceOtherOutgoing: 0 };
+  const summary = { cohortOrders: 0, cohortPcs: 0, settledNormal: 0, settledNormalPcs: 0, settledNormalLoss: 0, completedUnsettled: 0, completedUnsettledPcs: 0, settlementOutsideReleaseRange: 0, settlementOutsideReleaseRangePcs: 0, pending: 0, pendingPcs: 0, exception: 0, exceptionPcs: 0, fullReturnCashFinalNegative: 0, fullReturnCashFinalNegativePcs: 0, fullReturnCashFinalNegativeOutcome: 0, fullReturnCashFinalNegativeAssumedStock: 0, fullReturnCashFinalNegativeAssumedStockPcs: 0, fullReturnCashFinalNegativeAssumedStockOutcome: 0, fullReturnCashFinalPositive: 0, fullReturnCashFinalPositivePcs: 0, fullReturnCashFinalPositiveOutcome: 0, partialReturnProvisional: 0, partialReturnOrderedPcs: 0, partialReturnNonReturnedPcs: 0, partialReturnReturnedPcs: 0, partialReturnSettlement: 0, partialReturnHpp: 0, partialReturnProfit: 0, cancelled: 0, cancelledPcs: 0, cancelledBeforeShipment: 0, cancelledBeforeShipmentPcs: 0, cancelledAfterFailedDelivery: 0, cancelledAfterFailedDeliveryPcs: 0, settlement: 0, settlementExcluded: 0, hpp: 0, profit: 0, settlementRecorded: 0, cashCoveredOrders: 0, cashCoveredPcs: 0, hppApplied: 0, profitComputable: 0, unresolvedOrders: 0, unresolvedPcs: 0, balanceOutgoingOrders: 0, balanceOutgoingTotal: 0, balanceOrderIncomeOutgoing: 0, balanceAdjustmentOutgoing: 0, balanceOtherOutgoing: 0, pendingOrderValue: null, pendingEstimatedProfit: null, pendingValueComplete: false, pendingEstimatedProfitComplete: false };
   const orders = [...groups.values()].map((group) => {
     const first = group.rows[0]; const settlementRow = settlementByOrder.get(group.no_pesanan); const settlementExistsRow = settlementExistsByOrder.get(group.no_pesanan); const isException = exceptions.has(group.no_pesanan.toLowerCase());
     summary.cohortOrders++;
@@ -124,6 +156,7 @@ function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlemen
     const exceptionSubstatus = returnCancelledCashMatched ? 'return_cancelled_cash_matched' : null;
     const profitActual = bucket === 'settled_normal' && settlement !== null ? settlement - totalHpp : null;
     const provisionalProfit = bucket === 'partial_return_provisional' && settlement !== null ? settlement - nonReturnedHpp : null;
+    const pendingEstimate = bucket === 'pending' ? buildPendingEstimate(group.rows, skuIndex) : null;
     if (balance.outgoing < 0) { summary.balanceOutgoingOrders++; summary.balanceOutgoingTotal += balance.outgoing; summary.balanceOrderIncomeOutgoing += balance.orderIncomeOutgoing; summary.balanceAdjustmentOutgoing += balance.adjustmentOutgoing; summary.balanceOtherOutgoing += balance.otherOutgoing; }
     if (bucket === 'settled_normal') { summary.settledNormal++; summary.settledNormalPcs += orderedPcs; if (profitActual < 0) summary.settledNormalLoss++; summary.settlement += settlement; summary.hpp += totalHpp; summary.profit += profitActual; }
     else if (bucket === 'partial_return_provisional') { summary.partialReturnProvisional++; summary.partialReturnOrderedPcs += orderedPcs; summary.partialReturnNonReturnedPcs += orderedPcs - returnedPcs; summary.partialReturnReturnedPcs += returnedPcs; summary.partialReturnSettlement += settlement || 0; summary.partialReturnHpp += nonReturnedHpp; summary.partialReturnProfit += provisionalProfit || 0; }
@@ -131,8 +164,13 @@ function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlemen
     else if (bucket === 'full_return_cash_final_negative_assumed_stock') { summary.fullReturnCashFinalNegativeAssumedStock++; summary.fullReturnCashFinalNegativeAssumedStockPcs += orderedPcs; summary.fullReturnCashFinalNegativeAssumedStockOutcome += settlement || 0; }
     else if (bucket === 'full_return_cash_final_positive') { summary.fullReturnCashFinalPositive++; summary.fullReturnCashFinalPositivePcs += orderedPcs; summary.fullReturnCashFinalPositiveOutcome += balance.net; }
     else if (bucket === 'completed_unsettled') { summary.completedUnsettled++; summary.completedUnsettledPcs += orderedPcs; } else if (bucket === 'settlement_outside_release_range') { summary.settlementOutsideReleaseRange++; summary.settlementOutsideReleaseRangePcs += orderedPcs; } else if (bucket === 'pending') { summary.pending++; summary.pendingPcs += orderedPcs; } else if (bucket === 'exception' || bucket === 'hpp_issue') { summary.exception++; summary.exceptionPcs += orderedPcs; summary.settlementExcluded += settlement || 0; } else { summary.cancelled++; summary.cancelledPcs += orderedPcs; if (cancellationSubstatus === 'cancelled_before_shipment') { summary.cancelledBeforeShipment++; summary.cancelledBeforeShipmentPcs += orderedPcs; } else if (cancellationSubstatus === 'cancelled_after_failed_delivery') { summary.cancelledAfterFailedDelivery++; summary.cancelledAfterFailedDeliveryPcs += orderedPcs; } }
-    return { no_pesanan: group.no_pesanan, orderDate: String(first.waktu_pesanan_dibuat).slice(0, 10), statusPesanan: text(first.status_pesanan), itemCount: group.rows.length, orderedPcs, returnedPcs, nonReturnedPcs: orderedPcs - returnedPcs, totalHpp, nonReturnedHpp, settlement, releaseDate: settlementRow?.tanggal_dana_dilepaskan || null, noResi: text(first.no_resi), shipmentArrangedAt: text(first.waktu_pengiriman_diatur), balanceOutgoing: balance.outgoing, balanceOrderIncomeOutgoing: balance.orderIncomeOutgoing, balanceAdjustmentOutgoing: balance.adjustmentOutgoing, balanceOtherOutgoing: balance.otherOutgoing, balanceOutgoingReason: outgoingReason(balance.events), balanceNet: balance.net, balanceIncomingAdjustment: balance.incomingAdjustment, cancellationSubstatus, exceptionSubstatus, returnStockAssumption: fullReturnRestockAssumed ? 'restock_layak' : null, exceptionSubstatusEvidence: { settlementPositive: settlement !== null && settlement > 0, balanceIncomeMatches: settlement !== null && balance.incomingOrderIncome === settlement, noBalanceOutgoing: balance.outgoing === 0, evidenceCount: exceptionEvidence.length, evidence: exceptionEvidence.map((row) => ({ sourceType: text(row.source_type), sourceStatus: text(row.source_status) })), onlyCancelledReturns: exceptionEvidence.length > 0 && exceptionEvidence.every((row) => text(row.source_type) === 'return_refund' && text(row.source_status) === 'Pengembalian Barang/Dana Dibatalkan') }, profitActual, provisionalProfit, bucket };
+    return { no_pesanan: group.no_pesanan, orderDate: String(first.waktu_pesanan_dibuat).slice(0, 10), statusPesanan: text(first.status_pesanan), itemCount: group.rows.length, orderedPcs, returnedPcs, nonReturnedPcs: orderedPcs - returnedPcs, totalHpp, nonReturnedHpp, settlement, releaseDate: settlementRow?.tanggal_dana_dilepaskan || null, noResi: text(first.no_resi), shipmentArrangedAt: text(first.waktu_pengiriman_diatur), balanceOutgoing: balance.outgoing, balanceOrderIncomeOutgoing: balance.orderIncomeOutgoing, balanceAdjustmentOutgoing: balance.adjustmentOutgoing, balanceOtherOutgoing: balance.otherOutgoing, balanceOutgoingReason: outgoingReason(balance.events), balanceNet: balance.net, balanceIncomingAdjustment: balance.incomingAdjustment, cancellationSubstatus, exceptionSubstatus, returnStockAssumption: fullReturnRestockAssumed ? 'restock_layak' : null, exceptionSubstatusEvidence: { settlementPositive: settlement !== null && settlement > 0, balanceIncomeMatches: settlement !== null && balance.incomingOrderIncome === settlement, noBalanceOutgoing: balance.outgoing === 0, evidenceCount: exceptionEvidence.length, evidence: exceptionEvidence.map((row) => ({ sourceType: text(row.source_type), sourceStatus: text(row.source_status) })), onlyCancelledReturns: exceptionEvidence.length > 0 && exceptionEvidence.every((row) => text(row.source_type) === 'return_refund' && text(row.source_status) === 'Pengembalian Barang/Dana Dibatalkan') }, profitActual, provisionalProfit, pendingOrderValue: pendingEstimate?.totalPayment ?? null, pendingEstimatedProfit: pendingEstimate?.estimasiProfit ?? null, bucket };
   }).sort((a, b) => b.orderDate.localeCompare(a.orderDate) || b.no_pesanan.localeCompare(a.no_pesanan));
+  const pendingOrders = orders.filter((order) => order.bucket === 'pending');
+  summary.pendingValueComplete = pendingOrders.every((order) => order.pendingOrderValue !== null);
+  summary.pendingEstimatedProfitComplete = pendingOrders.every((order) => order.pendingEstimatedProfit !== null);
+  summary.pendingOrderValue = summary.pendingValueComplete ? pendingOrders.reduce((total, order) => total + order.pendingOrderValue, 0) : null;
+  summary.pendingEstimatedProfit = summary.pendingEstimatedProfitComplete ? pendingOrders.reduce((total, order) => total + order.pendingEstimatedProfit, 0) : null;
   const computable = orders.filter((order) => order.bucket === 'settled_normal' || order.bucket === 'partial_return_provisional');
   summary.cashCoveredOrders = computable.length;
   summary.cashCoveredPcs = computable.reduce((total, order) => total + (order.bucket === 'partial_return_provisional' ? order.nonReturnedPcs : order.orderedPcs), 0);

@@ -51,6 +51,31 @@ Profit Aktual Produk
 
 ---
 
+## 2.1 Estimasi Order Belum Selesai — additive, terpisah dari finansial aktual
+
+Profit Pesanan menampilkan section **Estimasi Order Belum Selesai** yang hanya mencakup bucket `pending` / status `Belum Selesai`; `completed_unsettled` tidak dimasukkan karena order tersebut sudah selesai dan hanya menunggu coverage settlement.
+
+Empat kartu wajib:
+
+```text
+Pesanan Belum Selesai       = unique No. Pesanan bucket pending
+PCS Belum Selesai           = Σ quantity item pending
+Nominal Belum Selesai       = Σ Total Pembayaran, sekali per No. Pesanan
+Estimasi Profit Belum Selesai
+                           = Estimasi Kotor tanpa Ads
+                           = subtotal seller − voucher seller − fee standar Shopee − HPP
+```
+
+Guardrail:
+
+- `Total Pembayaran` adalah nominal order, bukan settlement Income dan bukan My Balance.
+- Profit adalah **estimasi**, bukan Profit Aktual, tidak memasukkan Ads/PPN Ads, refund, adjustment, atau biaya operasional.
+- Resolver HPP dan fee wajib memakai formula yang sama dengan tab existing Estimasi Kotor.
+- Bila salah satu order pending tidak memiliki nilai order atau basis/HPP aman, total terkait tampil `—`, tidak diasumsikan Rp0.
+- Section ini visual dan semantik terpisah dari **Cakupan Finansial** serta tidak mengubah summary Profit Aktual Normal/Profit Terhitung.
+
+---
+
 ## 3. Cohort dan Status Finansial
 
 Cohort ditentukan oleh **tanggal order dibuat pada Order.all**, bukan tanggal dana dilepas.

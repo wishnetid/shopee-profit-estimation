@@ -372,6 +372,19 @@ test('Profit Aktual route is read-only, store-scoped, uses the approved RAW sour
   assert.doesNotMatch(route, /INSERT INTO|UPDATE |DELETE FROM/);
 });
 
+test('Pending-order estimate stays separate from settlement and uses one Total Pembayaran per order', () => {
+  const input = { skuRows: [{ sku1: 'PENDING-REF', sku2: null, harga: 50000 }], settlementRows: [], exceptionOrderNumbers: [], orderRows: [{ no_pesanan: 'PENDING-ORDER', status_pesanan: 'Sedang Dikirim', nomor_referensi_sku: 'PENDING-REF', sku_induk: null, jumlah: 2, returned_quantity: 0, subtotal_pesanan: 180000, voucher_ditanggung_penjual: 0, total_pembayaran: 190000, waktu_pesanan_dibuat: '2026-09-01', waktu_pesanan_selesai: null }] };
+  const report = buildProfitActualReport(input);
+  assert.equal(report.summary.pending, 1);
+  assert.equal(report.summary.pendingPcs, 2);
+  assert.equal(report.summary.pendingOrderValue, 190000);
+  assert.equal(report.summary.pendingValueComplete, true);
+  assert.equal(report.summary.pendingEstimatedProfit, 45900);
+  assert.equal(report.summary.pendingEstimatedProfitComplete, true);
+  assert.equal(report.orders[0].settlement, null);
+  assert.equal(report.orders[0].pendingOrderValue, 190000);
+});
+
 test('Profit Aktual reports settlement excluded from normal profit separately', () => {
   const report = buildProfitActualReport({
     skuRows: [{ sku1: 'RETURN-SKU', sku2: '', harga: 10000 }],
@@ -733,6 +746,13 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(reconciliationPanel, /My Balance · Penghasilan Keluar/);
   assert.match(panel, /Profit Aktual Normal/);
   assert.match(panel, /Profit Retur Parsial/);
+  assert.match(panel, /Estimasi Order Belum Selesai/);
+  assert.match(panel, /Pesanan Belum Selesai/);
+  assert.match(panel, /PCS Belum Selesai/);
+  assert.match(panel, /Nominal Belum Selesai/);
+  assert.match(panel, /Estimasi Profit Belum Selesai/);
+  assert.match(panel, /Total Pembayaran per order/);
+  assert.match(panel, /Estimasi Kotor tanpa Ads; bukan profit aktual/);
   assert.match(panel, /Cakupan Finansial/);
   assert.match(panel, /Settlement Tercatat/);
   assert.match(panel, /Profit Terhitung/);
