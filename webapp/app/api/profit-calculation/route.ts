@@ -3,7 +3,7 @@ import type { RowDataPacket } from 'mysql2/promise';
 import { getConnection } from '../../../lib/db';
 import { requireStoreId } from '../../../lib/store';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { buildProfitActualReport } = require('../../../lib/profit-actual.js') as { buildProfitActualReport: (input: { orderRows: RowDataPacket[]; skuRows: RowDataPacket[]; settlementRows: RowDataPacket[]; settlementExistenceRows?: RowDataPacket[]; exceptionOrderNumbers: string[]; exceptionEvidenceRows?: Array<{ no_pesanan?: unknown; source_type?: unknown; source_status?: unknown; reason?: unknown; return_type?: unknown; stock_status?: unknown; amount?: unknown }>; balanceRows?: RowDataPacket[] }) => unknown };
+const { buildProfitActualReport } = require('../../../lib/profit-actual.js') as { buildProfitActualReport: (input: { orderRows: RowDataPacket[]; skuRows: RowDataPacket[]; settlementRows: RowDataPacket[]; settlementExistenceRows?: RowDataPacket[]; exceptionOrderNumbers: string[]; exceptionEvidenceRows?: Array<{ no_pesanan?: unknown; source_type?: unknown; source_reference?: unknown; source_status?: unknown; reason?: unknown; return_type?: unknown; stock_status?: unknown; amount?: unknown }>; balanceRows?: RowDataPacket[]; returnQcByReference?: Record<string, string> }) => unknown };
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -45,13 +45,15 @@ export async function GET(request: NextRequest) {
       const [rows] = await conn.query<RowDataPacket[]>(`SELECT COALESCE(NULLIF(b.no_pesanan_direct,''),NULLIF(b.no_pesanan_extracted,'')) no_pesanan,b.type_transaksi,b.jumlah_signed FROM balance_transactions_raw b JOIN balance_report_imports i ON i.id=b.balance_report_import_id WHERE i.store_id=? AND COALESCE(NULLIF(b.no_pesanan_direct,''),NULLIF(b.no_pesanan_extracted,'')) IN (${balanceMarks})`, [storeId, ...cohortOrderNumbers]);
       balanceRows = rows;
     }
+    const [qcRows] = await conn.query<RowDataPacket[]>('SELECT no_pengembalian, qc_status, qc_note, DATE_FORMAT(updated_at, \'%Y-%m-%d %H:%i\') updated_at FROM return_qc_decisions WHERE store_id=?', [storeId]);
+    const qcByReturn = new Map(qcRows.map((row) => [String(row.no_pengembalian), row]));
     const exceptionEvidenceRows = [
-      ...returnRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'return_refund', source_status: row.source_status, return_type: row.return_type, stock_status: row.stock_status })),
+      ...returnRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'return_refund', source_reference: row.source_reference, source_status: row.source_status, return_type: row.return_type, stock_status: row.stock_status })),
       ...failedRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'failed_delivery', source_status: row.source_status, reason: row.reason })),
       ...cancellationRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'cancellation', source_status: row.source_status, reason: row.reason })),
       ...adjustmentRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'adjustment', source_status: null, amount: row.amount })),
     ];
-    const report = buildProfitActualReport({ orderRows, skuRows, settlementRows, settlementExistenceRows, balanceRows, exceptionEvidenceRows, exceptionOrderNumbers: exceptionRows.map((row) => String(row.no_pesanan || '')) }) as { orders: Array<{ no_pesanan: string }>; [key: string]: unknown };
+    const report = buildProfitActualReport({ orderRows, skuRows, settlementRows, settlementExistenceRows, balanceRows, exceptionEvidenceRows, returnQcByReference: Object.fromEntries(Array.from(qcByReturn.entries()).map(([key, row]) => [key, String(row.qc_status)])), exceptionOrderNumbers: exceptionRows.map((row) => String(row.no_pesanan || '')) }) as { orders: Array<{ no_pesanan: string }>; [key: string]: unknown };
     const cohort = new Set(report.orders.map((row) => row.no_pesanan));
     const exceptionDetails = [...returnRows, ...failedRows, ...cancellationRows, ...adjustmentRows]
       .filter((row) => cohort.has(String(row.no_pesanan || '').trim()))
@@ -60,8 +62,6 @@ export async function GET(request: NextRequest) {
     const skuAllocations = skuAllocationRows
       .filter((row) => cohort.has(String(row.no_pesanan || '').trim()))
       .map((row) => ({ noPesanan: String(row.no_pesanan || '').trim(), productName: row.nama_produk || null, productId: row.id_produk || null, amount: Number(row.signed_total || 0), releaseDate: row.tanggal_dana_dilepaskan || null }));
-    const [qcRows] = await conn.query<RowDataPacket[]>('SELECT no_pengembalian, qc_status, qc_note, DATE_FORMAT(updated_at, \'%Y-%m-%d %H:%i\') updated_at FROM return_qc_decisions WHERE store_id=?', [storeId]);
-    const qcByReturn = new Map(qcRows.map((row) => [String(row.no_pengembalian), row]));
     const returnQcReview = exceptionDetails.filter((row) => row.sourceType === 'return_refund').map((row) => {
       const qc = qcByReturn.get(String(row.sourceReference || ''));
       return { ...row, qcStatus: qc?.qc_status || 'belum_dinilai', qcNote: qc?.qc_note || '', qcUpdatedAt: qc?.updated_at || null,

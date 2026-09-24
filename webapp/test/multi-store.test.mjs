@@ -359,6 +359,9 @@ test('Profit Aktual route is read-only, store-scoped, uses the approved RAW sour
   assert.match(route, /alasan_pembatalan,no_resi,waktu_pengiriman_diatur/);
   assert.match(route, /reason: row.reason/);
   assert.match(route, /exceptionDetails/);
+  assert.match(route, /return_qc_decisions/);
+  assert.match(route, /source_reference/);
+  assert.match(route, /returnQcByReference/);
   assert.match(route, /Seller Centre local timestamp text as DATETIME/);
   assert.match(route, /waktu_pesanan_dibuat >= CONCAT\(\?, \\' 00:00:00\\'\)/);
   assert.match(route, /releaseDateFrom/);
@@ -452,6 +455,33 @@ test('Completed full return with final negative cash gets Cash Final Negatif, no
     orderRows: [{ no_pesanan: 'UNSAFE', status_pesanan: 'Selesai', nomor_referensi_sku: 'FULL-RETURN', sku_induk: '', jumlah: 1, returned_quantity: 1, waktu_pesanan_selesai: '2026-08-25 00:22:00', waktu_pesanan_dibuat: '2026-08-13' }],
   });
   assert.equal(unsafe.orders[0].bucket, 'exception');
+});
+
+test('Explicit Restock layak assumption closes reconciled full-return cash without recognizing HPP profit', () => {
+  const input = {
+    skuRows: [{ sku1: 'ASSUMED-STOCK', sku2: '', harga: 52500 }],
+    settlementRows: [{ no_pesanan: 'ASSUMED-STOCK-ORDER', signed_total: -412, tanggal_dana_dilepaskan: '2026-08-24' }],
+    exceptionOrderNumbers: ['ASSUMED-STOCK-ORDER'],
+    exceptionEvidenceRows: [{ no_pesanan: 'ASSUMED-STOCK-ORDER', source_type: 'return_refund', source_reference: 'RETURN-ASSUMED-STOCK', source_status: 'Dana Dikembalikan ke Pembeli', return_type: 'Seluruh Pesanan' }],
+    balanceRows: [{ no_pesanan: 'ASSUMED-STOCK-ORDER', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: -412 }],
+    orderRows: [{ no_pesanan: 'ASSUMED-STOCK-ORDER', status_pesanan: 'Selesai', nomor_referensi_sku: 'ASSUMED-STOCK', sku_induk: '', jumlah: 1, returned_quantity: 1, waktu_pesanan_selesai: '2026-08-24 18:18:00', waktu_pesanan_dibuat: '2026-08-13' }],
+  };
+  const withoutAssumption = buildProfitActualReport(input);
+  assert.equal(withoutAssumption.orders[0].bucket, 'exception');
+  const report = buildProfitActualReport({ ...input, returnQcByReference: { 'RETURN-ASSUMED-STOCK': 'restock_layak' } });
+  assert.equal(report.orders[0].bucket, 'full_return_cash_final_negative_assumed_stock');
+  assert.equal(report.orders[0].returnStockAssumption, 'restock_layak');
+  assert.equal(report.orders[0].profitActual, null);
+  assert.equal(report.summary.fullReturnCashFinalNegativeAssumedStock, 1);
+  assert.equal(report.summary.fullReturnCashFinalNegativeAssumedStockPcs, 1);
+  assert.equal(report.summary.fullReturnCashFinalNegativeAssumedStockOutcome, -412);
+  assert.equal(report.summary.exception, 0);
+  assert.equal(report.summary.unresolvedOrders, 0);
+  assert.equal(report.summary.unresolvedPcs, 0);
+  assert.equal(report.summary.profitComputable, 0);
+  assert.equal(report.summary.hppApplied, 0);
+  const notRestock = buildProfitActualReport({ ...input, returnQcByReference: { 'RETURN-ASSUMED-STOCK': 'rusak' } });
+  assert.equal(notRestock.orders[0].bucket, 'exception');
 });
 
 test('Completed full return with reconciled positive Shopee compensation gets Cash Final Positif', () => {
@@ -709,7 +739,9 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(panel, /Cakupan Cash/);
   assert.match(panel, /Belum Ada Jawaban/);
   assert.match(panel, /\['unresolved', 'Belum Ada Jawaban'\]/);
-  assert.match(panel, /\['settled_normal', 'partial_return_provisional', 'full_return_cash_final_negative', 'full_return_cash_final_positive', 'batal'\]/);
+  assert.match(panel, /\['settled_normal', 'partial_return_provisional', 'full_return_cash_final_negative', 'full_return_cash_final_negative_assumed_stock', 'full_return_cash_final_positive', 'batal'\]/);
+  assert.match(panel, /Cash Final Negatif — Stok Diasumsikan/);
+  assert.match(panel, /fullReturnCashFinalNegativeAssumedStockOutcome/);
   assert.match(panel, /Cash Final Negatif/);
   assert.match(panel, /Cash Final Positif/);
   assert.match(panel, /fullReturnCashFinalNegativeOutcome/);
@@ -764,7 +796,16 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(panel, /dateTo/);
   assert.match(panel, /new URLSearchParams\(\{ storeId, dateFrom, dateTo \}\)/);
   assert.match(panel, /Return QC Internal/);
+  assert.match(panel, /Pilih semua Return/);
+  assert.match(panel, /Terapkan QC Terpilih/);
+  assert.match(panel, /Asumsi bulk stok oleh user/);
   assert.match(panel, /api\/return-qc/);
+  const returnQcRoute = fs.readFileSync(path.resolve(process.cwd(), 'app/api/return-qc/route.ts'), 'utf8');
+  assert.match(returnQcRoute, /returns/);
+  assert.match(returnQcRoute, /unique.length > 500/);
+  assert.match(returnQcRoute, /Catatan wajib untuk keputusan bulk/);
+  assert.match(returnQcRoute, /beginTransaction/);
+  assert.match(returnQcRoute, /return_qc_decisions/);
   assert.match(panel, /max-h-\[520px\] overflow-auto/);
   assert.match(panel, /sticky top-0/);
 });

@@ -416,6 +416,24 @@ Tambahkan entri baru di bawah ini setiap ada langkah bermakna:
 
 ---
 
+### 2026-09-25 — Asumsi bulk `Restock layak` untuk menghitung cash return tanpa menunggu aplikasi QC fisik
+
+- Scope: tab **Retur & Refund** menyediakan checkbox per Return, pilih semua hasil filter, dropdown QC, catatan audit, dan aksi bulk maksimal 500 Return per simpan. Bulk perubahan harus memakai catatan; keputusan tetap disimpan per `store_id + no_pengembalian`, sehingga dapat dioverride satu per satu oleh aplikasi QC fisik.
+- Immutability: bulk hanya menulis `return_qc_decisions`; tidak mengubah Order.all, Penghasilan, My Balance, Return/Refund RAW, HPP master, atau Estimasi Kotor.
+- `Restock layak` adalah **asumsi/keputusan internal**, bukan klaim bahwa Seller Centre membuktikan penerimaan atau pemeriksaan fisik.
+- Gate `Cash Final Negatif — Stok Diasumsikan`:
+  ```text
+  seluruh PCS order return
+  + settlement Income negatif
+  + My Balance Penghasilan Pesanan keluar tepat sama
+  + tidak ada My Balance masuk/adjustment/mutasi lain
+  + semua evidence exception order adalah Return/Refund
+  + semua No. Pengembalian pada order tersebut diberi QC Restock layak
+  ```
+- Efek: status tersebut menutup backlog `Perlu Audit` untuk **cash outcome** dan mengakui stok return secara asumsi; HPP tidak dibebankan sebagai loss. Namun status ini **bukan** `Profit Aktual Normal`, tidak menambah `Profit Terhitung`, dan tetap menampilkan cash final negatif secara terpisah.
+- `Rusak`, `Hilang`, dan `Belum dinilai` tidak otomatis mengubah profit/HPP. Policy loss fisik tetap fase terpisah.
+- Retur parsial tetap memakai policy lama: HPP PCS non-retur dihitung sebagai `Profit Sementara`, PCS return ditahan sebagai stok; bulk Restock layak hanya menambah evidence audit, bukan mengubah nominal tersebut.
+
 ### 2026-09-25 — Sub-status `Batal` berbasis jalur pengiriman
 
 - Scope: pengayaan read-only pada parent status `Batal`; tidak ada schema/migration dan tidak mengubah Estimasi Kotor, settlement, HPP, Profit Aktual, maupun Cakupan Cash.
