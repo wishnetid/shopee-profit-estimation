@@ -271,7 +271,16 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Coverage cohort Agustus: Return/Refund 17 row / 13 order / nilai refund Rp1.883.773; Failed Delivery 18 row / 17 order; Cancellation 192 row / 139 order; Adjustment 1 row / 1 order / Rp5.000. Angka tersebut hanya visibility/reconciliation, bukan alokasi profit.
 - Guardrail: Return tetap `Menunggu QC / N/A` bila status stok tidak tersedia; Adjustment tidak ditambahkan atau dikurangkan otomatis; cancellation/failed delivery tidak membatalkan atau mengubah Settlement normal secara baru.
 - Test/deploy: `npm test` dan `npm run build` sudah berhasil setelah implementasi Fase 2. Tidak ada migration/import/mutasi DB.
-- Next step: Fase 3 review-only karena belum ada source QC internal.
+- Next step: Fase 3 persistence QC internal setelah user menyetujui status dan scope audit.
+
+### 2026-09-24 — Fase 3 QC internal persistence
+
+- User menyetujui pencatatan QC internal per `No. Pengembalian`, store-scoped, dengan status `belum_dinilai`, `restock_layak`, `rusak`, atau `hilang` serta catatan opsional.
+- Migration eksplisit `scripts/migrate-return-qc.js` dibuat dan diterapkan melalui bridge canonical DB; tabel `return_qc_decisions` punya unique identity `(store_id, no_pengembalian)` dan index audit `(store_id, no_pesanan)`.
+- UI `Return QC Internal` menampilkan evidence RAW Return/Refund, pilihan status, catatan, dan aksi simpan per retur.
+- `POST /api/return-qc` memerlukan sesi dashboard atau Basic API valid; browser mutation wajib same-origin. Input status di-whitelist dan catatan dibatasi 2.000 karakter.
+- API Profit Aktual membaca keputusan QC yang tersimpan untuk toko aktif. Clear Data Toko Aktif menghapus `return_qc_decisions` sebelum RAW return agar tidak ada orphan data.
+- Guardrail: QC adalah catatan operasional/audit. Tidak mengubah HPP, settlement, Profit Aktual Normal, Estimasi Kotor, atau melakukan alokasi finansial return. Policy financial finality tetap langkah terpisah.
 
 ### 2026-09-24 — Fase 3 Return QC review-only
 

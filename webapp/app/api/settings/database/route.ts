@@ -176,6 +176,7 @@ export async function POST(request: NextRequest) {
     await conn.execute('DELETE FROM order_failed_delivery_raw WHERE order_failed_delivery_report_import_id IN (SELECT id FROM order_failed_delivery_report_imports WHERE store_id = ?)', [storeId]);
     await conn.execute('DELETE FROM order_failed_delivery_report_imports WHERE store_id = ?', [storeId]);
 
+    await conn.execute('DELETE FROM return_qc_decisions WHERE store_id = ?', [storeId]);
     await conn.execute('DELETE FROM order_return_refund_raw WHERE order_return_refund_report_import_id IN (SELECT id FROM order_return_refund_report_imports WHERE store_id = ?)', [storeId]);
     await conn.execute('DELETE FROM order_return_refund_report_imports WHERE store_id = ?', [storeId]);
 
