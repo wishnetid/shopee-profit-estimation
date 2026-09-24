@@ -3,7 +3,7 @@ import type { RowDataPacket } from 'mysql2/promise';
 import { getConnection } from '../../../lib/db';
 import { requireStoreId } from '../../../lib/store';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { buildProfitActualReport } = require('../../../lib/profit-actual.js') as { buildProfitActualReport: (input: { orderRows: RowDataPacket[]; skuRows: RowDataPacket[]; settlementRows: RowDataPacket[]; settlementExistenceRows?: RowDataPacket[]; exceptionOrderNumbers: string[] }) => unknown };
+const { buildProfitActualReport } = require('../../../lib/profit-actual.js') as { buildProfitActualReport: (input: { orderRows: RowDataPacket[]; skuRows: RowDataPacket[]; settlementRows: RowDataPacket[]; settlementExistenceRows?: RowDataPacket[]; exceptionOrderNumbers: string[]; balanceRows?: RowDataPacket[] }) => unknown };
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -38,7 +38,14 @@ export async function GET(request: NextRequest) {
     const [failedRows] = await conn.query<RowDataPacket[]>(`SELECT r.no_pesanan, 'failed_delivery' source_type, r.no_resi source_reference, r.status_klaim source_status, r.status_pengiriman_gagal reason, r.jumlah quantity, r.jumlah_kompensasi amount, NULL stock_status, i.source_file FROM order_failed_delivery_raw r JOIN order_failed_delivery_report_imports i ON i.id=r.order_failed_delivery_report_import_id WHERE i.store_id=?`, [storeId]);
     const [cancellationRows] = await conn.query<RowDataPacket[]>(`SELECT r.no_pesanan, 'cancellation' source_type, r.no_resi source_reference, r.status_pembatalan_pengembalian source_status, r.alasan_pembatalan reason, r.jumlah quantity, NULL amount, NULL stock_status, i.source_file FROM order_cancellation_raw r JOIN order_cancellation_report_imports i ON i.id=r.order_cancellation_report_import_id WHERE i.store_id=?`, [storeId]);
     const [adjustmentRows] = await conn.query<RowDataPacket[]>(`SELECT r.no_pesanan_terhubung no_pesanan, 'adjustment' source_type, NULL source_reference, NULL source_status, NULL reason, NULL quantity, r.biaya_penyesuaian amount, NULL stock_status, i.source_file FROM income_adjustments_raw r JOIN income_report_imports i ON i.id=r.income_report_import_id WHERE i.store_id=?`, [storeId]);
-    const report = buildProfitActualReport({ orderRows, skuRows, settlementRows, settlementExistenceRows, exceptionOrderNumbers: exceptionRows.map((row) => String(row.no_pesanan || '')) }) as { orders: Array<{ no_pesanan: string }>; [key: string]: unknown };
+    const cohortOrderNumbers = Array.from(new Set(orderRows.map((row) => String(row.no_pesanan || '').trim()).filter(Boolean)));
+    let balanceRows: RowDataPacket[] = [];
+    if (cohortOrderNumbers.length) {
+      const balanceMarks = cohortOrderNumbers.map(() => '?').join(',');
+      const [rows] = await conn.query<RowDataPacket[]>(`SELECT COALESCE(NULLIF(b.no_pesanan_direct,''),NULLIF(b.no_pesanan_extracted,'')) no_pesanan,b.type_transaksi,b.jumlah_signed FROM balance_transactions_raw b JOIN balance_report_imports i ON i.id=b.balance_report_import_id WHERE i.store_id=? AND COALESCE(NULLIF(b.no_pesanan_direct,''),NULLIF(b.no_pesanan_extracted,'')) IN (${balanceMarks})`, [storeId, ...cohortOrderNumbers]);
+      balanceRows = rows;
+    }
+    const report = buildProfitActualReport({ orderRows, skuRows, settlementRows, settlementExistenceRows, balanceRows, exceptionOrderNumbers: exceptionRows.map((row) => String(row.no_pesanan || '')) }) as { orders: Array<{ no_pesanan: string }>; [key: string]: unknown };
     const cohort = new Set(report.orders.map((row) => row.no_pesanan));
     const exceptionDetails = [...returnRows, ...failedRows, ...cancellationRows, ...adjustmentRows]
       .filter((row) => cohort.has(String(row.no_pesanan || '').trim()))

@@ -354,6 +354,15 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Guardrail: tidak ada tabel/schema/migration QC, tidak ada tombol save/edit, dan tidak ada perubahan HPP, settlement, maupun Profit Aktual Normal. Status barang Shopee bukan keputusan QC internal.
 - Next step: bila proses QC nyata sudah tersedia, sepakati source dan status restock/rusak/hilang/belum dinilai sebelum membangun persistence dan finality.
 
+### 2026-09-24 — Profit Retur Parsial Sementara
+
+- Atas keputusan user, retur parsial tidak lagi otomatis masuk `Settlement Dikecualikan`. Layer baru **Profit Retur Parsial Sementara** dipisahkan dari Profit Aktual Normal.
+- Eligible hanya jika: ada `Penghasilan / Order` settlement; ada pcs non-retur dan pcs retur pada order yang sama; HPP semua pcs non-retur valid; My Balance memiliki event masuk `Penghasilan dari Pesanan` yang tepat sama dengan settlement; serta tidak ada mutasi My Balance negatif terkait order pada coverage Balance yang terimpor.
+- Formula sementara: `Settlement Order - HPP pcs non-retur`. HPP pcs retur tidak dibebankan sementara sebagai asumsi inventory; angka ini adalah cash profit sementara, bukan Profit Aktual Normal atau final.
+- Jika My Balance nanti memiliki nominal negatif pada No. Pesanan yang sama, item kembali ke **Settlement Dikecualikan** untuk audit. Retur penuh, HPP item terjual bermasalah, atau balance masuk yang tidak match juga tidak eligible.
+- Contoh validasi: `260901UY5MGHJX`: settlement/My Balance masuk Rp64.066, W-TAC non-retur HPP Rp52.500, BLACKHAWK retur 1 pcs, tidak ada balance keluar dalam coverage; profit sementara Rp11.566.
+- QC fisik masih manual dan hanya menjadi keputusan inventory/loss pada policy berikutnya; fitur ini tidak otomatis menyatakan barang retur benar-benar masuk stok.
+
 ### 2026-09-24 — Rekonsiliasi Settlement & My Balance (read-only)
 
 - Tab baru **Rekonsiliasi My Balance** ditambahkan di `/profit`; tidak mengubah Estimasi Kotor, Profit Aktual Normal, HPP normal, Settlement Dikecualikan, atau Return QC.
