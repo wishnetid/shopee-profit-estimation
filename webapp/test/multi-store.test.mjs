@@ -702,6 +702,12 @@ test('My Balance analysis keeps wallet top-up, withdrawal, order corrections, an
   assert.equal(report.ads.gmvMax, 700);
   assert.equal(report.ads.manual, 300);
   assert.equal(report.ads.total, 1000);
+  assert.equal(report.ads.walletCredit, 1000);
+  assert.equal(report.ads.walletCreditRows, 1);
+  assert.equal(report.adsWallet.grossTopup, 50000);
+  assert.equal(report.adsWallet.walletCredit, 1000);
+  assert.equal(report.adsWallet.ppnTopup, 49000);
+  assert.equal(report.adsWallet.walletMovement, 0);
   assert.equal(report.rows.length, 3);
 });
 
@@ -733,7 +739,10 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.doesNotMatch(balanceAnalysisRoute, /INSERT INTO|UPDATE |DELETE FROM/);
   assert.match(balanceAnalysisPanel, /Saldo Iklan\/Koin/);
   assert.match(balanceAnalysisPanel, /Ads Aktual Store\/Day/);
-  assert.match(balanceAnalysisPanel, /bukan order\/SKU/);
+  assert.match(balanceAnalysisPanel, /order\/SKU/);
+  assert.match(balanceAnalysisPanel, /Wallet Ads\/Koin & PPN/);
+  assert.match(balanceAnalysisPanel, /Kredit Wallet dari Ads RAW/);
+  assert.match(balanceAnalysisPanel, /PPN Top-up Wallet/);
   assert.match(source, /SettlementBalanceReconciliationPanel/);
   const reconciliationRoute = fs.readFileSync(path.resolve(process.cwd(), 'app/api/settlement-balance-reconciliation/route.ts'), 'utf8');
   const reconciliationPanel = fs.readFileSync(path.resolve(process.cwd(), 'components/SettlementBalanceReconciliationPanel.tsx'), 'utf8');

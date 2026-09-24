@@ -280,6 +280,14 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Test/deploy: koneksi canonical DB melalui Windows berhasil; tidak ada data DB yang diubah.
 - Next step: implementasi Fase 1 additive, tanpa migration/schema change: endpoint read-only + tab Profit Aktual dengan summary, bucket, dan detail order settled normal.
 
+### 2026-09-25 — My Balance Analisis: wallet Ads/Koin dan summary card
+
+- Audit summary My Balance menunjukkan kartu sebelumnya belum menampilkan top-up wallet/PPN secara eksplisit dan label `Ads Aktual` berpotensi terbaca sebagai cash outflow My Balance.
+- Perbaikan read-only: kartu ringkas `Biaya Ads Aktual` sekarang memakai Ads RAW dan ditegaskan bukan biaya yang dialokasikan ke order/SKU; `Net My Balance` diberi label arus kas, bukan profit.
+- Section baru `Wallet Ads/Koin & PPN` menyajikan empat bukti terpisah: Top-up Wallet gross dari Balance RAW; kredit `Isi Saldo` dari Ads RAW; PPN top-up = gross Balance RAW dikurangi kredit Ads RAW; dan perubahan kredit wallet = kredit Ads RAW dikurangi Ads spend.
+- Validasi live TACTICALIZED, 1–24 September 2026: top-up gross Rp7.159.500 (66 mutasi), kredit wallet Ads RAW Rp6.450.000 (66 event), PPN top-up Rp709.500, Ads aktual Rp6.478.170, perubahan kredit wallet -Rp28.170. Angka terakhir bukan saldo wallet akhir karena opening balance dan mutasi di luar coverage tidak dijadikan asumsi.
+- Tidak ada data RAW, HPP, Profit Pesanan, atau alokasi biaya Ads yang dimutasi.
+
 ### 2026-09-25 — Estimasi Order Belum Selesai
 
 - Scope additive pada tab `Profit Pesanan`: section amber **Estimasi Order Belum Selesai** dipisahkan dari kartu Profit Aktual dan Cakupan Finansial.
