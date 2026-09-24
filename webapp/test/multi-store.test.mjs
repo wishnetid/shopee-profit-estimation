@@ -355,6 +355,10 @@ test('Profit Aktual route is read-only, store-scoped, uses the approved RAW sour
   assert.match(route, /exceptionDetails/);
   assert.match(route, /Seller Centre local timestamp text as DATETIME/);
   assert.match(route, /waktu_pesanan_dibuat >= CONCAT\(\?, \\' 00:00:00\\'\)/);
+  assert.match(route, /releaseDateFrom/);
+  assert.match(route, /releaseDateTo/);
+  assert.match(route, /tanggal_dana_dilepaskan >= CONCAT\(\?, \\' 00:00:00\\'\)/);
+  assert.match(route, /tanggal_dana_dilepaskan < DATE_ADD\(CONCAT\(\?, \\' 00:00:00\\'\), INTERVAL 1 DAY\)/);
   assert.doesNotMatch(route, /INTERVAL 7 HOUR/);
   assert.doesNotMatch(route, /INSERT INTO|UPDATE |DELETE FROM/);
 });
@@ -370,6 +374,19 @@ test('Profit Aktual reports settlement excluded from normal profit separately', 
   assert.equal(report.summary.settlement, 0);
   assert.equal(report.summary.exception, 1);
   assert.equal(report.summary.settlementExcluded, 64066);
+});
+
+test('Profit Aktual keeps an existing settlement outside a selected release range separate from completed-unsettled', () => {
+  const report = buildProfitActualReport({
+    skuRows: [{ sku1: 'REF-1', sku2: '', harga: 10000 }],
+    settlementRows: [],
+    settlementExistenceRows: [{ no_pesanan: 'RELEASED-LATER', signed_total: 60000, tanggal_dana_dilepaskan: '2026-09-04' }],
+    exceptionOrderNumbers: [],
+    orderRows: [{ no_pesanan: 'RELEASED-LATER', status_pesanan: 'Selesai', nomor_referensi_sku: 'REF-1', sku_induk: '', jumlah: 1, waktu_pesanan_selesai: '2026-09-03 10:00:00', waktu_pesanan_dibuat: '2026-09-01' }],
+  });
+  assert.equal(report.summary.settlementOutsideReleaseRange, 1);
+  assert.equal(report.summary.completedUnsettled, 0);
+  assert.equal(report.orders[0].bucket, 'settlement_outside_release_range');
 });
 
 test('Profit Aktual separates completed-unsettled orders from ordinary pending orders', () => {
@@ -393,6 +410,11 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(source, /Profit Aktual/);
   assert.match(source, /ProfitActualPanel/);
   assert.match(panel, /\/api\/profit-calculation/);
+  assert.match(panel, /Cohort Pesanan — Waktu Pesanan Dibuat/);
+  assert.match(panel, /Filter Settlement — Tanggal Dana Dilepaskan/);
+  assert.match(panel, /releaseDateFrom/);
+  assert.match(panel, /releaseDateTo/);
+  assert.match(panel, /Mode: irisan cohort order \+ cash release/);
   assert.match(panel, /Penghasilan \/ Order/);
   assert.match(source, /Retur & Refund/);
   assert.match(source, /Selesai Belum Cair/);
@@ -405,10 +427,10 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(source, /view="completed_unsettled"/);
   assert.match(source, /view="exception"/);
   assert.match(source, /view="returns"/);
-  assert.match(panel, /filter\(x=>x.bucket==='settled_normal'\)/);
+  assert.match(panel, /bucket === 'settled_normal'/);
   assert.match(panel, /dateFrom/);
   assert.match(panel, /dateTo/);
-  assert.match(panel, /new URLSearchParams\(\{storeId,dateFrom,dateTo\}\)/);
+  assert.match(panel, /new URLSearchParams\(\{ storeId, dateFrom, dateTo \}\)/);
   assert.match(panel, /Return QC Internal/);
   assert.match(panel, /api\/return-qc/);
   assert.match(panel, /scrollable/);

@@ -3,7 +3,7 @@ import type { RowDataPacket } from 'mysql2/promise';
 import { getConnection } from '../../../lib/db';
 import { requireStoreId } from '../../../lib/store';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { buildProfitActualReport } = require('../../../lib/profit-actual.js') as { buildProfitActualReport: (input: { orderRows: RowDataPacket[]; skuRows: RowDataPacket[]; settlementRows: RowDataPacket[]; exceptionOrderNumbers: string[] }) => unknown };
+const { buildProfitActualReport } = require('../../../lib/profit-actual.js') as { buildProfitActualReport: (input: { orderRows: RowDataPacket[]; skuRows: RowDataPacket[]; settlementRows: RowDataPacket[]; settlementExistenceRows?: RowDataPacket[]; exceptionOrderNumbers: string[] }) => unknown };
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -14,19 +14,29 @@ export async function GET(request: NextRequest) {
   const storeId = storeCheck.storeId as number;
   const from = request.nextUrl.searchParams.get('dateFrom') || '2026-08-01';
   const to = request.nextUrl.searchParams.get('dateTo') || '2026-08-31';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return NextResponse.json({ error: 'Rentang tanggal tidak valid.' }, { status: 400 });
+  const releaseFrom = request.nextUrl.searchParams.get('releaseDateFrom') || '';
+  const releaseTo = request.nextUrl.searchParams.get('releaseDateTo') || '';
+  const isDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+  if (!isDate(from) || !isDate(to) || from > to) return NextResponse.json({ error: 'Rentang Waktu Pesanan Dibuat tidak valid.' }, { status: 400 });
+  if ((releaseFrom && !isDate(releaseFrom)) || (releaseTo && !isDate(releaseTo)) || (releaseFrom && releaseTo && releaseFrom > releaseTo)) return NextResponse.json({ error: 'Rentang Tanggal Dana Dilepaskan tidak valid.' }, { status: 400 });
   const conn = await getConnection();
   try {
     const [skuRows] = await conn.query<RowDataPacket[]>('SELECT sku1,sku2,harga FROM sku_master_raw WHERE sku_report_import_id=(SELECT id FROM sku_report_imports ORDER BY imported_at DESC,id DESC LIMIT 1)');
     // Order.all stores Seller Centre local timestamp text as DATETIME. Keep its calendar unchanged.
     const [orderRows] = await conn.query<RowDataPacket[]>('SELECT no_pesanan,status_pesanan,nomor_referensi_sku,sku_induk,nama_produk,nama_variasi,jumlah,returned_quantity,status_pembatalan_pengembalian,waktu_pesanan_selesai,DATE_FORMAT(waktu_pesanan_dibuat, \'%Y-%m-%d\') waktu_pesanan_dibuat FROM order_all WHERE store_id=? AND waktu_pesanan_dibuat >= CONCAT(?, \' 00:00:00\') AND waktu_pesanan_dibuat < DATE_ADD(CONCAT(?, \' 00:00:00\'), INTERVAL 1 DAY)', [storeId, from, to]);
-    const [settlementRows] = await conn.query<RowDataPacket[]>('SELECT p.no_pesanan,p.signed_total,DATE_FORMAT(p.tanggal_dana_dilepaskan, \'%Y-%m-%d\') tanggal_dana_dilepaskan FROM income_penghasilan_raw p JOIN income_report_imports i ON i.id=p.income_report_import_id WHERE i.store_id=? AND p.lihat_berdasarkan=\'Order\'', [storeId]);
+    const settlementSql = 'SELECT p.no_pesanan,p.signed_total,DATE_FORMAT(p.tanggal_dana_dilepaskan, \'%Y-%m-%d\') tanggal_dana_dilepaskan FROM income_penghasilan_raw p JOIN income_report_imports i ON i.id=p.income_report_import_id WHERE i.store_id=? AND p.lihat_berdasarkan=\'Order\'';
+    const [settlementExistenceRows] = await conn.query<RowDataPacket[]>(settlementSql, [storeId]);
+    const releaseConditions: string[] = [];
+    const releaseParams: string[] = [String(storeId)];
+    if (releaseFrom) { releaseConditions.push('p.tanggal_dana_dilepaskan >= CONCAT(?, \' 00:00:00\')'); releaseParams.push(releaseFrom); }
+    if (releaseTo) { releaseConditions.push('p.tanggal_dana_dilepaskan < DATE_ADD(CONCAT(?, \' 00:00:00\'), INTERVAL 1 DAY)'); releaseParams.push(releaseTo); }
+    const [settlementRows] = await conn.query<RowDataPacket[]>(`${settlementSql}${releaseConditions.length ? ` AND ${releaseConditions.join(' AND ')}` : ''}`, releaseParams);
     const [exceptionRows] = await conn.query<RowDataPacket[]>(`SELECT DISTINCT no_pesanan FROM (SELECT r.no_pesanan FROM order_cancellation_raw r JOIN order_cancellation_report_imports i ON i.id=r.order_cancellation_report_import_id WHERE i.store_id=? UNION SELECT r.no_pesanan FROM order_failed_delivery_raw r JOIN order_failed_delivery_report_imports i ON i.id=r.order_failed_delivery_report_import_id WHERE i.store_id=? UNION SELECT r.no_pesanan FROM order_return_refund_raw r JOIN order_return_refund_report_imports i ON i.id=r.order_return_refund_report_import_id WHERE i.store_id=?) x WHERE no_pesanan IS NOT NULL`, [storeId, storeId, storeId]);
     const [returnRows] = await conn.query<RowDataPacket[]>(`SELECT r.no_pesanan, 'return_refund' source_type, r.no_pengembalian source_reference, r.status_pembatalan_pengembalian source_status, r.tipe_pengembalian return_type, r.variasi return_variant, r.alasan_pengembalian reason, r.jumlah_produk_dikembalikan quantity, r.total_pengembalian_dana amount, r.status_pengembalian_barang stock_status, i.source_file FROM order_return_refund_raw r JOIN order_return_refund_report_imports i ON i.id=r.order_return_refund_report_import_id WHERE i.store_id=?`, [storeId]);
     const [failedRows] = await conn.query<RowDataPacket[]>(`SELECT r.no_pesanan, 'failed_delivery' source_type, r.no_resi source_reference, r.status_klaim source_status, r.status_pengiriman_gagal reason, r.jumlah quantity, r.jumlah_kompensasi amount, NULL stock_status, i.source_file FROM order_failed_delivery_raw r JOIN order_failed_delivery_report_imports i ON i.id=r.order_failed_delivery_report_import_id WHERE i.store_id=?`, [storeId]);
     const [cancellationRows] = await conn.query<RowDataPacket[]>(`SELECT r.no_pesanan, 'cancellation' source_type, r.no_resi source_reference, r.status_pembatalan_pengembalian source_status, r.alasan_pembatalan reason, r.jumlah quantity, NULL amount, NULL stock_status, i.source_file FROM order_cancellation_raw r JOIN order_cancellation_report_imports i ON i.id=r.order_cancellation_report_import_id WHERE i.store_id=?`, [storeId]);
     const [adjustmentRows] = await conn.query<RowDataPacket[]>(`SELECT r.no_pesanan_terhubung no_pesanan, 'adjustment' source_type, NULL source_reference, NULL source_status, NULL reason, NULL quantity, r.biaya_penyesuaian amount, NULL stock_status, i.source_file FROM income_adjustments_raw r JOIN income_report_imports i ON i.id=r.income_report_import_id WHERE i.store_id=?`, [storeId]);
-    const report = buildProfitActualReport({ orderRows, skuRows, settlementRows, exceptionOrderNumbers: exceptionRows.map((row) => String(row.no_pesanan || '')) }) as { orders: Array<{ no_pesanan: string }>; [key: string]: unknown };
+    const report = buildProfitActualReport({ orderRows, skuRows, settlementRows, settlementExistenceRows, exceptionOrderNumbers: exceptionRows.map((row) => String(row.no_pesanan || '')) }) as { orders: Array<{ no_pesanan: string }>; [key: string]: unknown };
     const cohort = new Set(report.orders.map((row) => row.no_pesanan));
     const exceptionDetails = [...returnRows, ...failedRows, ...cancellationRows, ...adjustmentRows]
       .filter((row) => cohort.has(String(row.no_pesanan || '').trim()))
@@ -40,6 +50,6 @@ export async function GET(request: NextRequest) {
         reviewStatus: qc ? 'Keputusan QC internal tersimpan.' : 'Belum ada keputusan QC internal.',
         financialTreatment: 'Tidak dialokasikan ke Profit Aktual Normal.' };
     });
-    return NextResponse.json({ success: true, storeId, dateRange: { dateFrom: from, dateTo: to }, ...report, exceptionDetails, orderItems, returnQcReview });
+    return NextResponse.json({ success: true, storeId, dateRange: { dateFrom: from, dateTo: to, releaseDateFrom: releaseFrom || null, releaseDateTo: releaseTo || null }, ...report, exceptionDetails, orderItems, returnQcReview });
   } catch (error) { console.error('Profit actual API error:', error); return NextResponse.json({ error: 'Gagal memuat Profit Aktual.' }, { status: 500 }); } finally { conn.release(); }
 }

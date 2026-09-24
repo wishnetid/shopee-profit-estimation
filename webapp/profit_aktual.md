@@ -302,6 +302,15 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Tabel `Profit Pesanan Selesai` memakai bounded scroll container: tinggi area kira-kira sembilan baris data dan scrollbar vertikal untuk baris lain.
 - Header tabel dibuat sticky saat scroll. Tidak ada pagination atau limit API tambahan; seluruh hasil tetap tersedia melalui scroll.
 
+### 2026-09-24 — Filter opsional Tanggal Dana Dilepaskan
+
+- Profit Aktual menampilkan dua dimensi tanggal yang sengaja dipisahkan: cohort wajib **Waktu Pesanan Dibuat** dan filter settlement opsional **Tanggal Dana Dilepaskan**.
+- Jika filter settlement kosong, perilaku sebelumnya dipertahankan: seluruh settlement untuk cohort order dipakai sesuai guardrail Profit Aktual.
+- Jika satu/dua batas dana dilepas terisi, hasil merupakan **AND / irisan**: order harus dibuat di cohort terpilih dan settlement `Penghasilan / Order` harus dilepas dalam rentang settlement.
+- API mengembalikan rentang yang benar-benar dieksekusi dan UI menampilkan `Mode: irisan cohort order + cash release`.
+- Order yang memang punya settlement tetapi dana dilepas di luar rentang tidak disalahlabeli `Selesai Belum Cair`; dicatat sebagai `settlement_outside_release_range` dan dihitung pada kartu `Cair di Luar Filter`.
+- Kolom `Dana Dilepas` ditampilkan pada detail Profit Pesanan Selesai. Ini tetap bukan pengganti cohort order atau formula Profit Aktual.
+
 ### 2026-09-24 — Settlement Dikecualikan dan detail retur
 
 - Tab audit `Exception` diganti label bisnis **Settlement Dikecualikan**: settlement cair yang tidak masuk Profit Aktual normal karena return/refund, failed delivery, pembatalan, atau HPP review.
