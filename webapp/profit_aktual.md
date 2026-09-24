@@ -280,7 +280,15 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - UI `Return QC Internal` menampilkan evidence RAW Return/Refund, pilihan status, catatan, dan aksi simpan per retur.
 - `POST /api/return-qc` memerlukan sesi dashboard atau Basic API valid; browser mutation wajib same-origin. Input status di-whitelist dan catatan dibatasi 2.000 karakter.
 - API Profit Aktual membaca keputusan QC yang tersimpan untuk toko aktif. Clear Data Toko Aktif menghapus `return_qc_decisions` sebelum RAW return agar tidak ada orphan data.
-- Guardrail: QC adalah catatan operasional/audit. Tidak mengubah HPP, settlement, Profit Aktual Normal, Estimasi Kotor, atau melakukan alokasi finansial return. Policy financial finality tetap langkah terpisah.
+- Guardrail: QC adalah catatan operasional/audit. Tidak mengubah HPP, settlement, Profit Aktual Normal, Estimasi Kotor, atau melakukan alokasi finansial return.
+- Keputusan scope: tab `Profit Aktual` dikhususkan untuk profit pesanan selesai saja. Policy finansial retur, refund, dan dampak HPP return akan dibuat pada tab baru terpisah; tidak dicampur ke Profit Aktual.
+
+### 2026-09-24 — Pemisahan tab Profit Aktual vs Retur & Refund
+
+- Tab `Profit Aktual` sekarang hanya merender bucket `settled_normal`: pesanan selesai dengan settlement `Penghasilan / Order` dan HPP valid.
+- Tab baru `Retur & Refund` memuat Return QC Internal dan Exception & Rekonsiliasi: return/refund, failed delivery, cancellation, serta adjustment.
+- Kedua tab membaca evidence yang sama secara store-scoped; pemisahan hanya presentasi dan scope analisis. Tidak ada perubahan formula, schema, atau mutasi finansial.
+- Return QC tetap dapat disimpan hanya dari tab Retur & Refund dan tidak tampil pada tab Profit Aktual.
 
 ### 2026-09-24 — Fase 3 Return QC review-only
 

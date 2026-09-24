@@ -335,7 +335,10 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(source, /ProfitActualPanel/);
   assert.match(panel, /\/api\/profit-calculation/);
   assert.match(panel, /Penghasilan \/ Order/);
+  assert.match(source, /Retur & Refund/);
+  assert.match(source, /view="actual"/);
+  assert.match(source, /view="returns"/);
+  assert.match(panel, /filter\(x=>x.bucket==='settled_normal'\)/);
   assert.match(panel, /Return QC Internal/);
-  assert.match(panel, /restock_layak/);
   assert.match(panel, /api\/return-qc/);
 });
