@@ -297,6 +297,11 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Permintaan API memakai parameter `dateFrom`/`dateTo` dari input; scope yang benar-benar dipakai API ditampilkan kembali setelah load.
 - Rentang kosong atau terbalik ditolak di client, sementara API tetap menjalankan validasi tanggal independen.
 
+### 2026-09-24 — Bounded scroll Profit Pesanan Selesai
+
+- Tabel `Profit Pesanan Selesai` memakai bounded scroll container: tinggi area kira-kira sembilan baris data dan scrollbar vertikal untuk baris lain.
+- Header tabel dibuat sticky saat scroll. Tidak ada pagination atau limit API tambahan; seluruh hasil tetap tersedia melalui scroll.
+
 ### 2026-09-24 — Fase 3 Return QC review-only
 
 - Keputusan user: belum ada source QC; aplikasi hanya membangun review tanpa menyimpan keputusan QC.

@@ -344,4 +344,6 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(panel, /new URLSearchParams\(\{storeId,dateFrom,dateTo\}\)/);
   assert.match(panel, /Return QC Internal/);
   assert.match(panel, /api\/return-qc/);
+  assert.match(panel, /scrollable/);
+  assert.match(panel, /max-h-\[437px\] overflow-auto/);
 });
