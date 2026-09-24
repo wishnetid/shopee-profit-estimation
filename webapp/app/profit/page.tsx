@@ -135,7 +135,7 @@ export default function ProfitPage() {
 }
 
 function ProfitEstimationContent({ storeId, activeStoreName }: { storeId: string; activeStoreName: string }) {
-  const [tab, setTab] = useState<'estimate' | 'actual' | 'returns'>('estimate');
+  const [tab, setTab] = useState<'estimate' | 'actual' | 'completed_unsettled' | 'exception' | 'returns'>('estimate');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
@@ -196,9 +196,11 @@ function ProfitEstimationContent({ storeId, activeStoreName }: { storeId: string
       <div className="mb-5 flex gap-2 border-b border-slate-200">
         <button type="button" onClick={() => setTab('estimate')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'estimate' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Estimasi Kotor</button>
         <button type="button" onClick={() => setTab('actual')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'actual' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Profit Aktual</button>
+        <button type="button" onClick={() => setTab('completed_unsettled')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'completed_unsettled' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Selesai Belum Cair</button>
+        <button type="button" onClick={() => setTab('exception')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'exception' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Exception</button>
         <button type="button" onClick={() => setTab('returns')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'returns' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Retur & Refund</button>
       </div>
-      {tab === 'actual' ? <ProfitActualPanel storeId={storeId} view="actual" /> : tab === 'returns' ? <ProfitActualPanel storeId={storeId} view="returns" /> : <>
+      {tab === 'actual' ? <ProfitActualPanel storeId={storeId} view="actual" /> : tab === 'completed_unsettled' ? <ProfitActualPanel storeId={storeId} view="completed_unsettled" /> : tab === 'exception' ? <ProfitActualPanel storeId={storeId} view="exception" /> : tab === 'returns' ? <ProfitActualPanel storeId={storeId} view="returns" /> : <>
         <section className="mb-5 rounded-xl border border-purple-200 bg-purple-50 p-4 lg:p-5"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-purple-700" /><div className="text-sm leading-6 text-purple-950"><h2 className="font-semibold">Estimasi Kotor Setelah HPP</h2><p>Basis memakai Subtotal Pesanan seller, dikurangi voucher seller, potongan standar Shopee, lalu HPP item. Tidak menunggu Income, settlement, atau cohort historis. Komisi program khusus seperti AMS belum masuk estimasi standar.</p></div></div></section>
         <section className="mb-5 rounded-xl border border-slate-200 bg-white p-4 lg:p-5"><div className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
           <label className="text-sm font-medium text-slate-700">Dari tanggal <span className="font-normal text-slate-400">(opsional)</span><input type="date" value={dateFrom} onChange={(event) => updateDate('from', event.target.value)} className="mt-1.5 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-100" /></label>

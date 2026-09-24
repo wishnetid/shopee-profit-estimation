@@ -302,6 +302,12 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Tabel `Profit Pesanan Selesai` memakai bounded scroll container: tinggi area kira-kira sembilan baris data dan scrollbar vertikal untuk baris lain.
 - Header tabel dibuat sticky saat scroll. Tidak ada pagination atau limit API tambahan; seluruh hasil tetap tersedia melalui scroll.
 
+### 2026-09-24 — Audit selisih Profit Aktual
+
+- Tab `Selesai Belum Cair` memisahkan order yang sudah memiliki `Waktu Pesanan Selesai` di Order.all tetapi belum punya settlement `Income → Penghasilan / Order`. Order ini tidak dihitung sebagai Profit Aktual.
+- Tab `Exception` memisahkan order yang punya settlement tetapi dikecualikan dari Profit Aktual Normal karena terdeteksi pada RAW Return/Refund, Failed Delivery, Cancellation, atau HPP perlu review.
+- Kedua tab memakai cohort `Waktu Pesanan Dibuat` kalender WIB dan read-only. Tidak mengubah formula maupun total Profit Aktual normal.
+
 ### 2026-09-24 — Fase 3 Return QC review-only
 
 - Keputusan user: belum ada source QC; aplikasi hanya membangun review tanpa menyimpan keputusan QC.

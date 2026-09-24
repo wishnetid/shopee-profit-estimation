@@ -2,10 +2,13 @@ import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import mysql from 'mysql2/promise';
 import pagination from '../lib/pagination.js';
 
 const { parsePagination } = pagination;
+const require = createRequire(import.meta.url);
+const { buildProfitActualReport } = require('../lib/profit-actual.js');
 
 function loadDbEnv() {
   const result = { ...process.env };
@@ -351,6 +354,20 @@ test('Profit Aktual route is read-only, store-scoped, uses the approved RAW sour
   assert.doesNotMatch(route, /INSERT INTO|UPDATE |DELETE FROM/);
 });
 
+test('Profit Aktual separates completed-unsettled orders from ordinary pending orders', () => {
+  const report = buildProfitActualReport({
+    skuRows: [{ sku1: 'REF-1', sku2: '', harga: 10000 }],
+    settlementRows: [], exceptionOrderNumbers: [],
+    orderRows: [
+      { no_pesanan: 'COMPLETED-UNSETTLED', status_pesanan: 'Selesai', nomor_referensi_sku: 'REF-1', sku_induk: '', jumlah: 1, waktu_pesanan_selesai: '2026-09-10 10:00:00', waktu_pesanan_dibuat: '2026-09-01' },
+      { no_pesanan: 'PENDING', status_pesanan: 'Sedang Dikirim', nomor_referensi_sku: 'REF-1', sku_induk: '', jumlah: 1, waktu_pesanan_selesai: null, waktu_pesanan_dibuat: '2026-09-01' },
+    ],
+  });
+  assert.equal(report.summary.completedUnsettled, 1);
+  assert.equal(report.summary.pending, 1);
+  assert.equal(report.orders.find((order) => order.no_pesanan === 'COMPLETED-UNSETTLED').bucket, 'completed_unsettled');
+});
+
 test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor stays present', () => {
   const source = fs.readFileSync(path.resolve(process.cwd(), 'app/profit/page.tsx'), 'utf8');
   const panel = fs.readFileSync(path.resolve(process.cwd(), 'components/ProfitActualPanel.tsx'), 'utf8');
@@ -360,7 +377,11 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(panel, /\/api\/profit-calculation/);
   assert.match(panel, /Penghasilan \/ Order/);
   assert.match(source, /Retur & Refund/);
+  assert.match(source, /Selesai Belum Cair/);
+  assert.match(source, /Exception/);
   assert.match(source, /view="actual"/);
+  assert.match(source, /view="completed_unsettled"/);
+  assert.match(source, /view="exception"/);
   assert.match(source, /view="returns"/);
   assert.match(panel, /filter\(x=>x.bucket==='settled_normal'\)/);
   assert.match(panel, /dateFrom/);
