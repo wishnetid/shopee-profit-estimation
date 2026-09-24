@@ -17,7 +17,7 @@ npm run dev
 ## Features
 
 - **Upload Manager:** Preview-first import for Order.all, periodic Income RAW packages, and shared Master SKU RAW packages.
-- **Order All:** Store-scoped current-state item snapshots.
+- **Order All:** Store-scoped current-state item snapshots, dengan filter range AND untuk lima waktu operasional (deadline kirim, pengiriman diatur, dibuat, dibayar, selesai) serta opsi hanya pesanan selesai. Kontrol tanggal mengikuti kalender WIB walau RAW timestamp tersimpan UTC.
 - **Income:** Store-scoped RAW packages; `Penghasilan / Order`, `Penghasilan / Sku`, Adjustment, and Shipping Fee Discrepancy stay separate.
 - **SKU Master:** Shared RAW source packages; no HPP mapping or profit join at this layer.
 - **Profit & Estimasi:** `/profit` menyediakan Estimasi Kotor Setelah HPP manual-load, read-only, dan store-scoped. Basisnya adalah Subtotal Pesanan seller dikurangi voucher seller, potongan standar Shopee, dan HPP; tidak menunggu Income/settlement/cohort historis. Ringkasan Harian menampilkan Ads Spend, Estimasi PPN Iklan 11%, dan Sisa Setelah Ads & PPN. Profit Aktual legacy tetap `PROFIT_NOT_READY`.

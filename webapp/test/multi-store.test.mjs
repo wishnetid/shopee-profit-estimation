@@ -326,6 +326,15 @@ test('Order All exposes the complete business RAW contract, including buyer deli
   const dataTable = fs.readFileSync(path.resolve(process.cwd(), 'components/DataTable.tsx'), 'utf8');
   assert.match(dataTable, /max-h-\[437px\] overflow-auto/);
   assert.match(dataTable, /sticky top-0 z-10/);
+  assert.match(ordersPage, /Filter Tanggal/);
+  assert.match(ordersPage, /completedOnly/);
+  for (const field of ['pesanan_harus_dikirim_sebelum', 'waktu_pengiriman_diatur', 'waktu_pesanan_dibuat', 'waktu_pembayaran_dilakukan', 'waktu_pesanan_selesai']) {
+    assert.match(ordersPage, new RegExp(field));
+    assert.match(ordersRoute, /DATE_FILTER_COLUMNS/);
+    assert.match(ordersRoute, /\$\{column\}From/);
+    assert.match(ordersRoute, /\$\{column\}To/);
+  }
+  assert.match(ordersRoute, /waktu_pesanan_selesai IS NOT NULL/);
 });
 
 test('Profit Aktual route is read-only, store-scoped, uses the approved RAW sources, and preserves WIB cohort boundaries', () => {
