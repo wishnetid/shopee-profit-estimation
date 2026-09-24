@@ -9,6 +9,7 @@ import pagination from '../lib/pagination.js';
 const { parsePagination } = pagination;
 const require = createRequire(import.meta.url);
 const { buildProfitActualReport } = require('../lib/profit-actual.js');
+const { buildSettlementBalanceReconciliation } = require('../lib/settlement-balance-reconciliation.js');
 
 function loadDbEnv() {
   const result = { ...process.env };
@@ -441,6 +442,25 @@ test('Profit Aktual separates completed-unsettled orders from ordinary pending o
   assert.equal(report.orders.find((order) => order.no_pesanan === 'COMPLETED-UNSETTLED').bucket, 'completed_unsettled');
 });
 
+test('Settlement and My Balance reconciliation keeps negative ledger events audit-only', () => {
+  const report = buildSettlementBalanceReconciliation({
+    orderRows: [{ no_pesanan: 'REVERSAL', status_pesanan: 'Selesai', waktu_pesanan_dibuat: '2026-08-20', jumlah: 1, returned_quantity: 0 }],
+    incomeRows: [{ no_pesanan: 'REVERSAL', signed_total: 70000, tanggal_dana_dilepaskan: '2026-08-25', source_file: 'income.xlsx', source_excel_row: 2 }],
+    balanceRows: [
+      { no_pesanan: 'REVERSAL', transaction_at: '2026-08-25 10:00:00', type_transaksi: 'Penghasilan dari Pesanan', jenis_transaksi: 'Transaksi Masuk', jumlah_signed: 70000, description: 'Penghasilan dari Pesanan #REVERSAL', status: 'Transaksi Selesai', saldo_akhir: 500000, source_file: 'balance.xlsx', source_excel_row: 10 },
+      { no_pesanan: 'REVERSAL', transaction_at: '2026-08-27 10:00:00', type_transaksi: 'Penghasilan dari Pesanan', jenis_transaksi: 'Transaksi Keluar', jumlah_signed: -70000, description: 'Penghasilan dari Pesanan #REVERSAL', status: 'Transaksi Selesai', saldo_akhir: 430000, source_file: 'balance.xlsx', source_excel_row: 11 },
+    ],
+    exceptionRows: [],
+  });
+  assert.equal(report.summary.incomeSettlement, 70000);
+  assert.equal(report.summary.balanceOrderIncomeIn, 70000);
+  assert.equal(report.summary.balanceOrderIncomeOut, -70000);
+  assert.equal(report.summary.balanceNet, 0);
+  assert.equal(report.summary.reversal, 1);
+  assert.equal(report.rows[0].reconciliationStatus, 'Ada pembalikan saldo');
+  assert.equal(report.rows[0].events.length, 3);
+});
+
 test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor stays present', () => {
   const source = fs.readFileSync(path.resolve(process.cwd(), 'app/profit/page.tsx'), 'utf8');
   const panel = fs.readFileSync(path.resolve(process.cwd(), 'components/ProfitActualPanel.tsx'), 'utf8');
@@ -457,6 +477,17 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(panel, /Mode: irisan cohort order \+ cash release/);
   assert.match(panel, /Penghasilan \/ Order/);
   assert.match(source, /Retur & Refund/);
+  assert.match(source, /Rekonsiliasi My Balance/);
+  assert.match(source, /SettlementBalanceReconciliationPanel/);
+  const reconciliationRoute = fs.readFileSync(path.resolve(process.cwd(), 'app/api/settlement-balance-reconciliation/route.ts'), 'utf8');
+  const reconciliationPanel = fs.readFileSync(path.resolve(process.cwd(), 'components/SettlementBalanceReconciliationPanel.tsx'), 'utf8');
+  assert.match(reconciliationRoute, /requireStoreId/);
+  assert.match(reconciliationRoute, /balance_transactions_raw/);
+  assert.match(reconciliationRoute, /income_penghasilan_raw/);
+  assert.doesNotMatch(reconciliationRoute, /INSERT INTO|UPDATE |DELETE FROM/);
+  assert.match(reconciliationPanel, /Rekonsiliasi Settlement & My Balance/);
+  assert.match(reconciliationPanel, /Lihat detail/);
+  assert.match(reconciliationPanel, /My Balance · Penghasilan Keluar/);
   assert.match(source, /Selesai Belum Cair/);
   assert.match(source, /Settlement Dikecualikan/);
   assert.match(panel, /settlementExcluded/);

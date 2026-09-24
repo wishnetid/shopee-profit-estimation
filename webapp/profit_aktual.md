@@ -1,6 +1,6 @@
 # Profit Aktual — Rencana, Kontrak, dan Progress
 
-**Status:** Planning — belum ada implementasi Profit Aktual.
+**Status:** LIVE — Profit Aktual normal, audit settlement, Return QC, dan Rekonsiliasi My Balance read-only tersedia; policy profit final retur/adjustment masih menunggu persetujuan.
 
 **Tujuan dokumen:** handoff lintas sesi/agent. Semua keputusan, data source, progress verifikasi, perubahan kontrak, dan release Profit Aktual harus dicatat di file ini.
 
@@ -353,6 +353,17 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Scope: endpoint mengeluarkan `returnQcReview` dari Return/Refund RAW yang sudah termasuk cohort. UI menampilkan No. Pengembalian, qty, alasan, status barang dari Shopee, status review, dan perlakuan finansial.
 - Guardrail: tidak ada tabel/schema/migration QC, tidak ada tombol save/edit, dan tidak ada perubahan HPP, settlement, maupun Profit Aktual Normal. Status barang Shopee bukan keputusan QC internal.
 - Next step: bila proses QC nyata sudah tersedia, sepakati source dan status restock/rusak/hilang/belum dinilai sebelum membangun persistence dan finality.
+
+### 2026-09-24 — Rekonsiliasi Settlement & My Balance (read-only)
+
+- Tab baru **Rekonsiliasi My Balance** ditambahkan di `/profit`; tidak mengubah Estimasi Kotor, Profit Aktual Normal, HPP normal, Settlement Dikecualikan, atau Return QC.
+- Cohort wajib memakai `Order.all.waktu_pesanan_dibuat` dengan batas kalender Seller Centre `[mulai 00:00, hari setelah akhir 00:00)`. Satu baris UI adalah satu `No. Pesanan`.
+- API `GET /api/settlement-balance-reconciliation` bersifat store-scoped dan read-only. Ia menggabungkan `Income → Penghasilan / Order`, mutasi `Balance RAW`, dan evidence Return/Refund, Failed Delivery, serta Cancellation. `Penghasilan / SKU` tidak dibaca dan tidak dijumlahkan.
+- Summary memisahkan: settlement Income, Penghasilan dari Pesanan masuk/keluar My Balance, Penyesuaian masuk/keluar, net mutasi Balance, dan jumlah order perlu rekonsiliasi.
+- Detail event menyimpan waktu, arah, nominal, deskripsi, status, saldo setelah mutasi, source file, dan Excel row agar alasan cash outflow dapat diaudit tanpa asumsi.
+- Status read-only: `Match normal`, `Ada pembalikan saldo`, `Ada penyesuaian`, `Ada exception + mutasi keluar`, `Retur parsial — menunggu alokasi`, `Perlu rekonsiliasi`, dan `Belum ada My Balance`.
+- Audit canonical cohort Agustus 2026: 756 order; mutasi negatif terkait 27 order. Seluruh 27 memiliki evidence exception: 8 pembalikan `Penghasilan dari Pesanan` total -Rp198.916 dan 19 Penyesuaian keluar total -Rp9.190. Tidak ada nilai ini yang otomatis dipotong dari Profit Aktual Normal.
+- Policy gate: kategori biaya premi pesanan gagal terkirim tetap hanya cash-adjustment audit sampai kebijakan eksplisit menetapkan apakah dan kapan dibebankan ke profit final. Tidak ada policy finansial otomatis pada rilis ini.
 
 ### Format progress berikutnya
 
