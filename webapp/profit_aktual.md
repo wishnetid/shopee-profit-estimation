@@ -302,6 +302,14 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Tabel `Profit Pesanan Selesai` memakai bounded scroll container: tinggi area kira-kira sembilan baris data dan scrollbar vertikal untuk baris lain.
 - Header tabel dibuat sticky saat scroll. Tidak ada pagination atau limit API tambahan; seluruh hasil tetap tersedia melalui scroll.
 
+### 2026-09-24 — Cakupan Cohort: Total Pesanan dan Total Pcs
+
+- Tab **Profit Aktual** menambahkan strip **Cakupan Cohort** di atas kartu finansial agar volume order tidak disalahartikan sebagai jumlah order yang sudah profit/settle.
+- `Pesanan unik` = jumlah `No. Pesanan` unik pada seluruh `Order.all` dalam rentang wajib **Waktu Pesanan Dibuat**, semua status termasuk batal, pending, selesai, exception, dan belum cair.
+- `Total pcs` = `SUM(jumlah)` semua physical item-row cohort; repeated product line yang valid tetap dihitung sebagai qty sumber, bukan dideduplikasi per SKU.
+- Keduanya sengaja tidak berubah ketika filter sekunder **Tanggal Dana Dilepaskan** dipakai. Filter tersebut hanya mempersempit settlement/profit, bukan arti cohort order.
+- Stripe diletakkan terpisah dari kartu finansial dan dilabelkan `sebelum filter settlement`.
+
 ### 2026-09-24 — Filter opsional Tanggal Dana Dilepaskan
 
 - Profit Aktual menampilkan dua dimensi tanggal yang sengaja dipisahkan: cohort wajib **Waktu Pesanan Dibuat** dan filter settlement opsional **Tanggal Dana Dilepaskan**.

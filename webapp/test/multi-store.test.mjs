@@ -370,10 +370,27 @@ test('Profit Aktual reports settlement excluded from normal profit separately', 
     exceptionOrderNumbers: ['RETURNED'],
     orderRows: [{ no_pesanan: 'RETURNED', status_pesanan: 'Selesai', nomor_referensi_sku: 'RETURN-SKU', sku_induk: '', jumlah: 1, waktu_pesanan_selesai: '2026-09-04 19:00:00', waktu_pesanan_dibuat: '2026-09-01' }],
   });
+  assert.equal(report.summary.cohortOrders, 1);
+  assert.equal(report.summary.cohortPcs, 1);
   assert.equal(report.summary.settledNormal, 0);
   assert.equal(report.summary.settlement, 0);
   assert.equal(report.summary.exception, 1);
   assert.equal(report.summary.settlementExcluded, 64066);
+});
+
+test('Profit Aktual reports full cohort order and pcs coverage independently of settlement buckets', () => {
+  const report = buildProfitActualReport({
+    skuRows: [{ sku1: 'REF-1', sku2: '', harga: 10000 }], settlementRows: [], exceptionOrderNumbers: [],
+    orderRows: [
+      { no_pesanan: 'MULTI-ITEM', status_pesanan: 'Batal', nomor_referensi_sku: 'REF-1', sku_induk: '', jumlah: 2, waktu_pesanan_dibuat: '2026-09-01' },
+      { no_pesanan: 'MULTI-ITEM', status_pesanan: 'Batal', nomor_referensi_sku: 'REF-1', sku_induk: '', jumlah: 3, waktu_pesanan_dibuat: '2026-09-01' },
+      { no_pesanan: 'ONE-ITEM', status_pesanan: 'Sedang Dikirim', nomor_referensi_sku: 'REF-1', sku_induk: '', jumlah: 1, waktu_pesanan_dibuat: '2026-09-01' },
+    ],
+  });
+  assert.equal(report.summary.cohortOrders, 2);
+  assert.equal(report.summary.cohortPcs, 6);
+  assert.equal(report.summary.cancelled, 1);
+  assert.equal(report.summary.pending, 1);
 });
 
 test('Profit Aktual keeps an existing settlement outside a selected release range separate from completed-unsettled', () => {
@@ -422,6 +439,12 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(source, /Selesai Belum Cair/);
   assert.match(source, /Settlement Dikecualikan/);
   assert.match(panel, /settlementExcluded/);
+  assert.match(panel, /Cakupan Cohort/);
+  assert.match(panel, /Pesanan unik/);
+  assert.match(panel, /Total pcs/);
+  assert.match(panel, /cohortOrders/);
+  assert.match(panel, /cohortPcs/);
+  assert.match(panel, /sebelum filter settlement/);
   assert.match(panel, /Lihat detail/);
   assert.match(panel, /Item order/);
   assert.match(panel, /Qty retur/);

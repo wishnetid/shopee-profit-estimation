@@ -13,9 +13,11 @@ function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlemen
     const key = text(row.no_pesanan); if (!key) continue;
     const group = groups.get(key) || { no_pesanan: key, rows: [] }; group.rows.push(row); groups.set(key, group);
   }
-  const summary = { settledNormal: 0, completedUnsettled: 0, settlementOutsideReleaseRange: 0, pending: 0, exception: 0, cancelled: 0, settlement: 0, settlementExcluded: 0, hpp: 0, profit: 0 };
+  const summary = { cohortOrders: 0, cohortPcs: 0, settledNormal: 0, completedUnsettled: 0, settlementOutsideReleaseRange: 0, pending: 0, exception: 0, cancelled: 0, settlement: 0, settlementExcluded: 0, hpp: 0, profit: 0 };
   const orders = [...groups.values()].map((group) => {
     const first = group.rows[0]; const settlementRow = settlementByOrder.get(group.no_pesanan); const settlementExistsRow = settlementExistsByOrder.get(group.no_pesanan); const isException = exceptions.has(group.no_pesanan.toLowerCase());
+    summary.cohortOrders++;
+    summary.cohortPcs += group.rows.reduce((total, row) => total + Math.max(0, amount(row.jumlah)), 0);
     let totalHpp = 0; let hppIssue = false;
     for (const row of group.rows) { const mapped = resolveItemHpp(row, skuIndex); const quantity = amount(row.jumlah); if (mapped.kind !== 'resolved' || !Number.isInteger(quantity) || quantity <= 0) hppIssue = true; else totalHpp += mapped.price * quantity; }
     let bucket = 'settled_normal';
