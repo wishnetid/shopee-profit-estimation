@@ -290,6 +290,13 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Kedua tab membaca evidence yang sama secara store-scoped; pemisahan hanya presentasi dan scope analisis. Tidak ada perubahan formula, schema, atau mutasi finansial.
 - Return QC tetap dapat disimpan hanya dari tab Retur & Refund dan tidak tampil pada tab Profit Aktual.
 
+### 2026-09-24 — Rentang tanggal dinamis
+
+- Profit Aktual dan Retur & Refund sekarang menyediakan `Dari tanggal` dan `Sampai tanggal`.
+- Default awal mempertahankan cohort audit Agustus 2026, tetapi user dapat memilih rentang kalender lain sebelum memuat data.
+- Permintaan API memakai parameter `dateFrom`/`dateTo` dari input; scope yang benar-benar dipakai API ditampilkan kembali setelah load.
+- Rentang kosong atau terbalik ditolak di client, sementara API tetap menjalankan validasi tanggal independen.
+
 ### 2026-09-24 — Fase 3 Return QC review-only
 
 - Keputusan user: belum ada source QC; aplikasi hanya membangun review tanpa menyimpan keputusan QC.
