@@ -313,6 +313,17 @@ test('live unique keys include store scope for current-state and package identit
   assert.deepEqual(incomeColumns, ['store_id', 'source_sha256']);
 });
 
+test('Order All exposes the complete business RAW contract, including buyer delivery fields', () => {
+  const ordersPage = fs.readFileSync(path.resolve(process.cwd(), 'app/orders/page.tsx'), 'utf8');
+  const ordersRoute = fs.readFileSync(path.resolve(process.cwd(), 'app/api/orders/route.ts'), 'utf8');
+  for (const field of ['alasan_pembatalan', 'status_pembatalan_pengembalian', 'no_resi', 'waktu_pembayaran_dilakukan', 'metode_pembayaran', 'returned_quantity', 'alamat_pengiriman', 'no_telepon', 'waktu_pesanan_selesai']) {
+    assert.match(ordersPage, new RegExp(field));
+    assert.match(ordersRoute, new RegExp(`${field}: '${field}'`));
+  }
+  assert.doesNotMatch(ordersPage, /source_snapshot_file/);
+  assert.doesNotMatch(ordersPage, /line_ordinal/);
+});
+
 test('Profit Aktual route is read-only, store-scoped, uses the approved RAW sources, and preserves WIB cohort boundaries', () => {
   const route = fs.readFileSync(path.resolve(process.cwd(), 'app/api/profit-calculation/route.ts'), 'utf8');
   assert.match(route, /requireStoreId/);

@@ -4,16 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import DataTable from '@/components/DataTable';
 import { useStore } from '@/components/StoreContext';
 
+// Seluruh kolom bisnis dari export Order.all. Metadata internal DB tidak ditampilkan.
 const ORDER_COLUMNS = [
-  { key: 'no_pesanan', label: 'No. Pesanan' },
-  { key: 'status_pesanan', label: 'Status' },
-  { key: 'nama_produk', label: 'Produk' },
-  { key: 'nomor_referensi_sku', label: 'SKU' },
-  { key: 'jumlah', label: 'Qty' },
-  { key: 'total_pembayaran', label: 'Total' },
-  { key: 'waktu_pesanan_dibuat', label: 'Waktu' },
-  { key: 'username_pembeli', label: 'Pembeli' },
-];
+  ['no_pesanan','No. Pesanan'],['status_pesanan','Status Pesanan'],['alasan_pembatalan','Alasan Pembatalan'],['status_pembatalan_pengembalian','Status Pembatalan/Pengembalian'],['no_resi','No. Resi'],['opsi_pengiriman','Opsi Pengiriman'],['antar_ke_counter','Antar ke counter/pick-up'],['pesanan_harus_dikirim_sebelum','Pesanan Harus Dikirimkan Sebelum'],['waktu_pengiriman_diatur','Waktu Pengiriman Diatur'],['waktu_pesanan_dibuat','Waktu Pesanan Dibuat'],['waktu_pembayaran_dilakukan','Waktu Pembayaran Dilakukan'],['tipe_pesanan','Tipe Pesanan'],['metode_pembayaran','Metode Pembayaran'],['sku_induk','SKU Induk'],['nama_produk','Nama Produk'],['nomor_referensi_sku','Nomor Referensi SKU'],['nama_variasi','Nama Variasi'],['harga_awal','Harga Awal'],['harga_setelah_diskon','Harga Setelah Diskon'],['jumlah','Jumlah'],['returned_quantity','Returned quantity'],['subtotal_pesanan','Subtotal Pesanan'],['total_diskon','Total Diskon'],['diskon_dari_penjual','Diskon Dari Penjual'],['diskon_dari_shopee','Diskon Dari Shopee'],['berat_produk','Berat Produk'],['jumlah_produk_di_pesan','Jumlah Produk di Pesan'],['total_berat','Total Berat'],['voucher_ditanggung_penjual','Voucher Ditanggung Penjual'],['cashback_koin','Cashback Koin'],['voucher_ditanggung_shopee','Voucher Ditanggung Shopee'],['paket_diskon','Paket Diskon'],['paket_diskon_shopee','Paket Diskon (Diskon dari Shopee)'],['paket_diskon_penjual','Paket Diskon (Diskon dari Penjual)'],['potongan_koin_shopee','Potongan Koin Shopee'],['diskon_kartu_kredit','Diskon Kartu Kredit'],['ongkos_kirim_dibayar_pembeli','Ongkos Kirim Dibayar oleh Pembeli'],['estimasi_potongan_biaya_pengiriman','Estimasi Potongan Biaya Pengiriman'],['ongkos_kirim_pengembalian_barang','Ongkos Kirim Pengembalian Barang'],['total_pembayaran','Total Pembayaran'],['perkiraan_ongkos_kirim','Perkiraan Ongkos Kirim'],['catatan_dari_pembeli','Catatan dari Pembeli'],['catatan','Catatan'],['username_pembeli','Username (Pembeli)'],['nama_penerima','Nama Penerima'],['no_telepon','No. Telepon'],['alamat_pengiriman','Alamat Pengiriman'],['kota_kabupaten','Kota/Kabupaten'],['provinsi','Provinsi'],['waktu_pesanan_selesai','Waktu Pesanan Selesai'],
+].map(([key,label]) => ({ key, label }));
 
 export default function OrdersPage() {
   const { storeId, activeStore, loading: storeLoading } = useStore();

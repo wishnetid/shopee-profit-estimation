@@ -7,14 +7,7 @@ const { parsePagination } = require('../../../lib/pagination.js') as {
 };
 
 const SORT_COLUMNS: Record<string, string> = {
-  no_pesanan: 'no_pesanan',
-  status_pesanan: 'status_pesanan',
-  nama_produk: 'nama_produk',
-  nomor_referensi_sku: 'nomor_referensi_sku',
-  jumlah: 'jumlah',
-  total_pembayaran: 'total_pembayaran',
-  waktu_pesanan_dibuat: 'waktu_pesanan_dibuat',
-  username_pembeli: 'username_pembeli',
+  no_pesanan: 'no_pesanan', status_pesanan: 'status_pesanan', alasan_pembatalan: 'alasan_pembatalan', status_pembatalan_pengembalian: 'status_pembatalan_pengembalian', no_resi: 'no_resi', opsi_pengiriman: 'opsi_pengiriman', antar_ke_counter: 'antar_ke_counter', pesanan_harus_dikirim_sebelum: 'pesanan_harus_dikirim_sebelum', waktu_pengiriman_diatur: 'waktu_pengiriman_diatur', waktu_pesanan_dibuat: 'waktu_pesanan_dibuat', waktu_pembayaran_dilakukan: 'waktu_pembayaran_dilakukan', tipe_pesanan: 'tipe_pesanan', metode_pembayaran: 'metode_pembayaran', sku_induk: 'sku_induk', nama_produk: 'nama_produk', nomor_referensi_sku: 'nomor_referensi_sku', nama_variasi: 'nama_variasi', harga_awal: 'harga_awal', harga_setelah_diskon: 'harga_setelah_diskon', jumlah: 'jumlah', returned_quantity: 'returned_quantity', subtotal_pesanan: 'subtotal_pesanan', total_diskon: 'total_diskon', diskon_dari_penjual: 'diskon_dari_penjual', diskon_dari_shopee: 'diskon_dari_shopee', berat_produk: 'berat_produk', jumlah_produk_di_pesan: 'jumlah_produk_di_pesan', total_berat: 'total_berat', voucher_ditanggung_penjual: 'voucher_ditanggung_penjual', cashback_koin: 'cashback_koin', voucher_ditanggung_shopee: 'voucher_ditanggung_shopee', paket_diskon: 'paket_diskon', paket_diskon_shopee: 'paket_diskon_shopee', paket_diskon_penjual: 'paket_diskon_penjual', potongan_koin_shopee: 'potongan_koin_shopee', diskon_kartu_kredit: 'diskon_kartu_kredit', ongkos_kirim_dibayar_pembeli: 'ongkos_kirim_dibayar_pembeli', estimasi_potongan_biaya_pengiriman: 'estimasi_potongan_biaya_pengiriman', ongkos_kirim_pengembalian_barang: 'ongkos_kirim_pengembalian_barang', total_pembayaran: 'total_pembayaran', perkiraan_ongkos_kirim: 'perkiraan_ongkos_kirim', catatan_dari_pembeli: 'catatan_dari_pembeli', catatan: 'catatan', username_pembeli: 'username_pembeli', nama_penerima: 'nama_penerima', no_telepon: 'no_telepon', alamat_pengiriman: 'alamat_pengiriman', kota_kabupaten: 'kota_kabupaten', provinsi: 'provinsi', waktu_pesanan_selesai: 'waktu_pesanan_selesai',
 };
 
 async function getConnection() {
