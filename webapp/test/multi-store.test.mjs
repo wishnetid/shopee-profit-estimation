@@ -382,6 +382,31 @@ test('Profit Aktual reports settlement excluded from normal profit separately', 
   assert.equal(report.summary.settlementExcluded, 64066);
 });
 
+test('Return cancelled cash matched remains Perlu Audit but gets a non-financial sub-status', () => {
+  const report = buildProfitActualReport({
+    skuRows: [{ sku1: 'RETURN-CANCELLED', sku2: '', harga: 50000 }],
+    settlementRows: [{ no_pesanan: 'CANCELLED-RETURN', signed_total: 132002, tanggal_dana_dilepaskan: '2026-09-10' }],
+    exceptionOrderNumbers: ['CANCELLED-RETURN'],
+    exceptionEvidenceRows: [{ no_pesanan: 'CANCELLED-RETURN', source_type: 'return_refund', source_status: 'Pengembalian Barang/Dana Dibatalkan' }],
+    balanceRows: [{ no_pesanan: 'CANCELLED-RETURN', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: 132002 }],
+    orderRows: [{ no_pesanan: 'CANCELLED-RETURN', status_pesanan: 'Selesai', nomor_referensi_sku: 'RETURN-CANCELLED', sku_induk: '', jumlah: 2, waktu_pesanan_selesai: '2026-09-10 04:10:00', waktu_pesanan_dibuat: '2026-08-31' }],
+  });
+  assert.equal(report.orders[0].bucket, 'exception');
+  assert.equal(report.orders[0].exceptionSubstatus, 'return_cancelled_cash_matched');
+  assert.equal(report.orders[0].profitActual, null);
+  assert.equal(report.summary.exception, 1);
+  assert.equal(report.summary.settledNormal, 0);
+  const withOutgoing = buildProfitActualReport({
+    skuRows: [{ sku1: 'RETURN-CANCELLED', sku2: '', harga: 50000 }],
+    settlementRows: [{ no_pesanan: 'CANCELLED-RETURN', signed_total: 132002, tanggal_dana_dilepaskan: '2026-09-10' }],
+    exceptionOrderNumbers: ['CANCELLED-RETURN'],
+    exceptionEvidenceRows: [{ no_pesanan: 'CANCELLED-RETURN', source_type: 'return_refund', source_status: 'Pengembalian Barang/Dana Dibatalkan' }],
+    balanceRows: [{ no_pesanan: 'CANCELLED-RETURN', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: 132002 }, { no_pesanan: 'CANCELLED-RETURN', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: -1 }],
+    orderRows: [{ no_pesanan: 'CANCELLED-RETURN', status_pesanan: 'Selesai', nomor_referensi_sku: 'RETURN-CANCELLED', sku_induk: '', jumlah: 2, waktu_pesanan_selesai: '2026-09-10 04:10:00', waktu_pesanan_dibuat: '2026-08-31' }],
+  });
+  assert.equal(withOutgoing.orders[0].exceptionSubstatus, null);
+});
+
 test('Profit Aktual reports a settled partial return as provisional cash profit when My Balance settlement remains intact', () => {
   const input = {
     skuRows: [{ sku1: 'SOLD', sku2: '', harga: 52500 }, { sku1: 'RETURNED', sku2: '', harga: 50000 }],

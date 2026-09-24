@@ -7,7 +7,7 @@ function outgoingReason(events) {
   return reasons.length > 2 ? `${reasons.slice(0, 2).join(' · ')} + ${reasons.length - 2} lainnya` : reasons.join(' · ');
 }
 
-function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlementExistenceRows = settlementRows, exceptionOrderNumbers, balanceRows = [] }) {
+function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlementExistenceRows = settlementRows, exceptionOrderNumbers, exceptionEvidenceRows = [], balanceRows = [] }) {
   const skuIndex = buildSkuIndex(skuRows);
   const balanceByOrder = new Map();
   for (const row of balanceRows) {
@@ -21,6 +21,11 @@ function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlemen
   const settlementByOrder = new Map(settlementRows.map((row) => [text(row.no_pesanan), row]));
   const settlementExistsByOrder = new Map(settlementExistenceRows.map((row) => [text(row.no_pesanan), row]));
   const exceptions = new Set(exceptionOrderNumbers.map((value) => text(value)?.toLowerCase()).filter(Boolean));
+  const exceptionEvidenceByOrder = new Map();
+  for (const row of exceptionEvidenceRows) {
+    const key = text(row.no_pesanan); if (!key) continue;
+    const current = exceptionEvidenceByOrder.get(key) || []; current.push(row); exceptionEvidenceByOrder.set(key, current);
+  }
   const groups = new Map();
   for (const row of orderRows) {
     const key = text(row.no_pesanan); if (!key) continue;
@@ -46,13 +51,20 @@ function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlemen
     else if (isException && hasPartialReturnedItems && !nonReturnedHppIssue && balance.incomingOrderIncome === amount(settlementRow.signed_total) && balance.outgoing === 0) bucket = 'partial_return_provisional';
     else if (isException) bucket = 'exception'; else if (hppIssue) bucket = 'hpp_issue';
     const settlement = settlementRow ? amount(settlementRow.signed_total) : null;
+    const exceptionEvidence = exceptionEvidenceByOrder.get(group.no_pesanan) || [];
+    const returnCancelledCashMatched = bucket === 'exception'
+      && settlement !== null && settlement > 0
+      && balance.incomingOrderIncome === settlement && balance.outgoing === 0
+      && exceptionEvidence.length > 0
+      && exceptionEvidence.every((row) => text(row.source_type) === 'return_refund' && text(row.source_status) === 'Pengembalian Barang/Dana Dibatalkan');
+    const exceptionSubstatus = returnCancelledCashMatched ? 'return_cancelled_cash_matched' : null;
     const profitActual = bucket === 'settled_normal' && settlement !== null ? settlement - totalHpp : null;
     const provisionalProfit = bucket === 'partial_return_provisional' && settlement !== null ? settlement - nonReturnedHpp : null;
     if (balance.outgoing < 0) { summary.balanceOutgoingOrders++; summary.balanceOutgoingTotal += balance.outgoing; summary.balanceOrderIncomeOutgoing += balance.orderIncomeOutgoing; summary.balanceAdjustmentOutgoing += balance.adjustmentOutgoing; summary.balanceOtherOutgoing += balance.otherOutgoing; }
     if (bucket === 'settled_normal') { summary.settledNormal++; summary.settledNormalPcs += orderedPcs; if (profitActual < 0) summary.settledNormalLoss++; summary.settlement += settlement; summary.hpp += totalHpp; summary.profit += profitActual; }
     else if (bucket === 'partial_return_provisional') { summary.partialReturnProvisional++; summary.partialReturnOrderedPcs += orderedPcs; summary.partialReturnNonReturnedPcs += orderedPcs - returnedPcs; summary.partialReturnReturnedPcs += returnedPcs; summary.partialReturnSettlement += settlement || 0; summary.partialReturnHpp += nonReturnedHpp; summary.partialReturnProfit += provisionalProfit || 0; }
     else if (bucket === 'completed_unsettled') { summary.completedUnsettled++; summary.completedUnsettledPcs += orderedPcs; } else if (bucket === 'settlement_outside_release_range') { summary.settlementOutsideReleaseRange++; summary.settlementOutsideReleaseRangePcs += orderedPcs; } else if (bucket === 'pending') { summary.pending++; summary.pendingPcs += orderedPcs; } else if (bucket === 'exception' || bucket === 'hpp_issue') { summary.exception++; summary.exceptionPcs += orderedPcs; summary.settlementExcluded += settlement || 0; } else { summary.cancelled++; summary.cancelledPcs += orderedPcs; }
-    return { no_pesanan: group.no_pesanan, orderDate: String(first.waktu_pesanan_dibuat).slice(0, 10), statusPesanan: text(first.status_pesanan), itemCount: group.rows.length, orderedPcs, returnedPcs, nonReturnedPcs: orderedPcs - returnedPcs, totalHpp, nonReturnedHpp, settlement, releaseDate: settlementRow?.tanggal_dana_dilepaskan || null, balanceOutgoing: balance.outgoing, balanceOrderIncomeOutgoing: balance.orderIncomeOutgoing, balanceAdjustmentOutgoing: balance.adjustmentOutgoing, balanceOtherOutgoing: balance.otherOutgoing, balanceOutgoingReason: outgoingReason(balance.events), balanceNet: balance.net, profitActual, provisionalProfit, bucket };
+    return { no_pesanan: group.no_pesanan, orderDate: String(first.waktu_pesanan_dibuat).slice(0, 10), statusPesanan: text(first.status_pesanan), itemCount: group.rows.length, orderedPcs, returnedPcs, nonReturnedPcs: orderedPcs - returnedPcs, totalHpp, nonReturnedHpp, settlement, releaseDate: settlementRow?.tanggal_dana_dilepaskan || null, balanceOutgoing: balance.outgoing, balanceOrderIncomeOutgoing: balance.orderIncomeOutgoing, balanceAdjustmentOutgoing: balance.adjustmentOutgoing, balanceOtherOutgoing: balance.otherOutgoing, balanceOutgoingReason: outgoingReason(balance.events), balanceNet: balance.net, exceptionSubstatus, profitActual, provisionalProfit, bucket };
   }).sort((a, b) => b.orderDate.localeCompare(a.orderDate) || b.no_pesanan.localeCompare(a.no_pesanan));
   const computable = orders.filter((order) => order.bucket === 'settled_normal' || order.bucket === 'partial_return_provisional');
   summary.cashCoveredOrders = computable.length;

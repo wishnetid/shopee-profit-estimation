@@ -416,6 +416,15 @@ Tambahkan entri baru di bawah ini setiap ada langkah bermakna:
 
 ---
 
+### 2026-09-24 — Sub-status Return Dibatalkan — Cash Cocok
+
+- Scope: sub-status evidence-only pada `Profit Pesanan`, tidak ada schema/migration atau perubahan formula Profit Aktual.
+- Eligibility ketat (seluruhnya wajib): bucket induk `Perlu Audit`; semua evidence exception order adalah `return_refund` dengan status persis `Pengembalian Barang/Dana Dibatalkan`; settlement `Penghasilan / Order` positif; My Balance `Penghasilan dari Pesanan` masuk cocok persis dengan settlement; tidak ada mutasi My Balance keluar terkait order dalam coverage ledger yang diimport.
+- Tampilan: badge sub-status `Return Dibatalkan — Cash Cocok`, alasan evidence, dan filter khusus di `Profit Pesanan`.
+- Guardrail: status induk tetap `Perlu Audit`; order tidak masuk `Profit Aktual Normal`, `Profit Terhitung`, atau `Cakupan Cash`. HPP tidak diperlakukan sebagai final otomatis.
+- Live audit cohort Agustus: 3 order lolos sub-status — `260831R7HC9RHK` Rp132.002; `26082232XMXD1C` Rp156.322; `260804E8J5Q3UR` Rp151.620.
+- Regression: negative mutasi Balance, evidence exception non-return/dengan status selain dibatalkan, settlement tidak positif/tidak cocok, atau evidence kosong tidak boleh mendapat sub-status.
+
 ### 2026-09-24 — My Balance Analisis read-only
 
 - Input/report: Balance RAW `Transaksi Selesai` dan Ads RAW store-scoped, periode 1 Agustus–24 September 2026.
