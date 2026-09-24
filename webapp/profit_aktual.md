@@ -264,6 +264,15 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Test: `npm test` 132 pass, 2 live-DB test skipped. `npm run build` berhasil. Tidak ada migration, import, atau mutasi database.
 - Next step: commit/push, Production deployment, API smoke test dan browser visual QA.
 
+### 2026-09-24 — Fase 2 exception visibility implemented
+
+- Scope: menambahkan tabel audit-only `Exception & Rekonsiliasi` di tab Profit Aktual. Tidak mengubah total Profit Aktual Normal, HPP normal, maupun Estimasi Kotor.
+- Source RAW: Return/Refund, Failed Delivery, Cancellation, dan Income Adjustment. Setiap baris membawa No. Pesanan, jenis, referensi/status sumber, alasan, qty, nilai, status pengembalian barang/QC bila tersedia, serta provenance nama source file.
+- Coverage cohort Agustus: Return/Refund 17 row / 13 order / nilai refund Rp1.883.773; Failed Delivery 18 row / 17 order; Cancellation 192 row / 139 order; Adjustment 1 row / 1 order / Rp5.000. Angka tersebut hanya visibility/reconciliation, bukan alokasi profit.
+- Guardrail: Return tetap `Menunggu QC / N/A` bila status stok tidak tersedia; Adjustment tidak ditambahkan atau dikurangkan otomatis; cancellation/failed delivery tidak membatalkan atau mengubah Settlement normal secara baru.
+- Test/deploy: `npm test` dan `npm run build` sudah berhasil setelah implementasi Fase 2. Tidak ada migration/import/mutasi DB.
+- Next step: commit/push, Production deployment dan visual QA; setelah itu Fase 3 hanya dapat dimulai setelah policy/proses QC return disepakati.
+
 ### Format progress berikutnya
 
 Tambahkan entri baru di bawah ini setiap ada langkah bermakna:

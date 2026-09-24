@@ -321,6 +321,8 @@ test('Profit Aktual route is read-only, store-scoped, uses the approved RAW sour
   assert.match(route, /order_cancellation_raw/);
   assert.match(route, /order_failed_delivery_raw/);
   assert.match(route, /order_return_refund_raw/);
+  assert.match(route, /income_adjustments_raw/);
+  assert.match(route, /exceptionDetails/);
   assert.match(route, /DATE_SUB\(CONCAT\(\?, \\' 00:00:00\\'\), INTERVAL 7 HOUR\)/);
   assert.doesNotMatch(route, /INSERT INTO|UPDATE |DELETE FROM/);
 });
