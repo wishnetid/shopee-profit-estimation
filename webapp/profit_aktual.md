@@ -302,6 +302,12 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Tabel `Profit Pesanan Selesai` memakai bounded scroll container: tinggi area kira-kira sembilan baris data dan scrollbar vertikal untuk baris lain.
 - Header tabel dibuat sticky saat scroll. Tidak ada pagination atau limit API tambahan; seluruh hasil tetap tersedia melalui scroll.
 
+### 2026-09-24 — Koreksi kalender timestamp Order.all
+
+- Audit terhadap workbook `Order.all.20260901_20260924.xlsx` dan DB canonical membuktikan nilai `DATETIME` `Order.all` dipersist persis seperti kalender lokal Seller Centre; nilainya bukan UTC yang harus ditambah/dikurangi tujuh jam.
+- Semua range cohort Order.all (`Order All`, `Profit Aktual`, dan `Estimasi Kotor`) memakai batas lokal `[tanggal mulai 00:00, hari setelah tanggal akhir 00:00)`, tanpa offset timezone pada kolom DB.
+- Bukti boundary: 1 September 2026 pada source September berisi 32 pesanan unik, 36 baris item, 37 pcs; 26 selesai dan 6 batal. Nilai sebelumnya yang menghitung 28 akibat asumsi offset UTC dinyatakan tidak valid.
+
 ### 2026-09-24 — Audit selisih Profit Aktual
 
 - Tab `Selesai Belum Cair` memisahkan order yang sudah memiliki `Waktu Pesanan Selesai` di Order.all tetapi belum punya settlement `Income → Penghasilan / Order`. Order ini tidak dihitung sebagai Profit Aktual.

@@ -61,9 +61,9 @@ export async function GET(request: NextRequest) {
     }
     for (const column of DATE_FILTER_COLUMNS) {
       const from = sp.get(`${column}From`); const to = sp.get(`${column}To`);
-      // Raw timestamps are UTC; date controls follow the seller's WIB calendar.
-      if (from) { const valid = nextCalendarDay(from); if (!valid) return NextResponse.json({ error: `Tanggal awal ${column} tidak valid.` }, { status: 400 }); whereClause += ` AND ${column} >= DATE_SUB(CONCAT(?, ' 00:00:00'), INTERVAL 7 HOUR)`; params.push(from); }
-      if (to) { const next = nextCalendarDay(to); if (!next) return NextResponse.json({ error: `Tanggal akhir ${column} tidak valid.` }, { status: 400 }); whereClause += ` AND ${column} < DATE_SUB(CONCAT(?, ' 00:00:00'), INTERVAL 7 HOUR)`; params.push(next); }
+      // Order.all timestamps preserve the Seller Centre's local calendar values.
+      if (from) { const valid = nextCalendarDay(from); if (!valid) return NextResponse.json({ error: `Tanggal awal ${column} tidak valid.` }, { status: 400 }); whereClause += ` AND ${column} >= CONCAT(?, ' 00:00:00')`; params.push(from); }
+      if (to) { const next = nextCalendarDay(to); if (!next) return NextResponse.json({ error: `Tanggal akhir ${column} tidak valid.` }, { status: 400 }); whereClause += ` AND ${column} < CONCAT(?, ' 00:00:00')`; params.push(next); }
       if (from && to && from > to) return NextResponse.json({ error: `Rentang tanggal ${column} tidak valid.` }, { status: 400 });
     }
     if (sp.get('completedOnly') === 'true') whereClause += ' AND waktu_pesanan_selesai IS NOT NULL';

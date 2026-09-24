@@ -112,13 +112,13 @@ export async function GET(request: NextRequest) {
   if (resiFilter === 'without') scopedOrderFilters.push(`NULLIF(TRIM(scoped.no_resi), '') IS NULL`);
 
   if (dateRange.dateFrom) {
-    scopedOrderFilters.push('DATE(scoped.waktu_pesanan_dibuat) >= ?');
+    scopedOrderFilters.push("scoped.waktu_pesanan_dibuat >= CONCAT(?, ' 00:00:00')");
     scopedOrderParams.push(dateRange.dateFrom);
     adsFilters.push('r.transaction_date >= ?');
     adsParams.push(dateRange.dateFrom);
   }
   if (dateRange.dateTo) {
-    scopedOrderFilters.push('DATE(scoped.waktu_pesanan_dibuat) <= ?');
+    scopedOrderFilters.push("scoped.waktu_pesanan_dibuat < DATE_ADD(CONCAT(?, ' 00:00:00'), INTERVAL 1 DAY)");
     scopedOrderParams.push(dateRange.dateTo);
     adsFilters.push('r.transaction_date <= ?');
     adsParams.push(dateRange.dateTo);

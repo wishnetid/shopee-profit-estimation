@@ -338,6 +338,9 @@ test('Order All exposes the complete business RAW contract, including buyer deli
     assert.match(ordersRoute, /\$\{column\}To/);
   }
   assert.match(ordersRoute, /waktu_pesanan_selesai IS NOT NULL/);
+  assert.match(ordersRoute, /Seller Centre's local calendar values/);
+  assert.match(ordersRoute, /CONCAT\(\?, ' 00:00:00'\)/);
+  assert.doesNotMatch(ordersRoute, /DATE_SUB\(CONCAT\(\?, ' 00:00:00'\), INTERVAL 7 HOUR\)/);
 });
 
 test('Profit Aktual route is read-only, store-scoped, uses the approved RAW sources, and preserves WIB cohort boundaries', () => {
@@ -350,7 +353,9 @@ test('Profit Aktual route is read-only, store-scoped, uses the approved RAW sour
   assert.match(route, /order_return_refund_raw/);
   assert.match(route, /income_adjustments_raw/);
   assert.match(route, /exceptionDetails/);
-  assert.match(route, /DATE_SUB\(CONCAT\(\?, \\' 00:00:00\\'\), INTERVAL 7 HOUR\)/);
+  assert.match(route, /Seller Centre local timestamp text as DATETIME/);
+  assert.match(route, /waktu_pesanan_dibuat >= CONCAT\(\?, \\' 00:00:00\\'\)/);
+  assert.doesNotMatch(route, /INTERVAL 7 HOUR/);
   assert.doesNotMatch(route, /INSERT INTO|UPDATE |DELETE FROM/);
 });
 

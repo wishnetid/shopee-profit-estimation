@@ -15,7 +15,9 @@ test('profit estimation route is a dynamic, Node-only, store-scoped GET that pre
   assert.match(source, /buildEstimationReport\(/);
   assert.match(source, /o\.store_id = \?/);
   assert.match(source, /i\.store_id = \?/);
-  assert.match(source, /DATE\(scoped\.waktu_pesanan_dibuat\) >= \?/);
+  assert.match(source, /scoped\.waktu_pesanan_dibuat >= CONCAT\(\?, ' 00:00:00'\)/);
+  assert.match(source, /scoped\.waktu_pesanan_dibuat < DATE_ADD\(CONCAT\(\?, ' 00:00:00'\), INTERVAL 1 DAY\)/);
+  assert.doesNotMatch(source, /DATE\(scoped\.waktu_pesanan_dibuat\)/);
   assert.match(source, /INNER JOIN \(\s*SELECT DISTINCT\s*scoped\.store_id,[\s\S]*FROM order_all scoped/);
   assert.match(source, /scoped_orders\.store_id = o\.store_id\s*AND scoped_orders\.selected_order_key = CASE/);
   assert.match(source, /o\.returned_quantity/);
