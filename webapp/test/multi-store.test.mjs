@@ -356,6 +356,8 @@ test('Profit Aktual route is read-only, store-scoped, uses the approved RAW sour
   assert.match(route, /order_failed_delivery_raw/);
   assert.match(route, /order_return_refund_raw/);
   assert.match(route, /income_adjustments_raw/);
+  assert.match(route, /alasan_pembatalan,no_resi,waktu_pengiriman_diatur/);
+  assert.match(route, /reason: row.reason/);
   assert.match(route, /exceptionDetails/);
   assert.match(route, /Seller Centre local timestamp text as DATETIME/);
   assert.match(route, /waktu_pesanan_dibuat >= CONCAT\(\?, \\' 00:00:00\\'\)/);
@@ -541,6 +543,39 @@ test('Profit Aktual reports a settled partial return as provisional cash profit 
   assert.match(corrected.orders[0].balanceOutgoingReason, /Penghasilan dari Pesanan/);
 });
 
+test('Cancelled orders expose logistics sub-status without changing Batal accounting', () => {
+  const report = buildProfitActualReport({
+    skuRows: [{ sku1: 'BATAL', sku2: '', harga: 50000 }],
+    settlementRows: [],
+    exceptionOrderNumbers: ['CANCELLED-BEFORE', 'CANCELLED-FAILED'],
+    exceptionEvidenceRows: [
+      { no_pesanan: 'CANCELLED-BEFORE', source_type: 'cancellation', reason: 'Dibatalkan oleh Pembeli. Alasan: Ubah Pesanan yang Ada' },
+      { no_pesanan: 'CANCELLED-FAILED', source_type: 'cancellation', reason: 'Dibatalkan secara otomatis oleh sistem Shopee. Alasan: Pengiriman gagal' },
+      { no_pesanan: 'CANCELLED-FAILED', source_type: 'failed_delivery', reason: 'Selesai Dikirim ke Penjual' },
+    ],
+    balanceRows: [{ no_pesanan: 'CANCELLED-FAILED', type_transaksi: 'Penyesuaian', jumlah_signed: -412 }],
+    orderRows: [
+      { no_pesanan: 'CANCELLED-BEFORE', status_pesanan: 'Batal', alasan_pembatalan: 'Dibatalkan oleh Pembeli. Alasan: Ubah Pesanan yang Ada', no_resi: null, waktu_pengiriman_diatur: null, nomor_referensi_sku: 'BATAL', sku_induk: '', jumlah: 1, waktu_pesanan_dibuat: '2026-08-31' },
+      { no_pesanan: 'CANCELLED-FAILED', status_pesanan: 'Batal', alasan_pembatalan: 'Dibatalkan secara otomatis oleh sistem Shopee. Alasan: Pengiriman gagal', no_resi: 'SPXID-TEST', waktu_pengiriman_diatur: '2026-09-01 16:31:00', nomor_referensi_sku: 'BATAL', sku_induk: '', jumlah: 1, waktu_pesanan_dibuat: '2026-08-31' },
+      { no_pesanan: 'CANCELLED-UNKNOWN', status_pesanan: 'Batal', alasan_pembatalan: 'Dibatalkan oleh Pembeli', no_resi: null, waktu_pengiriman_diatur: null, nomor_referensi_sku: 'BATAL', sku_induk: '', jumlah: 1, waktu_pesanan_dibuat: '2026-08-31' },
+    ],
+  });
+  const byId = Object.fromEntries(report.orders.map((row) => [row.no_pesanan, row]));
+  assert.equal(byId['CANCELLED-BEFORE'].bucket, 'batal');
+  assert.equal(byId['CANCELLED-BEFORE'].cancellationSubstatus, 'cancelled_before_shipment');
+  assert.equal(byId['CANCELLED-BEFORE'].noResi, null);
+  assert.equal(byId['CANCELLED-FAILED'].bucket, 'batal');
+  assert.equal(byId['CANCELLED-FAILED'].cancellationSubstatus, 'cancelled_after_failed_delivery');
+  assert.equal(byId['CANCELLED-FAILED'].balanceNet, -412);
+  assert.equal(byId['CANCELLED-UNKNOWN'].cancellationSubstatus, null);
+  assert.equal(report.summary.cancelled, 3);
+  assert.equal(report.summary.cancelledPcs, 3);
+  assert.equal(report.summary.cancelledBeforeShipment, 1);
+  assert.equal(report.summary.cancelledAfterFailedDelivery, 1);
+  assert.equal(report.summary.cashCoveredOrders, 0);
+  assert.equal(report.summary.profitComputable, 0);
+});
+
 test('Profit Aktual reports full cohort order and pcs coverage independently of settlement buckets', () => {
   const report = buildProfitActualReport({
     skuRows: [{ sku1: 'REF-1', sku2: '', harga: 10000 }], settlementRows: [], exceptionOrderNumbers: [],
@@ -679,6 +714,13 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(panel, /Cash Final Positif/);
   assert.match(panel, /fullReturnCashFinalNegativeOutcome/);
   assert.match(panel, /fullReturnCashFinalPositiveOutcome/);
+  assert.match(panel, /Batal Sebelum Pengiriman/);
+  assert.match(panel, /Batal Setelah Pengiriman Gagal/);
+  assert.match(panel, /cancelledBeforeShipment/);
+  assert.match(panel, /cancelledAfterFailedDelivery/);
+  assert.match(panel, /cancellationSubstatus/);
+  assert.match(panel, /No\. Resi/);
+  assert.match(panel, /Pengiriman diatur/);
   assert.match(panel, /settlementRecorded/);
   assert.match(panel, /profitComputable/);
   assert.match(panel, /unresolvedOrders/);

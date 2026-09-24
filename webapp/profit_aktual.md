@@ -416,6 +416,22 @@ Tambahkan entri baru di bawah ini setiap ada langkah bermakna:
 
 ---
 
+### 2026-09-25 — Sub-status `Batal` berbasis jalur pengiriman
+
+- Scope: pengayaan read-only pada parent status `Batal`; tidak ada schema/migration dan tidak mengubah Estimasi Kotor, settlement, HPP, Profit Aktual, maupun Cakupan Cash.
+- Dua sub-status baru:
+  ```text
+  Batal Sebelum Pengiriman
+  Batal Setelah Pengiriman Gagal
+  ```
+- `Batal Sebelum Pengiriman` hanya bila: status Order.all `Batal`; `no_resi` dan `waktu_pengiriman_diatur` kosong; tidak ada event My Balance terkait; ada Cancellation RAW; tidak ada Failed Delivery, Return/Refund, atau Adjustment evidence. Ini adalah fail-closed: pembatalan yang evidence-nya kurang/tidak cocok tetap parent `Batal` tanpa sub-status.
+- `Batal Setelah Pengiriman Gagal` hanya bila: status `Batal`; minimal salah satu dari `no_resi` atau `waktu_pengiriman_diatur` ada; ada Failed Delivery RAW; dan reason Cancellation memuat `Pengiriman gagal` atau Failed Delivery memiliki reason. Ini bukti pernah masuk jalur logistik, bukan keputusan kondisi fisik barang.
+- No. Resi bukan rule tunggal; classifier memakai gabungan resi, waktu pengiriman diatur, Cancellation RAW, Failed Delivery RAW, dan mutasi My Balance terkait.
+- Parent bucket tetap `batal`: tidak masuk Profit Aktual Normal, Profit Retur Parsial, Settlement Tercatat, Profit Terhitung, Cakupan Cash, atau Belum Ada Jawaban. HPP tetap `—`; cash outflow ditampilkan hanya sebagai audit, bukan loss/profit otomatis.
+- UI: badge sub-status, filter khusus, dua card ringkasan, dan drilldown No. Resi + Waktu Pengiriman Diatur.
+- Pilot live: `260831STVH3XPH` = Batal Sebelum Pengiriman, tanpa resi/timestamp kirim/cash event. `260831SKPX0NU4` = Batal Setelah Pengiriman Gagal, resi `SPXID068637353259`, pengiriman diatur, Failed Delivery `Selesai Dikirim ke Penjual`, serta Penyesuaian My Balance keluar `-Rp412` untuk premi gagal kirim.
+- Guardrail: `-Rp412` tidak dibebankan sebagai HPP atau profit; Failed Delivery tidak sama dengan QC `restock layak/rusak/hilang`.
+
 ### 2026-09-25 — Status `Cash Final Positif` untuk return penuh selesai dengan kompensasi Shopee
 
 - Scope: status finansial read-only baru pada `Profit Pesanan`; tanpa schema/migration dan tanpa perubahan Estimasi Kotor.

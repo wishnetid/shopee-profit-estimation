@@ -3,7 +3,7 @@ import type { RowDataPacket } from 'mysql2/promise';
 import { getConnection } from '../../../lib/db';
 import { requireStoreId } from '../../../lib/store';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { buildProfitActualReport } = require('../../../lib/profit-actual.js') as { buildProfitActualReport: (input: { orderRows: RowDataPacket[]; skuRows: RowDataPacket[]; settlementRows: RowDataPacket[]; settlementExistenceRows?: RowDataPacket[]; exceptionOrderNumbers: string[]; exceptionEvidenceRows?: Array<{ no_pesanan?: unknown; source_type?: unknown; source_status?: unknown; return_type?: unknown; stock_status?: unknown; amount?: unknown }>; balanceRows?: RowDataPacket[] }) => unknown };
+const { buildProfitActualReport } = require('../../../lib/profit-actual.js') as { buildProfitActualReport: (input: { orderRows: RowDataPacket[]; skuRows: RowDataPacket[]; settlementRows: RowDataPacket[]; settlementExistenceRows?: RowDataPacket[]; exceptionOrderNumbers: string[]; exceptionEvidenceRows?: Array<{ no_pesanan?: unknown; source_type?: unknown; source_status?: unknown; reason?: unknown; return_type?: unknown; stock_status?: unknown; amount?: unknown }>; balanceRows?: RowDataPacket[] }) => unknown };
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   try {
     const [skuRows] = await conn.query<RowDataPacket[]>('SELECT sku1,sku2,harga FROM sku_master_raw WHERE sku_report_import_id=(SELECT id FROM sku_report_imports ORDER BY imported_at DESC,id DESC LIMIT 1)');
     // Order.all stores Seller Centre local timestamp text as DATETIME. Keep its calendar unchanged.
-    const [orderRows] = await conn.query<RowDataPacket[]>('SELECT no_pesanan,status_pesanan,nomor_referensi_sku,sku_induk,nama_produk,nama_variasi,jumlah,returned_quantity,status_pembatalan_pengembalian,waktu_pesanan_selesai,DATE_FORMAT(waktu_pesanan_dibuat, \'%Y-%m-%d\') waktu_pesanan_dibuat FROM order_all WHERE store_id=? AND waktu_pesanan_dibuat >= CONCAT(?, \' 00:00:00\') AND waktu_pesanan_dibuat < DATE_ADD(CONCAT(?, \' 00:00:00\'), INTERVAL 1 DAY)', [storeId, from, to]);
+    const [orderRows] = await conn.query<RowDataPacket[]>('SELECT no_pesanan,status_pesanan,alasan_pembatalan,no_resi,waktu_pengiriman_diatur,nomor_referensi_sku,sku_induk,nama_produk,nama_variasi,jumlah,returned_quantity,status_pembatalan_pengembalian,waktu_pesanan_selesai,DATE_FORMAT(waktu_pesanan_dibuat, \'%Y-%m-%d\') waktu_pesanan_dibuat FROM order_all WHERE store_id=? AND waktu_pesanan_dibuat >= CONCAT(?, \' 00:00:00\') AND waktu_pesanan_dibuat < DATE_ADD(CONCAT(?, \' 00:00:00\'), INTERVAL 1 DAY)', [storeId, from, to]);
     const settlementSql = 'SELECT p.no_pesanan,p.signed_total,DATE_FORMAT(p.tanggal_dana_dilepaskan, \'%Y-%m-%d\') tanggal_dana_dilepaskan FROM income_penghasilan_raw p JOIN income_report_imports i ON i.id=p.income_report_import_id WHERE i.store_id=? AND p.lihat_berdasarkan=\'Order\'';
     const [settlementExistenceRows] = await conn.query<RowDataPacket[]>(settlementSql, [storeId]);
     // Penghasilan / SKU is audit evidence for partial-return allocation only. Never add it to Penghasilan / Order.
@@ -47,8 +47,8 @@ export async function GET(request: NextRequest) {
     }
     const exceptionEvidenceRows = [
       ...returnRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'return_refund', source_status: row.source_status, return_type: row.return_type, stock_status: row.stock_status })),
-      ...failedRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'failed_delivery', source_status: row.source_status })),
-      ...cancellationRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'cancellation', source_status: row.source_status })),
+      ...failedRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'failed_delivery', source_status: row.source_status, reason: row.reason })),
+      ...cancellationRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'cancellation', source_status: row.source_status, reason: row.reason })),
       ...adjustmentRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'adjustment', source_status: null, amount: row.amount })),
     ];
     const report = buildProfitActualReport({ orderRows, skuRows, settlementRows, settlementExistenceRows, balanceRows, exceptionEvidenceRows, exceptionOrderNumbers: exceptionRows.map((row) => String(row.no_pesanan || '')) }) as { orders: Array<{ no_pesanan: string }>; [key: string]: unknown };
