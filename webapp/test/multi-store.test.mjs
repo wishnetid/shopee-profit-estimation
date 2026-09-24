@@ -416,6 +416,10 @@ test('Profit Aktual reports a settled partial return as provisional cash profit 
   assert.equal(corrected.orders[0].bucket, 'exception');
   assert.equal(corrected.summary.partialReturnProvisional, 0);
   assert.equal(corrected.summary.settlementExcluded, 64066);
+  assert.equal(corrected.summary.balanceOutgoingOrders, 1);
+  assert.equal(corrected.summary.balanceOutgoingTotal, -500);
+  assert.equal(corrected.summary.balanceOrderIncomeOutgoing, -500);
+  assert.equal(corrected.summary.balanceAdjustmentOutgoing, 0);
 });
 
 test('Profit Aktual reports full cohort order and pcs coverage independently of settlement buckets', () => {
@@ -517,6 +521,13 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(panel, /settlementRecorded/);
   assert.match(panel, /profitComputable/);
   assert.match(panel, /unresolvedOrders/);
+  assert.match(panel, /Mutasi My Balance Keluar/);
+  assert.match(panel, /balance_outgoing/);
+  assert.match(panel, /balanceOutgoingTotal/);
+  assert.match(panel, /balanceOutgoingOrders/);
+  assert.match(panel, /Penghasilan keluar/);
+  assert.match(panel, /Penyesuaian keluar/);
+  assert.match(panel, /audit cashflow, bukan profit final/);
   assert.match(panel, /cashCoveredPcs/);
   assert.match(panel, /settledNormalPcs/);
   assert.match(panel, /pcs terjual/);

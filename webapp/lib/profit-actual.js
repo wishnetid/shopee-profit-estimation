@@ -8,10 +8,10 @@ function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlemen
   const balanceByOrder = new Map();
   for (const row of balanceRows) {
     const key = text(row.no_pesanan); if (!key) continue;
-    const current = balanceByOrder.get(key) || { net: 0, incomingOrderIncome: 0, outgoing: 0, events: [] };
-    const signed = amount(row.jumlah_signed); current.net += signed;
-    if (signed > 0 && text(row.type_transaksi) === 'Penghasilan dari Pesanan') current.incomingOrderIncome += signed;
-    if (signed < 0) current.outgoing += signed;
+    const current = balanceByOrder.get(key) || { net: 0, incomingOrderIncome: 0, outgoing: 0, orderIncomeOutgoing: 0, adjustmentOutgoing: 0, otherOutgoing: 0, events: [] };
+    const signed = amount(row.jumlah_signed); const type = text(row.type_transaksi); current.net += signed;
+    if (signed > 0 && type === 'Penghasilan dari Pesanan') current.incomingOrderIncome += signed;
+    if (signed < 0) { current.outgoing += signed; if (type === 'Penghasilan dari Pesanan') current.orderIncomeOutgoing += signed; else if (type === 'Penyesuaian') current.adjustmentOutgoing += signed; else current.otherOutgoing += signed; }
     current.events.push(row); balanceByOrder.set(key, current);
   }
   const settlementByOrder = new Map(settlementRows.map((row) => [text(row.no_pesanan), row]));
@@ -22,7 +22,7 @@ function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlemen
     const key = text(row.no_pesanan); if (!key) continue;
     const group = groups.get(key) || { no_pesanan: key, rows: [] }; group.rows.push(row); groups.set(key, group);
   }
-  const summary = { cohortOrders: 0, cohortPcs: 0, settledNormal: 0, settledNormalPcs: 0, settledNormalLoss: 0, completedUnsettled: 0, completedUnsettledPcs: 0, settlementOutsideReleaseRange: 0, settlementOutsideReleaseRangePcs: 0, pending: 0, pendingPcs: 0, exception: 0, exceptionPcs: 0, partialReturnProvisional: 0, partialReturnOrderedPcs: 0, partialReturnNonReturnedPcs: 0, partialReturnReturnedPcs: 0, partialReturnSettlement: 0, partialReturnHpp: 0, partialReturnProfit: 0, cancelled: 0, cancelledPcs: 0, settlement: 0, settlementExcluded: 0, hpp: 0, profit: 0, settlementRecorded: 0, cashCoveredOrders: 0, cashCoveredPcs: 0, hppApplied: 0, profitComputable: 0, unresolvedOrders: 0, unresolvedPcs: 0 };
+  const summary = { cohortOrders: 0, cohortPcs: 0, settledNormal: 0, settledNormalPcs: 0, settledNormalLoss: 0, completedUnsettled: 0, completedUnsettledPcs: 0, settlementOutsideReleaseRange: 0, settlementOutsideReleaseRangePcs: 0, pending: 0, pendingPcs: 0, exception: 0, exceptionPcs: 0, partialReturnProvisional: 0, partialReturnOrderedPcs: 0, partialReturnNonReturnedPcs: 0, partialReturnReturnedPcs: 0, partialReturnSettlement: 0, partialReturnHpp: 0, partialReturnProfit: 0, cancelled: 0, cancelledPcs: 0, settlement: 0, settlementExcluded: 0, hpp: 0, profit: 0, settlementRecorded: 0, cashCoveredOrders: 0, cashCoveredPcs: 0, hppApplied: 0, profitComputable: 0, unresolvedOrders: 0, unresolvedPcs: 0, balanceOutgoingOrders: 0, balanceOutgoingTotal: 0, balanceOrderIncomeOutgoing: 0, balanceAdjustmentOutgoing: 0, balanceOtherOutgoing: 0 };
   const orders = [...groups.values()].map((group) => {
     const first = group.rows[0]; const settlementRow = settlementByOrder.get(group.no_pesanan); const settlementExistsRow = settlementExistsByOrder.get(group.no_pesanan); const isException = exceptions.has(group.no_pesanan.toLowerCase());
     summary.cohortOrders++;
@@ -36,7 +36,7 @@ function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlemen
     const orderedPcs = group.rows.reduce((total, row) => total + Math.max(0, amount(row.jumlah)), 0);
     const returnedPcs = group.rows.reduce((total, row) => total + Math.max(0, amount(row.returned_quantity)), 0);
     const hasPartialReturnedItems = returnedPcs > 0 && returnedPcs < orderedPcs;
-    const balance = balanceByOrder.get(group.no_pesanan) || { net: 0, incomingOrderIncome: 0, outgoing: 0, events: [] };
+    const balance = balanceByOrder.get(group.no_pesanan) || { net: 0, incomingOrderIncome: 0, outgoing: 0, orderIncomeOutgoing: 0, adjustmentOutgoing: 0, otherOutgoing: 0, events: [] };
     let bucket = 'settled_normal';
     if (!settlementRow) bucket = text(first.status_pesanan) === 'Batal' ? 'batal' : settlementExistsRow ? 'settlement_outside_release_range' : first.waktu_pesanan_selesai ? 'completed_unsettled' : 'pending';
     else if (isException && hasPartialReturnedItems && !nonReturnedHppIssue && balance.incomingOrderIncome === amount(settlementRow.signed_total) && balance.outgoing === 0) bucket = 'partial_return_provisional';
@@ -44,10 +44,11 @@ function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlemen
     const settlement = settlementRow ? amount(settlementRow.signed_total) : null;
     const profitActual = bucket === 'settled_normal' && settlement !== null ? settlement - totalHpp : null;
     const provisionalProfit = bucket === 'partial_return_provisional' && settlement !== null ? settlement - nonReturnedHpp : null;
+    if (balance.outgoing < 0) { summary.balanceOutgoingOrders++; summary.balanceOutgoingTotal += balance.outgoing; summary.balanceOrderIncomeOutgoing += balance.orderIncomeOutgoing; summary.balanceAdjustmentOutgoing += balance.adjustmentOutgoing; summary.balanceOtherOutgoing += balance.otherOutgoing; }
     if (bucket === 'settled_normal') { summary.settledNormal++; summary.settledNormalPcs += orderedPcs; if (profitActual < 0) summary.settledNormalLoss++; summary.settlement += settlement; summary.hpp += totalHpp; summary.profit += profitActual; }
     else if (bucket === 'partial_return_provisional') { summary.partialReturnProvisional++; summary.partialReturnOrderedPcs += orderedPcs; summary.partialReturnNonReturnedPcs += orderedPcs - returnedPcs; summary.partialReturnReturnedPcs += returnedPcs; summary.partialReturnSettlement += settlement || 0; summary.partialReturnHpp += nonReturnedHpp; summary.partialReturnProfit += provisionalProfit || 0; }
     else if (bucket === 'completed_unsettled') { summary.completedUnsettled++; summary.completedUnsettledPcs += orderedPcs; } else if (bucket === 'settlement_outside_release_range') { summary.settlementOutsideReleaseRange++; summary.settlementOutsideReleaseRangePcs += orderedPcs; } else if (bucket === 'pending') { summary.pending++; summary.pendingPcs += orderedPcs; } else if (bucket === 'exception' || bucket === 'hpp_issue') { summary.exception++; summary.exceptionPcs += orderedPcs; summary.settlementExcluded += settlement || 0; } else { summary.cancelled++; summary.cancelledPcs += orderedPcs; }
-    return { no_pesanan: group.no_pesanan, orderDate: String(first.waktu_pesanan_dibuat).slice(0, 10), statusPesanan: text(first.status_pesanan), itemCount: group.rows.length, orderedPcs, returnedPcs, nonReturnedPcs: orderedPcs - returnedPcs, totalHpp, nonReturnedHpp, settlement, releaseDate: settlementRow?.tanggal_dana_dilepaskan || null, balanceOutgoing: balance.outgoing, balanceNet: balance.net, profitActual, provisionalProfit, bucket };
+    return { no_pesanan: group.no_pesanan, orderDate: String(first.waktu_pesanan_dibuat).slice(0, 10), statusPesanan: text(first.status_pesanan), itemCount: group.rows.length, orderedPcs, returnedPcs, nonReturnedPcs: orderedPcs - returnedPcs, totalHpp, nonReturnedHpp, settlement, releaseDate: settlementRow?.tanggal_dana_dilepaskan || null, balanceOutgoing: balance.outgoing, balanceOrderIncomeOutgoing: balance.orderIncomeOutgoing, balanceAdjustmentOutgoing: balance.adjustmentOutgoing, balanceOtherOutgoing: balance.otherOutgoing, balanceNet: balance.net, profitActual, provisionalProfit, bucket };
   }).sort((a, b) => b.orderDate.localeCompare(a.orderDate) || b.no_pesanan.localeCompare(a.no_pesanan));
   const computable = orders.filter((order) => order.bucket === 'settled_normal' || order.bucket === 'partial_return_provisional');
   summary.cashCoveredOrders = computable.length;
