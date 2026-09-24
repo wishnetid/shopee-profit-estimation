@@ -1,0 +1,275 @@
+# Profit Aktual — Rencana, Kontrak, dan Progress
+
+**Status:** Planning — belum ada implementasi Profit Aktual.
+
+**Tujuan dokumen:** handoff lintas sesi/agent. Semua keputusan, data source, progress verifikasi, perubahan kontrak, dan release Profit Aktual harus dicatat di file ini.
+
+---
+
+## 1. Batas Produk
+
+Menu existing `/profit` tetap dipakai dengan dua tab:
+
+```text
+Profit & Estimasi
+├─ Estimasi Kotor                 LIVE, read-only
+└─ Profit Aktual                  belum dibangun
+```
+
+Profit Aktual **bukan** penggantian atau modifikasi Estimasi Kotor. Implementasi harus additive dan menjaga perilaku seluruh fitur Estimasi Kotor yang sudah ada, termasuk:
+
+- filter tanggal;
+- multi-select Status Shopee;
+- filter No. Resi: semua / ada resi / belum ada resi;
+- summary card order unik, resi unik, total PCS SKU, Total HPP, Estimasi Kotor, Ads, PPN Ads, dan sisa setelah Ads/PPN.
+
+Tidak boleh migration, import, clear data, reset master SKU, atau perubahan schema sebelum source report dianalisis dan scope disetujui user.
+
+---
+
+## 2. Definisi Profit Aktual Fase 1
+
+### 2.1 Target awal
+
+**Profit Aktual Tersettle — Normal** pada grain `No. Pesanan`.
+
+```text
+Profit Aktual Produk
+= Penghasilan / Order signed_total yang sudah dana dilepas
+- Σ(HPP Master × quantity item)
+```
+
+### 2.2 Aturan penting
+
+- `Penghasilan / Order` adalah settlement finansial utama per order.
+- `Penghasilan / SKU` hanya dipakai untuk rincian/alokasi item pada order multi-SKU; jangan dijumlahkan dengan `Penghasilan / Order`.
+- HPP mencari `Nomor Referensi SKU`, lalu fallback `SKU Induk`, sesuai kontrak Master SKU existing.
+- HPP kosong atau konflik tidak boleh dibaca sebagai Rp0.
+- Ads, PPN Ads, packaging, tenaga kerja, dan biaya operasional lain **tidak** dialokasikan ke order pada Fase 1.
+- `Seller Fee` audit-only; tidak boleh ditambahkan lagi apabila sudah tercermin dalam settlement Penghasilan.
+- Return/refund, failed delivery, cancellation, serta Adjustment bukan bagian dari profit normal tanpa rule khusus dan evidence source yang cukup.
+
+---
+
+## 3. Cohort dan Status Finansial
+
+Cohort ditentukan oleh **tanggal order dibuat pada Order.all**, bukan tanggal dana dilepas.
+
+Contoh pilot awal yang direkomendasikan: seluruh order dibuat **1–31 Agustus 2026**. Order tersebut tetap masuk walau dana baru dilepas setelah Agustus.
+
+Order yang belum selesai atau belum menerima settlement **tetap di-import dan ditampilkan**. Jangan hilangkan dari cohort.
+
+| Kondisi | Status Profit Aktual yang direncanakan | Perlakuan angka |
+|---|---|---|
+| Penghasilan / Order ada dan HPP valid | Profit Aktual Tersettle | Masuk total actual normal |
+| Perlu Dikirim / Sedang Dikirim / Telah Dikirim | Belum Tersettle | Tidak masuk total actual |
+| Selesai tetapi belum ada Penghasilan / Order | Menunggu Dana Dilepas | Tidak masuk total actual |
+| HPP kosong atau conflict | Perlu Mapping HPP | Settlement tampil, profit ditahan |
+| Return/refund atau failed delivery | Perlu Finalisasi Exception | Tidak masuk actual normal |
+| Batal | Tidak Ada Profit | Tidak masuk total actual |
+| Adjustment yang berelasi ke order | Perlu Rekonsiliasi Adjustment | Jangan otomatis ditambahkan/dikurangkan sebelum kontrak disetujui |
+
+Target UI harus memisahkan setidaknya:
+
+```text
+Profit Aktual Tersettle
+Belum Tersettle
+Menunggu Dana Dilepas
+Perlu Mapping HPP
+Perlu Finalisasi Exception
+```
+
+---
+
+## 4. Data Source yang Dibutuhkan
+
+### Wajib untuk membangun Fase 1
+
+1. **Master SKU + HPP**
+   - Shared/global.
+   - Harus mencakup semua SKU pada cohort.
+
+2. **Order.all**
+   - Seluruh order pada cohort.
+   - Export/snapshot terbaru agar status, resi, cancellation marker, dan return marker lebih final.
+   - Waktu snapshot/export harus dicatat saat import.
+
+3. **Income — Sudah Dilepas**
+   - Wajib menyertakan `Penghasilan / Order`.
+   - `Penghasilan / SKU` diimport jika tersedia untuk audit/alokasi item.
+   - Import semua workbook yang mencakup pelepasan dana order cohort, termasuk bulan setelah cohort bila settlement terlambat.
+   - Exact hash duplicate dalam toko sama adalah no-op. File berbeda dengan periode overlap tetap RAW package terpisah dan perlu dedupe di layer kalkulasi berdasarkan identitas settlement yang nanti disetujui.
+
+### Wajib sebelum menyatakan laporan seluruh cohort final
+
+4. **Return / Refund**
+   - Coverage dari awal cohort sampai tanggal export sekarang.
+   - Barang kembali layak jual vs rusak/hilang membutuhkan keputusan QC.
+
+5. **Failed Delivery**
+   - Coverage dari awal cohort sampai tanggal export sekarang.
+   - Dipakai untuk klaim/kompensasi dan finality exception.
+
+6. **Cancellation**
+   - Minimal seluruh cohort; disarankan sampai tanggal export sekarang.
+
+7. **Balance Transaction**
+   - Coverage dari awal cohort hingga pelepasan dana terbaru yang masih menyelesaikan cohort.
+   - Digunakan untuk audit/reconciliation, bukan dijumlahkan sebagai profit per order.
+
+### Opsional untuk layer toko/hari
+
+8. **Ads RAW**
+   - Boleh diupload untuk monitoring biaya Ads harian.
+   - Tidak digunakan untuk alokasi biaya per order pada Fase 1.
+
+---
+
+## 5. Rekomendasi Intake Pilot
+
+Jangan mulai dari banyak bulan sekaligus. Pilot satu cohort dulu supaya mismatch dapat ditelusuri.
+
+### Pilot yang direkomendasikan
+
+```text
+Cohort order: 1–31 Agustus 2026
+```
+
+### Paket upload yang diminta
+
+```text
+1. Master SKU + HPP
+2. Order.all: seluruh order dibuat 1–31 Agustus 2026; snapshot terbaru
+3. Income: Agustus dan bulan lanjutan sampai tanggal export saat ini,
+   selama masih ada order Agustus yang dana-nya dilepas
+4. Return / Refund: 1 Agustus 2026 sampai tanggal export
+5. Failed Delivery: 1 Agustus 2026 sampai tanggal export
+6. Cancellation: 1 Agustus 2026 sampai tanggal export
+7. Balance: 1 Agustus 2026 sampai settlement cohort terakhir yang tersedia
+8. Ads RAW Agustus: opsional
+```
+
+### Urutan upload
+
+```text
+Master SKU + HPP
+→ Order.all cohort
+→ Income packages
+→ Return / Refund
+→ Failed Delivery
+→ Cancellation
+→ Balance
+→ Ads RAW (opsional)
+```
+
+---
+
+## 6. Gate Sebelum Coding
+
+Setelah user upload, lakukan audit read-only pada canonical production API/database:
+
+1. Pastikan store target dan package/row count tiap report sesuai upload.
+2. Audit mapping `Order.all` → Master HPP.
+3. Cocokkan `No. Pesanan` cohort dengan `Penghasilan / Order` settlement.
+4. Pisahkan:
+   - settled normal;
+   - belum settle;
+   - settlement tanpa pasangan order;
+   - order selesai tanpa settlement;
+   - HPP missing/conflict;
+   - cancellation/return/refund/failed delivery;
+   - adjustment.
+5. Jangan menjumlahkan `Penghasilan / Order` dan `Penghasilan / SKU`.
+6. Audit Balance sebagai reconciliation independen, bukan sumber profit order.
+7. Dokumentasikan coverage dan mismatch sebelum coding.
+
+Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rule treatment exception.
+
+---
+
+## 7. Rencana Implementasi Bertahap
+
+### Fase 0 — Intake dan reconciliation
+
+- Upload raw sources cohort.
+- Preview/import dan audit read-only.
+- Buat laporan coverage/mismatch.
+- Tentukan identity settlement, policy overlap package, dan status UI final.
+
+### Fase 1 — Profit Aktual Tersettle Normal
+
+- Read-only endpoint/store-scoped.
+- Join settlement `Penghasilan / Order` dengan order/item dan HPP.
+- Summary actual normal, detail per order, serta bucket pending/review.
+- Tidak mengalokasikan Ads maupun biaya eksternal ke order.
+- Tidak mengubah Estimasi Kotor.
+
+### Fase 2 — Exception visibility
+
+- Surface cancellation, return/refund, failed delivery, dan adjustment sebagai bucket audit yang terpisah.
+- Belum mengklaim profit final return sebelum policy QC disetujui.
+
+### Fase 3 — Return QC dan finality
+
+- Tambah keputusan QC stock return jika source/process disepakati:
+  - restock layak;
+  - rusak;
+  - hilang;
+  - belum dinilai.
+- Baru dapat menghitung kerugian HPP retur secara final.
+
+### Fase 4 — Optional costs
+
+- Hanya setelah ada source evidence dan kontrak alokasi: Ads attribution, packaging, tenaga kerja, atau OPEX.
+
+---
+
+## 8. Progress Log
+
+### 2026-09-23 — Planning dibuat
+
+- User menyatakan dapat menyediakan seluruh report.
+- User sudah clear data aplikasi untuk memilih sample cohort dengan lebih presisi.
+- Disepakati bahwa order belum selesai tetap bagian cohort dan harus ditandai, bukan dikeluarkan.
+- Belum ada source Profit Aktual yang diimport setelah clear data.
+- Belum ada coding, schema change, migration, atau endpoint Profit Aktual baru.
+
+### 2026-09-24 — Income sampling parser fixed dan diverifikasi
+
+- Input/report: `Income.sudah dilepas.id.20260801_20260924.xlsx`, periode 2026-08-01 s.d. 2026-09-24.
+- Verifikasi: parser membaca 1.120 row `Penghasilan / Order`, 1.437 row `Penghasilan / Sku`, 6 row Adjustment, dan 2 row Shipping Fee Discrepancy. Checksum `Penghasilan / Order` = Summary `Total yang Dilepas` Rp127.775.146; selisih Rp0.
+- Temuan/mismatch: aplikasi hanya mengenali header lama `Discrepancy reason`; export Shopee aktif memakai header Indonesia `Alasan perbedaan`, sehingga seluruh Income package fail-closed dan ditolak meskipun settlement utama cocok.
+- Keputusan yang disetujui: parser menerima kedua label header, menyimpan alasan dalam key kanonis `discrepancy_reason`, dan tetap fail-closed bila struktur inti berubah.
+- Perubahan source/schema/code: parser + regression test saja; tanpa schema change, import, reset, atau kalkulasi Profit Aktual.
+- Test/deploy: `npm test` 132 pass, 2 live-DB check skipped; `npm run build` berhasil. Lint global masih gagal pada file lama di `app/api/internal/order-all-line-ordinal-migration/route.ts` dan `scripts/migrate-order-all-line-ordinal.js`, tidak terkait perubahan Income.
+- Next step: deploy perbaikan parser; setelah itu preview ulang lalu import Income melalui aplikasi sebelum audit cohort Fase 0.
+
+### Format progress berikutnya
+
+Tambahkan entri baru di bawah ini setiap ada langkah bermakna:
+
+```md
+### YYYY-MM-DD — <judul progress>
+
+- Input/report:
+- Coverage:
+- Verifikasi:
+- Temuan/mismatch:
+- Keputusan yang disetujui:
+- Perubahan source/schema/code:
+- Test/deploy:
+- Next step:
+```
+
+---
+
+## 9. Larangan / Guardrail
+
+- Jangan menyebut Estimasi Kotor sebagai Profit Aktual.
+- Jangan membuat profit dari Order.all saja.
+- Jangan membuat HPP missing/conflict menjadi Rp0.
+- Jangan menjumlahkan Penghasilan view Order dan SKU.
+- Jangan menyamakan period overlap workbook dengan duplicate bisnis tanpa identity yang dibuktikan.
+- Jangan menghitung return sebagai rugi HPP sebelum ada status QC barang.
+- Jangan melakukan clear/reset/import/migration tanpa persetujuan user dan backup bila tindakan destruktif.
+- Jangan menampilkan credential, Basic Auth, hash source, atau PII pembeli dalam laporan user-facing.

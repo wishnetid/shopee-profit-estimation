@@ -174,6 +174,26 @@ function parseOptionalSheet(rows, requiredLabels, sectionName, errors) {
   return { status: 'ready', headerRow, headers, rows: dataRows };
 }
 
+function parseShippingFeeDiscrepancy(rows, errors) {
+  const requiredPrefix = ['No. Pesanan', 'Estimasi Ongkos Kirim:', 'Ongkos Kirim yang Dibayarkan ke Jasa Kirim:'];
+  const headerRow = ['Discrepancy reason', 'Alasan perbedaan']
+    .map((reasonLabel) => detectHeaderRow(rows, [...requiredPrefix, reasonLabel]))
+    .find((index) => index >= 0) ?? -1;
+  if (headerRow < 0) {
+    errors.push('Sheet Shipping Fee Discrepancy ada tetapi header wajib berubah atau tidak dikenali.');
+    return { status: 'blocked', headerRow: null, headers: [], rows: [] };
+  }
+
+  const headers = canonicalizeHeaders(rows[headerRow]);
+  const dataRows = rows.slice(headerRow + 1).filter(hasRowData).map((row, offset) => {
+    const raw_payload = rowPayload(headers, row);
+    raw_payload.discrepancy_reason = getByDisplay(headers, row, 'Discrepancy reason')
+      ?? getByDisplay(headers, row, 'Alasan perbedaan');
+    return { source_excel_row: headerRow + offset + 2, raw_payload };
+  });
+  return { status: 'ready', headerRow, headers, rows: dataRows };
+}
+
 function computeSha256(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex');
 }
@@ -203,7 +223,7 @@ function parseIncomePackage(workbook, sourceFile, sha256) {
   if (adjustment.status === 'absent') warnings.push('Adjustment tidak tersedia pada paket report ini.');
 
   const shippingFeeDiscrepancy = workbook.Sheets['Shipping Fee Discrepancy']
-    ? parseOptionalSheet(sheetToRows(workbook.Sheets['Shipping Fee Discrepancy']), ['No. Pesanan', 'Discrepancy reason'], 'Shipping Fee Discrepancy', errors)
+    ? parseShippingFeeDiscrepancy(sheetToRows(workbook.Sheets['Shipping Fee Discrepancy']), errors)
     : { status: 'absent', headerRow: null, headers: [], rows: [] };
   if (shippingFeeDiscrepancy.status === 'absent') warnings.push('Shipping Fee Discrepancy tidak tersedia pada paket report ini.');
 

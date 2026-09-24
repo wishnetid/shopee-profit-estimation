@@ -173,6 +173,31 @@ test('parseIncomePackage marks optional Adjustment and Shipping Fee Discrepancy 
   assert.ok(parsed.warnings.some((warning) => warning.includes('Shipping Fee Discrepancy')));
 });
 
+test('parseIncomePackage accepts the current Indonesian Shipping Fee Discrepancy header and preserves a canonical reason', () => {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['Dari', '2026-08-01'],
+    ['ke', '2026-09-24'],
+    ['3. Total yang Dilepas', 100],
+  ]), 'Summary');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['No. Pesanan', 'Lihat berdasarkan', 'Harga Produk', 'PPh 22'],
+    [1, 'Order', 'ORDER-1', 100, 0],
+    [2, 'Sku', 'ORDER-1', 100, 0],
+  ]), 'Penghasilan');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['No. Pesanan', 'Estimasi Ongkos Kirim:', 'Ongkos Kirim yang Dibayarkan ke Jasa Kirim:', 'Alasan perbedaan'],
+    ['ORDER-1', 137200, 137201, 'Alasan: Penjual mengubah alamat penjemputan atau drop off.'],
+  ]), 'Shipping Fee Discrepancy');
+
+  const parsed = parseIncomePackage(workbook, 'income-current-indonesian-shipping.xlsx', 'sha-current-indonesian-shipping');
+
+  assert.equal(parsed.valid, true);
+  assert.equal(parsed.sections.shippingFeeDiscrepancy.status, 'ready');
+  assert.equal(parsed.sections.shippingFeeDiscrepancy.rows.length, 1);
+  assert.equal(parsed.sections.shippingFeeDiscrepancy.rows[0].raw_payload.discrepancy_reason, 'Alasan: Penjual mengubah alamat penjemputan atau drop off.');
+});
+
 test('buildIncomePreview marks an exact previously-imported SHA-256 as duplicate no-op', () => {
   const parsed = parseIncomePackage(
     readWorkbook('Income.sudah dilepas.id.20260701_20260731.xlsx'),
