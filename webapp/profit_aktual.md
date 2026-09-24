@@ -372,6 +372,7 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Summary tetap memisahkan Profit Aktual Normal, Profit Retur Parsial, menunggu settlement, perlu audit, belum selesai, dan batal. Profit parsial tidak dijumlahkan diam-diam ke Profit Aktual Normal.
 - Detail order menampilkan settlement/release, My Balance net dan keluar, HPP seluruh/non-retur, qty, evidence exception, dan item order. Retur & Refund tetap khusus QC fisik; Rekonsiliasi My Balance tetap untuk investigasi ledger yang lebih detail.
 - Validasi canonical: cohort 1 September 2026 memiliki 25 Profit Aktual Normal, 1 Profit Sementara (`260901UY5MGHJX`, Rp11.566), dan 6 batal. Cohort Agustus 2026 memiliki 596 normal, 2 profit sementara total -Rp7.890, 11 perlu audit, 4 belum selesai, dan 143 batal.
+- **Cakupan Finansial** ditambahkan sebagai monitoring terpisah: `Settlement Tercatat`, `Profit Terhitung`, `Cakupan Cash`, dan `Belum Ada Jawaban`. Settlement/profit terhitung hanya menggabungkan normal + retur parsial sementara; tidak mengubah Profit Aktual Normal. Belum Ada Jawaban menjumlahkan bucket yang belum aman dihitung, bukan batal.
 
 ### 2026-09-24 — Rekonsiliasi Settlement & My Balance (read-only)
 

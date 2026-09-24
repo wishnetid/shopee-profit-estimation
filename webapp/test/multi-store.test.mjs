@@ -398,6 +398,11 @@ test('Profit Aktual reports a settled partial return as provisional cash profit 
   assert.equal(report.summary.partialReturnHpp, 52500);
   assert.equal(report.summary.partialReturnProfit, 11566);
   assert.equal(report.summary.settlementExcluded, 0);
+  assert.equal(report.summary.cashCoveredOrders, 1);
+  assert.equal(report.summary.settlementRecorded, 64066);
+  assert.equal(report.summary.hppApplied, 52500);
+  assert.equal(report.summary.profitComputable, 11566);
+  assert.equal(report.summary.unresolvedOrders, 0);
   assert.equal(report.orders[0].bucket, 'partial_return_provisional');
   assert.equal(report.orders[0].nonReturnedPcs, 1);
   assert.equal(report.orders[0].returnedPcs, 1);
@@ -499,6 +504,14 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(reconciliationPanel, /My Balance · Penghasilan Keluar/);
   assert.match(panel, /Profit Aktual Normal/);
   assert.match(panel, /Profit Retur Parsial/);
+  assert.match(panel, /Cakupan Finansial/);
+  assert.match(panel, /Settlement Tercatat/);
+  assert.match(panel, /Profit Terhitung/);
+  assert.match(panel, /Cakupan Cash/);
+  assert.match(panel, /Belum Ada Jawaban/);
+  assert.match(panel, /settlementRecorded/);
+  assert.match(panel, /profitComputable/);
+  assert.match(panel, /unresolvedOrders/);
   assert.match(panel, /Menunggu Settlement/);
   assert.match(panel, /Perlu Audit/);
   assert.match(panel, /partial_return_provisional/);
