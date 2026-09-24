@@ -58,16 +58,19 @@ function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlemen
       && balance.outgoing === settlement
       && balance.net === settlement
       && onlyCompletedFullReturns;
+    const returnCancelledCashMatched = isException
+      && settlement !== null && settlement > 0
+      && returnedPcs === 0 && !hppIssue
+      && balance.incomingOrderIncome === settlement && balance.outgoing === 0 && balance.net === settlement
+      && exceptionEvidence.length > 0
+      && exceptionEvidence.every((row) => text(row.source_type) === 'return_refund' && text(row.source_status) === 'Pengembalian Barang/Dana Dibatalkan');
     let bucket = 'settled_normal';
     if (!settlementRow) bucket = text(first.status_pesanan) === 'Batal' ? 'batal' : settlementExistsRow ? 'settlement_outside_release_range' : first.waktu_pesanan_selesai ? 'completed_unsettled' : 'pending';
     else if (fullReturnCashFinalNegative) bucket = 'full_return_cash_final_negative';
+    else if (returnCancelledCashMatched) bucket = 'settled_normal';
+    else if (isException && returnedPcs > 0 && exceptionEvidence.length > 0 && exceptionEvidence.every((row) => text(row.source_type) === 'return_refund' && text(row.source_status) === 'Pengembalian Barang/Dana Dibatalkan')) bucket = 'exception';
     else if (isException && hasPartialReturnedItems && !nonReturnedHppIssue && balance.incomingOrderIncome === amount(settlementRow.signed_total) && balance.outgoing === 0) bucket = 'partial_return_provisional';
     else if (isException) bucket = 'exception'; else if (hppIssue) bucket = 'hpp_issue';
-    const returnCancelledCashMatched = bucket === 'exception'
-      && settlement !== null && settlement > 0
-      && balance.incomingOrderIncome === settlement && balance.outgoing === 0
-      && exceptionEvidence.length > 0
-      && exceptionEvidence.every((row) => text(row.source_type) === 'return_refund' && text(row.source_status) === 'Pengembalian Barang/Dana Dibatalkan');
     const exceptionSubstatus = returnCancelledCashMatched ? 'return_cancelled_cash_matched' : null;
     const profitActual = bucket === 'settled_normal' && settlement !== null ? settlement - totalHpp : null;
     const provisionalProfit = bucket === 'partial_return_provisional' && settlement !== null ? settlement - nonReturnedHpp : null;

@@ -382,7 +382,7 @@ test('Profit Aktual reports settlement excluded from normal profit separately', 
   assert.equal(report.summary.settlementExcluded, 64066);
 });
 
-test('Return cancelled cash matched remains Perlu Audit but gets a non-financial sub-status', () => {
+test('Return cancelled cash matched becomes Profit Aktual and retains its audit sub-status', () => {
   const report = buildProfitActualReport({
     skuRows: [{ sku1: 'RETURN-CANCELLED', sku2: '', harga: 50000 }],
     settlementRows: [{ no_pesanan: 'CANCELLED-RETURN', signed_total: 132002, tanggal_dana_dilepaskan: '2026-09-10' }],
@@ -391,11 +391,14 @@ test('Return cancelled cash matched remains Perlu Audit but gets a non-financial
     balanceRows: [{ no_pesanan: 'CANCELLED-RETURN', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: 132002 }],
     orderRows: [{ no_pesanan: 'CANCELLED-RETURN', status_pesanan: 'Selesai', nomor_referensi_sku: 'RETURN-CANCELLED', sku_induk: '', jumlah: 2, waktu_pesanan_selesai: '2026-09-10 04:10:00', waktu_pesanan_dibuat: '2026-08-31' }],
   });
-  assert.equal(report.orders[0].bucket, 'exception');
+  assert.equal(report.orders[0].bucket, 'settled_normal');
   assert.equal(report.orders[0].exceptionSubstatus, 'return_cancelled_cash_matched');
-  assert.equal(report.orders[0].profitActual, null);
-  assert.equal(report.summary.exception, 1);
-  assert.equal(report.summary.settledNormal, 0);
+  assert.equal(report.orders[0].profitActual, 32002);
+  assert.equal(report.summary.exception, 0);
+  assert.equal(report.summary.settledNormal, 1);
+  assert.equal(report.summary.profit, 32002);
+  assert.equal(report.summary.cashCoveredOrders, 1);
+  assert.equal(report.summary.hppApplied, 100000);
   const withOutgoing = buildProfitActualReport({
     skuRows: [{ sku1: 'RETURN-CANCELLED', sku2: '', harga: 50000 }],
     settlementRows: [{ no_pesanan: 'CANCELLED-RETURN', signed_total: 132002, tanggal_dana_dilepaskan: '2026-09-10' }],
@@ -404,7 +407,18 @@ test('Return cancelled cash matched remains Perlu Audit but gets a non-financial
     balanceRows: [{ no_pesanan: 'CANCELLED-RETURN', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: 132002 }, { no_pesanan: 'CANCELLED-RETURN', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: -1 }],
     orderRows: [{ no_pesanan: 'CANCELLED-RETURN', status_pesanan: 'Selesai', nomor_referensi_sku: 'RETURN-CANCELLED', sku_induk: '', jumlah: 2, waktu_pesanan_selesai: '2026-09-10 04:10:00', waktu_pesanan_dibuat: '2026-08-31' }],
   });
+  assert.equal(withOutgoing.orders[0].bucket, 'exception');
   assert.equal(withOutgoing.orders[0].exceptionSubstatus, null);
+  const returned = buildProfitActualReport({
+    skuRows: [{ sku1: 'RETURN-CANCELLED', sku2: '', harga: 50000 }],
+    settlementRows: [{ no_pesanan: 'RETURNED-CANCELLED', signed_total: 132002, tanggal_dana_dilepaskan: '2026-09-10' }],
+    exceptionOrderNumbers: ['RETURNED-CANCELLED'],
+    exceptionEvidenceRows: [{ no_pesanan: 'RETURNED-CANCELLED', source_type: 'return_refund', source_status: 'Pengembalian Barang/Dana Dibatalkan' }],
+    balanceRows: [{ no_pesanan: 'RETURNED-CANCELLED', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: 132002 }],
+    orderRows: [{ no_pesanan: 'RETURNED-CANCELLED', status_pesanan: 'Selesai', nomor_referensi_sku: 'RETURN-CANCELLED', sku_induk: '', jumlah: 2, returned_quantity: 1, waktu_pesanan_selesai: '2026-09-10 04:10:00', waktu_pesanan_dibuat: '2026-08-31' }],
+  });
+  assert.equal(returned.orders[0].bucket, 'exception');
+  assert.equal(returned.orders[0].exceptionSubstatus, null);
 });
 
 test('Completed full return with final negative cash gets Cash Final Negatif, not Perlu Audit', () => {

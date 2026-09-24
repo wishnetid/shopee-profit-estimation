@@ -436,14 +436,22 @@ Tambahkan entri baru di bawah ini setiap ada langkah bermakna:
 - Guardrail fail-closed: mutasi My Balance tambahan (mis. penyesuaian/kompensasi), status return/logistik berbeda, return parsial, atau settlement/balance tidak persis cocok tetap `Perlu Audit`.
 - Pilot evidence: order `2608139M8365AV` — return penuh selesai, refund pembeli, parcel tertracking sampai alamat return, Income/My Balance `-Rp47.813`, dan belum ada adjustment.
 
-### 2026-09-24 — Sub-status Return Dibatalkan — Cash Cocok
+### 2026-09-25 — Return Dibatalkan — Cash Cocok sebagai Profit Aktual
 
-- Scope: sub-status evidence-only pada `Profit Pesanan`, tidak ada schema/migration atau perubahan formula Profit Aktual.
-- Eligibility ketat (seluruhnya wajib): bucket induk `Perlu Audit`; semua evidence exception order adalah `return_refund` dengan status persis `Pengembalian Barang/Dana Dibatalkan`; settlement `Penghasilan / Order` positif; My Balance `Penghasilan dari Pesanan` masuk cocok persis dengan settlement; tidak ada mutasi My Balance keluar terkait order dalam coverage ledger yang diimport.
-- Tampilan: badge sub-status `Return Dibatalkan — Cash Cocok`, alasan evidence, dan filter khusus di `Profit Pesanan`.
-- Guardrail: status induk tetap `Perlu Audit`; order tidak masuk `Profit Aktual Normal`, `Profit Terhitung`, atau `Cakupan Cash`. HPP tidak diperlakukan sebagai final otomatis.
-- Live audit cohort Agustus: 3 order lolos sub-status — `260831R7HC9RHK` Rp132.002; `26082232XMXD1C` Rp156.322; `260804E8J5Q3UR` Rp151.620.
-- Regression: negative mutasi Balance, evidence exception non-return/dengan status selain dibatalkan, settlement tidak positif/tidak cocok, atau evidence kosong tidak boleh mendapat sub-status.
+- Scope: memperbarui klasifikasi `Return Dibatalkan — Cash Cocok`; tetap read-only, tanpa schema/migration dan tidak mengubah Estimasi Kotor.
+- Order yang lolos dipromosikan ke bucket `Profit Aktual Normal` serta tetap membawa badge audit/histori `Return Dibatalkan — Cash Cocok` dan filter khusus.
+- Eligibility ketat (seluruhnya wajib):
+  1. semua evidence exception order adalah `return_refund` dengan status persis `Pengembalian Barang/Dana Dibatalkan`;
+  2. `returned_quantity` seluruh item adalah 0;
+  3. settlement `Penghasilan / Order` positif;
+  4. HPP seluruh item valid;
+  5. My Balance hanya memiliki `Penghasilan dari Pesanan` masuk yang cocok persis dengan settlement; net Balance juga harus sama;
+  6. tidak ada mutasi My Balance keluar, adjustment, failed delivery, cancellation, atau evidence exception lain.
+- Perhitungan: `Profit Aktual = Settlement Penghasilan / Order - HPP seluruh item`.
+- Masuk `Profit Aktual Normal`, `Settlement Tercatat`, `Profit Terhitung`, dan `Cakupan Cash`; tidak lagi masuk `Perlu Audit` maupun `Belum Ada Jawaban`.
+- Fail-closed: return tercatat pada item, Balance keluar/tidak cocok, HPP tidak valid, atau evidence non-return tetap tidak dipromosikan. Return dibatalkan tetapi `returned_quantity > 0` khususnya ditahan sebagai `Perlu Audit`, bukan salah masuk Profit Retur Parsial.
+- Live audit cohort Agustus: 3 order lolos — `260831R7HC9RHK` Rp132.002 settlement/Rp27.002 profit; `26082232XMXD1C` Rp156.322/Rp31.322; `260804E8J5Q3UR` Rp151.620/Rp26.620. Total tambahan Profit Aktual Rp84.944.
+- Hasil cohort setelah promosi: Profit Aktual Normal 599 order/1.059 pcs/Rp13.732.472; Cakupan Cash 601 order/1.061 pcs; backlog `Belum Ada Jawaban` 6 order/24 pcs.
 
 ### 2026-09-24 — My Balance Analisis read-only
 
