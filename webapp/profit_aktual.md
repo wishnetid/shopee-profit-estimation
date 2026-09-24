@@ -416,6 +416,19 @@ Tambahkan entri baru di bawah ini setiap ada langkah bermakna:
 
 ---
 
+### 2026-09-24 — My Balance Analisis read-only
+
+- Input/report: Balance RAW `Transaksi Selesai` dan Ads RAW store-scoped, periode 1 Agustus–24 September 2026.
+- Coverage: 1.341 mutasi Balance; total masuk Rp129.082.682; total keluar -Rp131.129.697; net -Rp2.047.015. Ads RAW 96 event setelah dedupe: GMV Max -Rp13.169.722 dan Iklan Toko Manual -Rp1.129.365.
+- Verifikasi: DB live melalui Windows jump tunnel; builder unit test memisahkan wallet top-up, penarikan, koreksi order, dan Ads aktual; `npm test` 140 pass/2 skipped serta `npm run build` berhasil.
+- Temuan/mismatch: `Isi Ulang Saldo Iklan/Koin Penjual` My Balance sebesar -Rp15.873.000 adalah transfer ke saldo Iklan/Koin, bukan biaya Ads. Ads aktual dibaca eksklusif dari event pengurangan Ads RAW. Tidak ada event Ads overlap yang didedupe pada coverage ini.
+- Keputusan yang disetujui: taxonomy A–F disetujui sebagai layer klasifikasi read-only; tidak ada alokasi Ads ke order/SKU dan tidak ada perubahan Profit Pesanan/Estimasi Kotor.
+- Perubahan source/schema/code: tambah tab `My Balance Analisis`, API GET store-scoped `/api/my-balance-analysis`, dan builder `lib/my-balance-analysis.js`; tidak ada schema atau migration.
+- Test/deploy: pending commit/push dan validasi production.
+- Next step: audit detail harian Ads sebagai biaya store/day; setiap kebijakan alokasi profit/order harus disetujui terpisah.
+
+---
+
 ## 9. Larangan / Guardrail
 
 - Jangan menyebut Estimasi Kotor sebagai Profit Aktual.

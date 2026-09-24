@@ -10,6 +10,7 @@ const { parsePagination } = pagination;
 const require = createRequire(import.meta.url);
 const { buildProfitActualReport } = require('../lib/profit-actual.js');
 const { buildSettlementBalanceReconciliation } = require('../lib/settlement-balance-reconciliation.js');
+const { buildMyBalanceAnalysis } = require('../lib/my-balance-analysis.js');
 
 function loadDbEnv() {
   const result = { ...process.env };
@@ -484,6 +485,31 @@ test('Settlement and My Balance reconciliation keeps negative ledger events audi
   assert.equal(report.rows[0].events.length, 3);
 });
 
+test('My Balance analysis keeps wallet top-up, withdrawal, order corrections, and Ads spend in separate read-only taxonomy buckets', () => {
+  const report = buildMyBalanceAnalysis({
+    dateFrom: '2026-08-01', dateTo: '2026-08-31',
+    balanceRows: [
+      { transaction_at: '2026-08-02 10:00:00', type_transaksi: 'Pembayaran dengan Saldo Penjual', jenis_transaksi: 'Transaksi Keluar', status: 'Transaksi Selesai', description: 'Isi Ulang Saldo Iklan/Koin Penjual', jumlah_signed: -50000 },
+      { transaction_at: '2026-08-03 10:00:00', type_transaksi: 'Penarikan Dana', jenis_transaksi: 'Transaksi Keluar', status: 'Transaksi Selesai', description: 'Penarikan Dana', jumlah_signed: -100000 },
+      { transaction_at: '2026-08-04 10:00:00', type_transaksi: 'Penyesuaian', jenis_transaksi: 'Transaksi Keluar', status: 'Transaksi Selesai', description: 'Biaya premi gagal terkirim', no_pesanan_direct: 'ORDER-1', jumlah_signed: -400 },
+    ],
+    adsRows: [
+      { ads_report_import_id: 1, sequence_number: '1', transaction_date: '2026-08-02', description: 'Deduction for Product Ad (Auto Bidding - GMV Max)', jumlah_signed: -700 },
+      { ads_report_import_id: 1, sequence_number: '2', transaction_date: '2026-08-03', description: 'Pengurangan untuk Iklan Toko (Bidding Manual)', jumlah_signed: -300 },
+      { transaction_date: '2026-08-04', description: 'Isi Saldo', jumlah_signed: 1000 },
+    ],
+  });
+  const byKey = Object.fromEntries(report.categories.map((item) => [item.key, item]));
+  assert.equal(byKey.ads_wallet_topup.net, -50000);
+  assert.equal(byKey.withdrawal.net, -100000);
+  assert.equal(byKey.order_adjustment.net, -400);
+  assert.equal(byKey.ads_actual.net, -1000);
+  assert.equal(report.ads.gmvMax, 700);
+  assert.equal(report.ads.manual, 300);
+  assert.equal(report.ads.total, 1000);
+  assert.equal(report.rows.length, 3);
+});
+
 test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor stays present', () => {
   const source = fs.readFileSync(path.resolve(process.cwd(), 'app/profit/page.tsx'), 'utf8');
   const panel = fs.readFileSync(path.resolve(process.cwd(), 'components/ProfitActualPanel.tsx'), 'utf8');
@@ -502,6 +528,17 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(panel, /Penghasilan \/ Order/);
   assert.match(source, /Retur & Refund/);
   assert.match(source, /Rekonsiliasi My Balance/);
+  assert.match(source, /My Balance Analisis/);
+  assert.match(source, /MyBalanceAnalysisPanel/);
+  const balanceAnalysisRoute = fs.readFileSync(path.resolve(process.cwd(), 'app/api/my-balance-analysis/route.ts'), 'utf8');
+  const balanceAnalysisPanel = fs.readFileSync(path.resolve(process.cwd(), 'components/MyBalanceAnalysisPanel.tsx'), 'utf8');
+  assert.match(balanceAnalysisRoute, /requireStoreId/);
+  assert.match(balanceAnalysisRoute, /balance_transactions_raw/);
+  assert.match(balanceAnalysisRoute, /ads_transactions_raw/);
+  assert.doesNotMatch(balanceAnalysisRoute, /INSERT INTO|UPDATE |DELETE FROM/);
+  assert.match(balanceAnalysisPanel, /Saldo Iklan\/Koin/);
+  assert.match(balanceAnalysisPanel, /Ads Aktual Store\/Day/);
+  assert.match(balanceAnalysisPanel, /bukan order\/SKU/);
   assert.match(source, /SettlementBalanceReconciliationPanel/);
   const reconciliationRoute = fs.readFileSync(path.resolve(process.cwd(), 'app/api/settlement-balance-reconciliation/route.ts'), 'utf8');
   const reconciliationPanel = fs.readFileSync(path.resolve(process.cwd(), 'components/SettlementBalanceReconciliationPanel.tsx'), 'utf8');
