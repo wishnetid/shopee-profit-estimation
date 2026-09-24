@@ -452,6 +452,53 @@ test('Completed full return with final negative cash gets Cash Final Negatif, no
   assert.equal(unsafe.orders[0].bucket, 'exception');
 });
 
+test('Completed full return with reconciled positive Shopee compensation gets Cash Final Positif', () => {
+  const report = buildProfitActualReport({
+    skuRows: [{ sku1: 'FULL-POSITIVE', sku2: '', harga: 62500 }],
+    settlementRows: [{ no_pesanan: 'FULL-POSITIVE-ORDER', signed_total: -959, tanggal_dana_dilepaskan: '2026-09-07' }],
+    exceptionOrderNumbers: ['FULL-POSITIVE-ORDER'],
+    exceptionEvidenceRows: [
+      { no_pesanan: 'FULL-POSITIVE-ORDER', source_type: 'return_refund', source_status: 'Pengembalian Barang/Dana Dibatalkan', return_type: 'Seluruh Pesanan' },
+      { no_pesanan: 'FULL-POSITIVE-ORDER', source_type: 'return_refund', source_status: 'Banding Ditolak', return_type: 'Seluruh Pesanan', stock_status: 'Pengiriman pengembalian barang gagal' },
+      { no_pesanan: 'FULL-POSITIVE-ORDER', source_type: 'adjustment', amount: 5000 },
+    ],
+    balanceRows: [
+      { no_pesanan: 'FULL-POSITIVE-ORDER', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: -959 },
+      { no_pesanan: 'FULL-POSITIVE-ORDER', type_transaksi: 'Penyesuaian', jumlah_signed: 5000 },
+    ],
+    orderRows: [
+      { no_pesanan: 'FULL-POSITIVE-ORDER', status_pesanan: 'Selesai', nomor_referensi_sku: 'FULL-POSITIVE', sku_induk: '', jumlah: 1, returned_quantity: 1, waktu_pesanan_selesai: '2026-09-07 10:04:00', waktu_pesanan_dibuat: '2026-08-14' },
+      { no_pesanan: 'FULL-POSITIVE-ORDER', status_pesanan: 'Selesai', nomor_referensi_sku: 'FULL-POSITIVE', sku_induk: '', jumlah: 1, returned_quantity: 1, waktu_pesanan_selesai: '2026-09-07 10:04:00', waktu_pesanan_dibuat: '2026-08-14' },
+    ],
+  });
+  assert.equal(report.orders[0].bucket, 'full_return_cash_final_positive');
+  assert.equal(report.orders[0].balanceNet, 4041);
+  assert.equal(report.orders[0].balanceIncomingAdjustment, 5000);
+  assert.equal(report.orders[0].profitActual, null);
+  assert.equal(report.orders[0].provisionalProfit, null);
+  assert.equal(report.summary.fullReturnCashFinalPositive, 1);
+  assert.equal(report.summary.fullReturnCashFinalPositivePcs, 2);
+  assert.equal(report.summary.fullReturnCashFinalPositiveOutcome, 4041);
+  assert.equal(report.summary.exception, 0);
+  assert.equal(report.summary.cashCoveredOrders, 0);
+  assert.equal(report.summary.profitComputable, 0);
+  assert.equal(report.summary.hppApplied, 0);
+  assert.equal(report.summary.unresolvedOrders, 0);
+  assert.equal(report.summary.unresolvedPcs, 0);
+  const unsafe = buildProfitActualReport({
+    skuRows: [{ sku1: 'FULL-POSITIVE', sku2: '', harga: 62500 }],
+    settlementRows: [{ no_pesanan: 'UNSAFE-POSITIVE', signed_total: -959, tanggal_dana_dilepaskan: '2026-09-07' }],
+    exceptionOrderNumbers: ['UNSAFE-POSITIVE'],
+    exceptionEvidenceRows: [
+      { no_pesanan: 'UNSAFE-POSITIVE', source_type: 'return_refund', source_status: 'Banding Ditolak', return_type: 'Seluruh Pesanan', stock_status: 'Pengiriman pengembalian barang gagal' },
+      { no_pesanan: 'UNSAFE-POSITIVE', source_type: 'adjustment', amount: 5000 },
+    ],
+    balanceRows: [{ no_pesanan: 'UNSAFE-POSITIVE', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: -959 }, { no_pesanan: 'UNSAFE-POSITIVE', type_transaksi: 'Penyesuaian', jumlah_signed: 5001 }],
+    orderRows: [{ no_pesanan: 'UNSAFE-POSITIVE', status_pesanan: 'Selesai', nomor_referensi_sku: 'FULL-POSITIVE', sku_induk: '', jumlah: 1, returned_quantity: 1, waktu_pesanan_selesai: '2026-09-07 10:04:00', waktu_pesanan_dibuat: '2026-08-14' }],
+  });
+  assert.equal(unsafe.orders[0].bucket, 'exception');
+});
+
 test('Profit Aktual reports a settled partial return as provisional cash profit when My Balance settlement remains intact', () => {
   const input = {
     skuRows: [{ sku1: 'SOLD', sku2: '', harga: 52500 }, { sku1: 'RETURNED', sku2: '', harga: 50000 }],
@@ -627,9 +674,11 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(panel, /Cakupan Cash/);
   assert.match(panel, /Belum Ada Jawaban/);
   assert.match(panel, /\['unresolved', 'Belum Ada Jawaban'\]/);
-  assert.match(panel, /\['settled_normal', 'partial_return_provisional', 'full_return_cash_final_negative', 'batal'\]/);
+  assert.match(panel, /\['settled_normal', 'partial_return_provisional', 'full_return_cash_final_negative', 'full_return_cash_final_positive', 'batal'\]/);
   assert.match(panel, /Cash Final Negatif/);
+  assert.match(panel, /Cash Final Positif/);
   assert.match(panel, /fullReturnCashFinalNegativeOutcome/);
+  assert.match(panel, /fullReturnCashFinalPositiveOutcome/);
   assert.match(panel, /settlementRecorded/);
   assert.match(panel, /profitComputable/);
   assert.match(panel, /unresolvedOrders/);

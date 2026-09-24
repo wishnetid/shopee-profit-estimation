@@ -416,6 +416,26 @@ Tambahkan entri baru di bawah ini setiap ada langkah bermakna:
 
 ---
 
+### 2026-09-25 — Status `Cash Final Positif` untuk return penuh selesai dengan kompensasi Shopee
+
+- Scope: status finansial read-only baru pada `Profit Pesanan`; tanpa schema/migration dan tanpa perubahan Estimasi Kotor.
+- Status:
+  ```text
+  Cash Final Positif
+  Return penuh selesai; cash outcome final positif, QC barang menunggu
+  ```
+- Eligibility fail-closed (seluruhnya wajib):
+  1. seluruh pcs order tercatat return;
+  2. settlement `Penghasilan / Order` negatif dan sama persis dengan satu-satunya My Balance `Penghasilan dari Pesanan` keluar;
+  3. tidak ada My Balance `Penghasilan dari Pesanan` masuk, mutasi keluar lain, atau event exception non-return/non-adjustment;
+  4. ada evidence return `Banding Ditolak` dengan `Pengiriman pengembalian barang gagal`, serta seluruh evidence return hanya berstatus `Pengembalian Barang/Dana Dibatalkan` atau `Banding Ditolak`;
+  5. ada Penyesuaian Income positif; jumlah seluruh penyesuaian sama persis dengan My Balance `Penyesuaian` masuk;
+  6. net My Balance = settlement negatif + penyesuaian masuk, dan net harus positif.
+- Cash outcome memakai **net My Balance** yang telah direkonsiliasi, bukan settlement Income negatif saja. HPP/profit/margin tetap strip karena seluruh item return dan QC fisik belum diputuskan.
+- Tidak masuk `Profit Aktual Normal`, `Profit Retur Parsial`, `Settlement Tercatat`, `Profit Terhitung`, atau `Cakupan Cash`; keluar dari `Belum Ada Jawaban` karena outcome cash sudah lengkap.
+- Pilot: `260814BQYKUWFW` — settlement/reversal `-Rp959`, Penyesuaian resmi kompensasi biaya kemasan `+Rp5.000`, net My Balance/Penghasilan Akhir `+Rp4.041`, 2/2 pcs return, dan keputusan banding Seller Centre menyatakan barang telah dikembalikan ke seller. QC internal tetap `belum_dinilai`.
+- Guardrail: cash mismatch, adjustment tanpa rekonsiliasi, status/return evidence lain, return parsial, net tidak positif, atau event ledger tambahan tetap `Perlu Audit`.
+
 ### 2026-09-25 — Status `Cash Final Negatif` untuk return penuh selesai
 
 - Scope: status finansial baru pada `Profit Pesanan`; read-only, tanpa schema migration dan tanpa perubahan Estimasi Kotor.

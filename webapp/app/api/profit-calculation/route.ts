@@ -3,7 +3,7 @@ import type { RowDataPacket } from 'mysql2/promise';
 import { getConnection } from '../../../lib/db';
 import { requireStoreId } from '../../../lib/store';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { buildProfitActualReport } = require('../../../lib/profit-actual.js') as { buildProfitActualReport: (input: { orderRows: RowDataPacket[]; skuRows: RowDataPacket[]; settlementRows: RowDataPacket[]; settlementExistenceRows?: RowDataPacket[]; exceptionOrderNumbers: string[]; exceptionEvidenceRows?: Array<{ no_pesanan?: unknown; source_type?: unknown; source_status?: unknown; return_type?: unknown; stock_status?: unknown }>; balanceRows?: RowDataPacket[] }) => unknown };
+const { buildProfitActualReport } = require('../../../lib/profit-actual.js') as { buildProfitActualReport: (input: { orderRows: RowDataPacket[]; skuRows: RowDataPacket[]; settlementRows: RowDataPacket[]; settlementExistenceRows?: RowDataPacket[]; exceptionOrderNumbers: string[]; exceptionEvidenceRows?: Array<{ no_pesanan?: unknown; source_type?: unknown; source_status?: unknown; return_type?: unknown; stock_status?: unknown; amount?: unknown }>; balanceRows?: RowDataPacket[] }) => unknown };
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     const [returnRows] = await conn.query<RowDataPacket[]>(`SELECT r.no_pesanan, 'return_refund' source_type, r.no_pengembalian source_reference, r.status_pembatalan_pengembalian source_status, r.tipe_pengembalian return_type, r.variasi return_variant, r.alasan_pengembalian reason, r.jumlah_produk_dikembalikan quantity, r.total_pengembalian_dana amount, r.status_pengembalian_barang stock_status, i.source_file FROM order_return_refund_raw r JOIN order_return_refund_report_imports i ON i.id=r.order_return_refund_report_import_id WHERE i.store_id=?`, [storeId]);
     const [failedRows] = await conn.query<RowDataPacket[]>(`SELECT r.no_pesanan, 'failed_delivery' source_type, r.no_resi source_reference, r.status_klaim source_status, r.status_pengiriman_gagal reason, r.jumlah quantity, r.jumlah_kompensasi amount, NULL stock_status, i.source_file FROM order_failed_delivery_raw r JOIN order_failed_delivery_report_imports i ON i.id=r.order_failed_delivery_report_import_id WHERE i.store_id=?`, [storeId]);
     const [cancellationRows] = await conn.query<RowDataPacket[]>(`SELECT r.no_pesanan, 'cancellation' source_type, r.no_resi source_reference, r.status_pembatalan_pengembalian source_status, r.alasan_pembatalan reason, r.jumlah quantity, NULL amount, NULL stock_status, i.source_file FROM order_cancellation_raw r JOIN order_cancellation_report_imports i ON i.id=r.order_cancellation_report_import_id WHERE i.store_id=?`, [storeId]);
-    const [adjustmentRows] = await conn.query<RowDataPacket[]>(`SELECT r.no_pesanan_terhubung no_pesanan, 'adjustment' source_type, NULL source_reference, NULL source_status, NULL reason, NULL quantity, r.biaya_penyesuaian amount, NULL stock_status, i.source_file FROM income_adjustments_raw r JOIN income_report_imports i ON i.id=r.income_report_import_id WHERE i.store_id=?`, [storeId]);
+    const [adjustmentRows] = await conn.query<RowDataPacket[]>(`SELECT r.no_pesanan_terhubung no_pesanan, 'adjustment' source_type, NULL source_reference, JSON_UNQUOTE(JSON_EXTRACT(r.raw_payload, '$.tipe_penyesuaian_deskripsi')) source_status, JSON_UNQUOTE(JSON_EXTRACT(r.raw_payload, '$.alasan_penyesuaian')) reason, NULL quantity, r.biaya_penyesuaian amount, NULL stock_status, i.source_file FROM income_adjustments_raw r JOIN income_report_imports i ON i.id=r.income_report_import_id WHERE i.store_id=?`, [storeId]);
     const cohortOrderNumbers = Array.from(new Set(orderRows.map((row) => String(row.no_pesanan || '').trim()).filter(Boolean)));
     let balanceRows: RowDataPacket[] = [];
     if (cohortOrderNumbers.length) {
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
       ...returnRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'return_refund', source_status: row.source_status, return_type: row.return_type, stock_status: row.stock_status })),
       ...failedRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'failed_delivery', source_status: row.source_status })),
       ...cancellationRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'cancellation', source_status: row.source_status })),
-      ...adjustmentRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'adjustment', source_status: null })),
+      ...adjustmentRows.map((row) => ({ no_pesanan: row.no_pesanan, source_type: 'adjustment', source_status: null, amount: row.amount })),
     ];
     const report = buildProfitActualReport({ orderRows, skuRows, settlementRows, settlementExistenceRows, balanceRows, exceptionEvidenceRows, exceptionOrderNumbers: exceptionRows.map((row) => String(row.no_pesanan || '')) }) as { orders: Array<{ no_pesanan: string }>; [key: string]: unknown };
     const cohort = new Set(report.orders.map((row) => row.no_pesanan));
