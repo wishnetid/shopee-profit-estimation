@@ -556,6 +556,8 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(panel, /Profit Terhitung/);
   assert.match(panel, /Cakupan Cash/);
   assert.match(panel, /Belum Ada Jawaban/);
+  assert.match(panel, /\['unresolved', 'Belum Ada Jawaban'\]/);
+  assert.match(panel, /\['settled_normal', 'partial_return_provisional', 'batal'\]/);
   assert.match(panel, /settlementRecorded/);
   assert.match(panel, /profitComputable/);
   assert.match(panel, /unresolvedOrders/);
