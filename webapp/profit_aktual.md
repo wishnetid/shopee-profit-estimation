@@ -280,6 +280,16 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Test/deploy: koneksi canonical DB melalui Windows berhasil; tidak ada data DB yang diubah.
 - Next step: implementasi Fase 1 additive, tanpa migration/schema change: endpoint read-only + tab Profit Aktual dengan summary, bucket, dan detail order settled normal.
 
+### 2026-09-25 — Loss/Biaya Retur Final: return penuh tanpa ketergantungan QC
+
+- Berdasarkan audit RAW `Order.all`, `Return/Refund`, `Income / Penghasilan / Order`, dan `My Balance`, return penuh otomatis menjadi `Loss/Biaya Retur Final` bila: seluruh PCS return; status return `Dana Dikembalikan ke Pembeli`; settlement Income negatif; My Balance net dan mutasi `Penghasilan dari Pesanan` keluar cocok persis; tidak ada event cash tambahan; seluruh exception adalah Return/Refund.
+- Formula: `net cash final − Rp0 HPP`. Semua PCS return diasumsikan kembali persediaan untuk tujuan finansial. Ini bukan klaim kondisi fisik barang.
+- QC di tab Retur & Refund menjadi catatan internal opsional; tidak lagi mengubah routing profit/loss retur penuh maupun parsial.
+- `Loss/Biaya Retur Final` terpisah dari Profit Aktual Normal dan mengurangi `Hasil Finansial Final`.
+- `Hasil Finansial Final = Profit Aktual Normal + Profit Retur Parsial Final + Loss/Biaya Retur Final`.
+- `Hasil Finansial Terhitung` menambahkan Profit Retur Parsial Sementara untuk monitoring, tetap diberi label terpisah.
+- Cash positive khusus/kompensasi, mismatch cash, return pending, atau missing Order.all tetap `Perlu Audit`; tidak dipaksa final.
+
 ### 2026-09-25 — Profit Retur Parsial Final: asumsi stok finansial otomatis
 
 - Bucket `partial_return_final_restock` bersifat additive dan tetap **bukan Profit Aktual Normal**.

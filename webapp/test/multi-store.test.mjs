@@ -439,7 +439,7 @@ test('Return cancelled cash matched becomes Profit Aktual and retains its audit 
   assert.equal(returned.orders[0].exceptionSubstatus, null);
 });
 
-test('Completed full return with final negative cash gets Cash Final Negatif, not Perlu Audit', () => {
+test('Completed full return with reconciled negative cash becomes final return cost without physical QC', () => {
   const report = buildProfitActualReport({
     skuRows: [{ sku1: 'FULL-RETURN', sku2: '', harga: 52500 }],
     settlementRows: [{ no_pesanan: 'FULL-RETURN-ORDER', signed_total: -47813, tanggal_dana_dilepaskan: '2026-08-25' }],
@@ -454,8 +454,11 @@ test('Completed full return with final negative cash gets Cash Final Negatif, no
   assert.equal(report.summary.fullReturnCashFinalNegative, 1);
   assert.equal(report.summary.fullReturnCashFinalNegativePcs, 1);
   assert.equal(report.summary.fullReturnCashFinalNegativeOutcome, -47813);
+  assert.equal(report.orders[0].returnStockAssumption, 'stok_retur_diasumsikan');
+  assert.equal(report.summary.returnFinalCost, -47813);
+  assert.equal(report.summary.financialFinalOutcome, -47813);
   assert.equal(report.summary.exception, 0);
-  assert.equal(report.summary.profitComputable, 0);
+  assert.equal(report.summary.profitComputable, -47813);
   assert.equal(report.summary.hppApplied, 0);
   assert.equal(report.summary.unresolvedOrders, 0);
   assert.equal(report.summary.unresolvedPcs, 0);
@@ -470,7 +473,7 @@ test('Completed full return with final negative cash gets Cash Final Negatif, no
   assert.equal(unsafe.orders[0].bucket, 'exception');
 });
 
-test('Explicit Restock layak assumption closes reconciled full-return cash without recognizing HPP profit', () => {
+test('Full-return final cost does not depend on physical QC state', () => {
   const input = {
     skuRows: [{ sku1: 'ASSUMED-STOCK', sku2: '', harga: 52500 }],
     settlementRows: [{ no_pesanan: 'ASSUMED-STOCK-ORDER', signed_total: -412, tanggal_dana_dilepaskan: '2026-08-24' }],
@@ -479,22 +482,24 @@ test('Explicit Restock layak assumption closes reconciled full-return cash witho
     balanceRows: [{ no_pesanan: 'ASSUMED-STOCK-ORDER', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: -412 }],
     orderRows: [{ no_pesanan: 'ASSUMED-STOCK-ORDER', status_pesanan: 'Selesai', nomor_referensi_sku: 'ASSUMED-STOCK', sku_induk: '', jumlah: 1, returned_quantity: 1, waktu_pesanan_selesai: '2026-08-24 18:18:00', waktu_pesanan_dibuat: '2026-08-13' }],
   };
-  const withoutAssumption = buildProfitActualReport(input);
-  assert.equal(withoutAssumption.orders[0].bucket, 'exception');
-  const report = buildProfitActualReport({ ...input, returnQcByReference: { 'RETURN-ASSUMED-STOCK': 'restock_layak' } });
-  assert.equal(report.orders[0].bucket, 'full_return_cash_final_negative_assumed_stock');
-  assert.equal(report.orders[0].returnStockAssumption, 'restock_layak');
-  assert.equal(report.orders[0].profitActual, null);
-  assert.equal(report.summary.fullReturnCashFinalNegativeAssumedStock, 1);
-  assert.equal(report.summary.fullReturnCashFinalNegativeAssumedStockPcs, 1);
-  assert.equal(report.summary.fullReturnCashFinalNegativeAssumedStockOutcome, -412);
-  assert.equal(report.summary.exception, 0);
-  assert.equal(report.summary.unresolvedOrders, 0);
-  assert.equal(report.summary.unresolvedPcs, 0);
-  assert.equal(report.summary.profitComputable, 0);
-  assert.equal(report.summary.hppApplied, 0);
-  const notRestock = buildProfitActualReport({ ...input, returnQcByReference: { 'RETURN-ASSUMED-STOCK': 'rusak' } });
-  assert.equal(notRestock.orders[0].bucket, 'exception');
+  const withoutQc = buildProfitActualReport(input);
+  const restock = buildProfitActualReport({ ...input, returnQcByReference: { 'RETURN-ASSUMED-STOCK': 'restock_layak' } });
+  const damaged = buildProfitActualReport({ ...input, returnQcByReference: { 'RETURN-ASSUMED-STOCK': 'rusak' } });
+  for (const report of [withoutQc, restock, damaged]) {
+    assert.equal(report.orders[0].bucket, 'full_return_cash_final_negative');
+    assert.equal(report.orders[0].returnStockAssumption, 'stok_retur_diasumsikan');
+    assert.equal(report.orders[0].profitActual, null);
+    assert.equal(report.summary.fullReturnCashFinalNegative, 1);
+    assert.equal(report.summary.fullReturnCashFinalNegativePcs, 1);
+    assert.equal(report.summary.fullReturnCashFinalNegativeOutcome, -412);
+    assert.equal(report.summary.returnFinalCost, -412);
+    assert.equal(report.summary.financialFinalOutcome, -412);
+    assert.equal(report.summary.exception, 0);
+    assert.equal(report.summary.unresolvedOrders, 0);
+    assert.equal(report.summary.unresolvedPcs, 0);
+    assert.equal(report.summary.profitComputable, -412);
+    assert.equal(report.summary.hppApplied, 0);
+  }
 });
 
 test('Completed full return with reconciled positive Shopee compensation gets Cash Final Positif', () => {
@@ -771,17 +776,17 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(panel, /Estimasi Kotor tanpa Ads; bukan profit aktual/);
   assert.match(panel, /Cakupan Finansial/);
   assert.match(panel, /Settlement Tercatat/);
-  assert.match(panel, /Profit Terhitung/);
+  assert.match(panel, /Hasil Finansial Final/);
+  assert.match(panel, /Hasil Finansial Terhitung/);
   assert.match(panel, /Cakupan Cash/);
   assert.match(panel, /Belum Ada Jawaban/);
   assert.match(panel, /\['unresolved', 'Belum Ada Jawaban'\]/);
-  assert.match(panel, /\['settled_normal', 'partial_return_provisional', 'partial_return_final_restock', 'full_return_cash_final_negative', 'full_return_cash_final_negative_assumed_stock', 'full_return_cash_final_positive', 'batal'\]/);
+  assert.match(panel, /\['settled_normal', 'partial_return_provisional', 'partial_return_final_restock', 'full_return_cash_final_negative', 'full_return_cash_final_positive', 'batal'\]/);
   assert.match(panel, /Profit Retur Parsial Final/);
-  assert.match(panel, /Profit Final Terhitung/);
   assert.match(panel, /partial_return_final_restock/);
-  assert.match(panel, /Cash Final Negatif — Stok Diasumsikan/);
-  assert.match(panel, /fullReturnCashFinalNegativeAssumedStockOutcome/);
-  assert.match(panel, /Cash Final Negatif/);
+  assert.match(panel, /Loss\/Biaya Retur Final/);
+  assert.match(panel, /returnFinalCost/);
+  assert.match(panel, /financialFinalOutcome/);
   assert.match(panel, /Cash Final Positif/);
   assert.match(panel, /fullReturnCashFinalNegativeOutcome/);
   assert.match(panel, /fullReturnCashFinalPositiveOutcome/);
