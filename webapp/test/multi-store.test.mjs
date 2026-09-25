@@ -575,6 +575,20 @@ test('Profit Aktual reports a settled partial return as provisional cash profit 
   assert.equal(report.orders[0].nonReturnedPcs, 1);
   assert.equal(report.orders[0].returnedPcs, 1);
   assert.equal(report.orders[0].provisionalProfit, 11566);
+  assert.equal(report.summary.profitFinalComputed, 0);
+  const finalRestock = buildProfitActualReport({ ...input,
+    exceptionEvidenceRows: [{ no_pesanan: 'PARTIAL', source_type: 'return_refund', source_reference: 'RET-PARTIAL', source_status: 'Dana Dikembalikan ke Pembeli' }],
+    returnQcByReference: { 'RET-PARTIAL': 'restock_layak' },
+    balanceRows: [{ no_pesanan: 'PARTIAL', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: 64066 }],
+  });
+  assert.equal(finalRestock.orders[0].bucket, 'partial_return_final_restock');
+  assert.equal(finalRestock.orders[0].provisionalProfit, null);
+  assert.equal(finalRestock.orders[0].finalRestockProfit, 11566);
+  assert.equal(finalRestock.summary.partialReturnFinalRestock, 1);
+  assert.equal(finalRestock.summary.partialReturnFinalRestockProfit, 11566);
+  assert.equal(finalRestock.summary.partialReturnProvisional, 0);
+  assert.equal(finalRestock.summary.profitFinalComputed, 11566);
+  assert.equal(finalRestock.summary.profitComputable, 11566);
   const corrected = buildProfitActualReport({ ...input, balanceRows: [{ no_pesanan: 'PARTIAL', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: 64066 }, { no_pesanan: 'PARTIAL', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: -500 }] });
   assert.equal(corrected.orders[0].bucket, 'exception');
   assert.equal(corrected.summary.partialReturnProvisional, 0);
@@ -768,7 +782,10 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(panel, /Cakupan Cash/);
   assert.match(panel, /Belum Ada Jawaban/);
   assert.match(panel, /\['unresolved', 'Belum Ada Jawaban'\]/);
-  assert.match(panel, /\['settled_normal', 'partial_return_provisional', 'full_return_cash_final_negative', 'full_return_cash_final_negative_assumed_stock', 'full_return_cash_final_positive', 'batal'\]/);
+  assert.match(panel, /\['settled_normal', 'partial_return_provisional', 'partial_return_final_restock', 'full_return_cash_final_negative', 'full_return_cash_final_negative_assumed_stock', 'full_return_cash_final_positive', 'batal'\]/);
+  assert.match(panel, /Profit Retur Parsial Final/);
+  assert.match(panel, /Profit Final Terhitung/);
+  assert.match(panel, /partial_return_final_restock/);
   assert.match(panel, /Cash Final Negatif — Stok Diasumsikan/);
   assert.match(panel, /fullReturnCashFinalNegativeAssumedStockOutcome/);
   assert.match(panel, /Cash Final Negatif/);
@@ -804,7 +821,8 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(panel, /Perlu Audit/);
   assert.match(panel, /partial_return_provisional/);
   assert.match(panel, /My Balance keluar/);
-  assert.match(panel, /HPP retur dipertahankan sementara sebagai stok/);
+  assert.match(panel, /QC restock belum lengkap/);
+  assert.match(panel, /seluruh return QC Restock layak/);
   assert.match(panel, /Nilai minus adalah profit yang sudah terhitung/);
   assert.match(panel, /strip berarti belum aman dihitung/);
   assert.match(panel, /Cakupan Cohort/);

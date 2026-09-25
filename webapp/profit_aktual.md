@@ -280,6 +280,14 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Test/deploy: koneksi canonical DB melalui Windows berhasil; tidak ada data DB yang diubah.
 - Next step: implementasi Fase 1 additive, tanpa migration/schema change: endpoint read-only + tab Profit Aktual dengan summary, bucket, dan detail order settled normal.
 
+### 2026-09-25 — Profit Retur Parsial Final melalui QC Restock Layak
+
+- Bucket baru `partial_return_final_restock` bersifat additive dan tetap **bukan Profit Aktual Normal**.
+- Syarat ketat: retur parsial; settlement `Penghasilan / Order` positif; My Balance incoming cocok persis dengan settlement; tidak ada mutasi My Balance keluar; HPP seluruh PCS non-retur valid; semua evidence Return/Refund terkait punya QC internal `restock_layak`; tidak ada exception non-return tambahan.
+- Formula: `settlement − HPP PCS non-retur`. HPP PCS retur ditahan sebagai stok karena QC restock layak.
+- UI Profit Pesanan memisahkan `Profit Retur Parsial Final` dan `Profit Retur Parsial Sementara`, serta menambah `Profit Final Terhitung = Profit Aktual Normal + Profit Retur Parsial Final`. `Profit Terhitung` tetap monitoring gabungan final + sementara.
+- Reversal otomatis: QC diubah dari `restock_layak`, muncul mutasi keluar, settlement/My Balance mismatch, exception tambahan, atau return berubah menjadi full return — order tidak lagi masuk bucket final.
+
 ### 2026-09-25 — My Balance Analisis: wallet Ads/Koin dan summary card
 
 - Audit summary My Balance menunjukkan kartu sebelumnya belum menampilkan top-up wallet/PPN secara eksplisit dan label `Ads Aktual` berpotensi terbaca sebagai cash outflow My Balance.
