@@ -182,9 +182,18 @@ test('buildEstimationReport exposes daily totals for standard deductions, seller
   const daily = report.daily[0];
   assert.equal(daily.estimatedOrderCount, 2);
   assert.equal(daily.estimatedStandardShopeeFees, 57250);
+  assert.deepEqual(daily.standardFeeBreakdown, {
+    administration: 24750,
+    orderProcessing: 2500,
+    freeShippingXtra: 15000,
+    promoXtra: 13500,
+    premium: 1500,
+  });
   assert.equal(daily.estimatedSellerIncome, 242750);
   assert.equal(daily.totalHpp, 50000);
   assert.equal(daily.estimatedGrossBeforeFeeAds, 192750);
+  assert.equal(report.summary.estimatedStandardShopeeFees, 57250);
+  assert.deepEqual(report.summary.standardFeeBreakdown, daily.standardFeeBreakdown);
 });
 
 test('aggregateAdsSpend only counts negative Product Ad deductions and deduplicates sequenced overlap across packages', () => {

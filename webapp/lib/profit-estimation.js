@@ -338,6 +338,16 @@ function buildEstimationReport({
     .sort(sortOrdersDescending);
   const ads = aggregateAdsSpend(adsRows, dateRange);
 
+  const standardFeeBreakdown = allOrders.reduce((totals, order) => {
+    if (order.estimationStatus !== ESTIMATION_STATUS.ESTIMABLE || !order.standardFees) return totals;
+    totals.administration += order.standardFees.administration;
+    totals.orderProcessing += order.standardFees.orderProcessing;
+    totals.freeShippingXtra += order.standardFees.freeShippingXtra;
+    totals.promoXtra += order.standardFees.promoXtra;
+    totals.premium += order.standardFees.premium;
+    return totals;
+  }, { administration: 0, orderProcessing: 0, freeShippingXtra: 0, promoXtra: 0, premium: 0 });
+
   const summary = {
     totalOrderCount: allOrders.length,
     eligibleOrderCount: allOrders.filter((order) => order.estimationStatus !== ESTIMATION_STATUS.NOT_ELIGIBLE).length,
@@ -349,6 +359,8 @@ function buildEstimationReport({
     uniqueResiCount: new Set(allOrders.flatMap((order) => order.resiNumbers)).size,
     totalPcs: allOrders.reduce((total, order) => total + (order.totalQuantity || 0), 0),
     totalHpp: allOrders.reduce((total, order) => total + (order.totalHpp || 0), 0),
+    estimatedStandardShopeeFees: allOrders.reduce((total, order) => total + (order.estimationStatus === ESTIMATION_STATUS.ESTIMABLE ? (order.estimatedShopeeFees || 0) : 0), 0),
+    standardFeeBreakdown,
     estimatedGrossBeforeFeeAds: allOrders.reduce((total, order) => total + (order.estimasiKotor || 0), 0),
     adsSpend: ads.total,
     adsPpnRate: ADS_PPN_RATE,
@@ -372,6 +384,7 @@ function buildEstimationReport({
       sellerVoucher: 0,
       feeBase: 0,
       estimatedStandardShopeeFees: 0,
+      standardFeeBreakdown: { administration: 0, orderProcessing: 0, freeShippingXtra: 0, promoXtra: 0, premium: 0 },
       estimatedSellerIncome: 0,
       totalHpp: 0,
       estimatedGrossBeforeFeeAds: 0,
@@ -393,6 +406,13 @@ function buildEstimationReport({
       entry.sellerVoucher += order.sellerVoucher || 0;
       entry.feeBase += order.feeBase || 0;
       entry.estimatedStandardShopeeFees += order.estimatedShopeeFees || 0;
+      if (order.standardFees) {
+        entry.standardFeeBreakdown.administration += order.standardFees.administration;
+        entry.standardFeeBreakdown.orderProcessing += order.standardFees.orderProcessing;
+        entry.standardFeeBreakdown.freeShippingXtra += order.standardFees.freeShippingXtra;
+        entry.standardFeeBreakdown.promoXtra += order.standardFees.promoXtra;
+        entry.standardFeeBreakdown.premium += order.standardFees.premium;
+      }
       entry.estimatedSellerIncome += order.estimatedSellerIncome || 0;
       entry.totalHpp += order.totalHpp || 0;
       entry.estimatedGrossBeforeFeeAds += order.estimasiKotor || 0;

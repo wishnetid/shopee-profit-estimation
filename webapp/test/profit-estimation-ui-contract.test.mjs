@@ -23,6 +23,9 @@ test('Profit page keeps Forecast Profit & Used Ads separate from the default Pro
   assert.match(source, /Subtotal seller/);
   assert.match(source, /potongan standar Shopee/);
   assert.match(source, /Used Ads Cost/);
+  assert.match(source, /Estimasi Potongan Standar Shopee/);
+  assert.match(source, /Rincian Estimasi Potongan Standar Shopee/);
+  assert.match(source, /Tidak termasuk AMS, Ads, PPN, retur, atau adjustment/);
   assert.match(source, /Filter order parsial aktif/);
   assert.match(source, /colSpan=\{11\}/);
   assert.match(source, /HPP Belum Lengkap/);
