@@ -5,11 +5,11 @@ import { readFile } from 'node:fs/promises';
 const profitPagePath = new URL('../app/profit/page.tsx', import.meta.url);
 const layoutPath = new URL('../components/AppFrame.tsx', import.meta.url);
 
-test('Profit page keeps Estimasi Kotor separate and makes unified Profit Pesanan the default financial view', async () => {
+test('Profit page keeps Forecast Profit & Used Ads separate from the default Profit Pesanan view', async () => {
   const source = await readFile(profitPagePath, 'utf8');
 
   assert.match(source, /Profit & Estimasi/);
-  assert.match(source, /Estimasi Kotor/);
+  assert.match(source, /Forecast Profit & Used Ads/);
   assert.match(source, /Profit Pesanan/);
   assert.match(source, /setTab\('orders'\)/);
   assert.match(source, /Muat Estimasi/);
@@ -19,10 +19,11 @@ test('Profit page keeps Estimasi Kotor separate and makes unified Profit Pesanan
   assert.match(source, /const resetResult = useCallback\(\(\) => \{\s*requestSequence\.current \+= 1;\s*setData\(null\);/);
   assert.match(source, /<ProfitEstimationContent key=\{storeId \|\| 'no-store'\}/);
   assert.match(source, /function ProfitEstimationContent\(/);
-  assert.match(source, /Estimasi Kotor Setelah HPP/);
-  assert.match(source, /Subtotal Pesanan seller/);
-  assert.match(source, /Potongan Standar/);
-  assert.match(source, /Sisa Setelah Ads & PPN/);
+  assert.match(source, /Forecast Profit Pesanan &amp; Used Ads/);
+  assert.match(source, /Subtotal seller/);
+  assert.match(source, /potongan standar Shopee/);
+  assert.match(source, /Used Ads Cost/);
+  assert.match(source, /Filter order parsial aktif/);
   assert.match(source, /colSpan=\{11\}/);
   assert.match(source, /HPP Belum Lengkap/);
   assert.doesNotMatch(source, /Estimasi Profit Bersih Shopee|Penghasilan Final Settlement|Estimasi Penghasilan Pending|Model historis settlement terbaru/);
