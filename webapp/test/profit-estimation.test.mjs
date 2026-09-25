@@ -85,6 +85,62 @@ test('buildEstimationReport counts every item subtotal once but never needs Inco
   assert.equal(order.estimationStatus, ESTIMATION_STATUS.ESTIMABLE);
 });
 
+test('buildEstimationReport counts a repeated seller voucher once per multi-line order', () => {
+  const report = buildEstimationReport({
+    orderRows: [
+      orderRow({ no_pesanan: 'REPEATED-VOUCHER', subtotal_pesanan: '100000.00', voucher_ditanggung_penjual: '1000.00' }),
+      orderRow({ no_pesanan: 'REPEATED-VOUCHER', subtotal_pesanan: '200000.00', voucher_ditanggung_penjual: '1000.00', nama_variasi: 'Hijau,L' }),
+    ],
+    skuRows: [skuRow({ harga: '10000.00' })],
+  });
+
+  const order = report.orders.data[0];
+  assert.equal(order.sellerSubtotal, 300000);
+  assert.equal(order.voucherPhysicalTotal, 2000);
+  assert.equal(order.sellerVoucher, 1000);
+  assert.equal(order.voucherDeduped, true);
+  assert.equal(order.feeBase, 299000);
+  assert.equal(order.estimatedShopeeFees, 55818);
+  assert.equal(order.estimationStatus, ESTIMATION_STATUS.ESTIMABLE);
+});
+
+test('buildEstimationReport treats one positive seller voucher plus zero sibling lines as one order voucher', () => {
+  const report = buildEstimationReport({
+    orderRows: [
+      orderRow({ no_pesanan: 'VOUCHER-PLUS-ZERO', subtotal_pesanan: '100000.00', voucher_ditanggung_penjual: '1000.00' }),
+      orderRow({ no_pesanan: 'VOUCHER-PLUS-ZERO', subtotal_pesanan: '200000.00', voucher_ditanggung_penjual: '0.00', nama_variasi: 'Hijau,L' }),
+    ],
+    skuRows: [skuRow({ harga: '10000.00' })],
+  });
+
+  const order = report.orders.data[0];
+  assert.equal(order.sellerVoucher, 1000);
+  assert.equal(order.voucherPhysicalTotal, 1000);
+  assert.equal(order.voucherDeduped, false);
+  assert.equal(order.feeBase, 299000);
+  assert.equal(order.estimationStatus, ESTIMATION_STATUS.ESTIMABLE);
+});
+
+test('buildEstimationReport sends conflicting positive multi-line seller vouchers to Review', () => {
+  const report = buildEstimationReport({
+    orderRows: [
+      orderRow({ no_pesanan: 'CONFLICTING-VOUCHER', subtotal_pesanan: '100000.00', voucher_ditanggung_penjual: '1000.00' }),
+      orderRow({ no_pesanan: 'CONFLICTING-VOUCHER', subtotal_pesanan: '200000.00', voucher_ditanggung_penjual: '2000.00', nama_variasi: 'Hijau,L' }),
+    ],
+    skuRows: [skuRow({ harga: '10000.00' })],
+  });
+
+  const order = report.orders.data[0];
+  assert.equal(order.sellerVoucher, null);
+  assert.equal(order.voucherPhysicalTotal, 3000);
+  assert.equal(order.voucherDeduped, false);
+  assert.equal(order.feeBase, null);
+  assert.equal(order.standardFees, null);
+  assert.equal(order.estimationStatus, ESTIMATION_STATUS.NEEDS_REVIEW);
+  assert.ok(order.reasons.includes('VOUCHER_PENJUAL_TIDAK_KONSISTEN'));
+  assert.equal(order.estimasiKotor, null);
+});
+
 test('resi state stays available per unique order for API filtering', () => {
   const report = buildEstimationReport({
     orderRows: [

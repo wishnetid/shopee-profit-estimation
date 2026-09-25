@@ -620,6 +620,16 @@ Tambahkan entri baru di bawah ini setiap ada langkah bermakna:
 - Live audit cohort Agustus: 3 order lolos — `260831R7HC9RHK` Rp132.002 settlement/Rp27.002 profit; `26082232XMXD1C` Rp156.322/Rp31.322; `260804E8J5Q3UR` Rp151.620/Rp26.620. Total tambahan Profit Aktual Rp84.944.
 - Hasil cohort setelah promosi: Profit Aktual Normal 599 order/1.059 pcs/Rp13.732.472; Cakupan Cash 601 order/1.061 pcs; backlog `Belum Ada Jawaban` 6 order/24 pcs.
 
+### 2026-09-25 — Kalibrasi Voucher Seller pada Forecast Profit & Used Ads
+
+- Scope: hanya `Forecast Profit & Used Ads`; tidak ada perubahan ke Profit Aktual, Income settlement canonical, My Balance, HPP, retur/refund, Ads, import, schema, maupun migration.
+- Temuan: `Order.all` adalah physical item-row evidence. Pada order multi-SKU, `Voucher Ditanggung Penjual` dapat berulang dengan nominal identik di tiap line; menjumlah setiap line membuat fee base Forecast terlalu kecil dan Forecast Profit terlalu rendah.
+- Aturan Forecast baru: satu nominal voucher positif yang identik (termasuk bila sibling line bernilai Rp0) dipakai satu kali per `No. Pesanan`. Total physical line tetap dikembalikan sebagai metadata audit. Jika terdapat dua atau lebih nominal positif berbeda, order masuk `Review` dan tidak diestimasi otomatis.
+- Validasi canonical TACTICALITY, cohort dibuat 1–25 September 2026: 342 order settled comparable. Forecast fee lama Rp8.650.456 versus komponen fee Income Rp8.663.812 (selisih -Rp13.356); setelah resolusi voucher order-level Forecast Rp8.663.780 (selisih -Rp32). Income hanya evidence validasi, bukan input Forecast.
+- Dampak full Forecast TACTICALITY 1–25 September: Estimasi Potongan Standar Rp11.979.991 → Rp11.998.792; Forecast Profit sebelum Ads Rp9.726.683 → Rp9.810.882. Terdapat 64 order voucher berulang pada scope tersebut, tanpa nominal voucher konflik.
+- UI: kolom Voucher Seller menandai `Dedupe per order` dan menunjukkan total `RAW line` bila repetisi sumber dibuang.
+- Test/deploy: unit regression mencakup voucher identik berulang, voucher positif + sibling Rp0, serta nominal positif konflik fail-closed. Full test/build dan production smoke test wajib selesai sebelum rilis.
+
 ### 2026-09-24 — My Balance Analisis read-only
 
 - Input/report: Balance RAW `Transaksi Selesai` dan Ads RAW store-scoped, periode 1 Agustus–24 September 2026.

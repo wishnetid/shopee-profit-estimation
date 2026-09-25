@@ -162,6 +162,19 @@ function createOrderResult(group, skuIndex, exceptionOrderNumbers) {
   const hasInvalidSubtotal = subtotalValues.some((subtotal) => subtotal === null || subtotal < 0);
   const voucherValues = rows.map((row) => parseFiniteNumber(row.voucher_ditanggung_penjual));
   const hasInvalidVoucher = voucherValues.some((voucher) => voucher === null || voucher < 0);
+  const uniquePositiveVoucherValues = hasInvalidVoucher
+    ? []
+    : [...new Set(voucherValues.filter((voucher) => voucher !== null && voucher > 0))];
+  // Order.all repeats order-level seller vouchers on every SKU row in some exports.
+  // A single distinct positive value is one voucher per No. Pesanan, including when
+  // sibling lines carry zero. Multiple positive values are ambiguous: fail closed
+  // into Review rather than silently deduplicating or summing an unknown allocation.
+  const hasVoucherConflict = !hasInvalidVoucher && uniquePositiveVoucherValues.length > 1;
+  const sellerVoucher = hasInvalidVoucher || hasVoucherConflict
+    ? null
+    : (uniquePositiveVoucherValues[0] || 0);
+  const voucherPhysicalTotal = hasInvalidVoucher ? null : voucherValues.reduce((total, voucher) => total + (voucher || 0), 0);
+  const voucherDeduped = sellerVoucher !== null && voucherPhysicalTotal !== null && sellerVoucher !== voucherPhysicalTotal;
   const hasCancelOrReturn = rows.some((row) => normalizeText(row.alasan_pembatalan) || normalizeText(row.status_pembatalan_pengembalian));
   const hasReturnedQuantity = rows.some((row) => {
     const returnedQuantity = parseFiniteNumber(row.returned_quantity);
@@ -173,14 +186,14 @@ function createOrderResult(group, skuIndex, exceptionOrderNumbers) {
   const allEligibleStatuses = !hasMissingStatus && statuses.length > 0 && statuses.every((status) => ELIGIBLE_STATUSES.has(status));
   const orderDate = !hasMissingDate && dates.length === 1 ? dates[0] : null;
   const sellerSubtotal = hasInvalidSubtotal ? null : subtotalValues.reduce((total, subtotal) => total + subtotal, 0);
-  const sellerVoucher = hasInvalidVoucher ? null : voucherValues.reduce((total, voucher) => total + voucher, 0);
   const feeBase = sellerSubtotal !== null && sellerVoucher !== null ? sellerSubtotal - sellerVoucher : null;
 
   if (!group.no_pesanan) addReason(reasons, 'NO_PESANAN_TIDAK_VALID');
   if (hasMissingStatus) addReason(reasons, 'STATUS_PESANAN_TIDAK_VALID');
   if (hasMissingDate || dates.length !== 1) addReason(reasons, !hasMissingDate && dates.length > 1 ? 'TANGGAL_PESANAN_TIDAK_KONSISTEN' : 'TANGGAL_PESANAN_TIDAK_VALID');
   if (hasInvalidSubtotal || sellerSubtotal === null) addReason(reasons, 'SUBTOTAL_PESANAN_TIDAK_VALID');
-  if (hasInvalidVoucher || sellerVoucher === null || feeBase === null || feeBase < 0) addReason(reasons, 'VOUCHER_PENJUAL_TIDAK_VALID');
+  if (hasInvalidVoucher || (!hasVoucherConflict && (sellerVoucher === null || feeBase === null || feeBase < 0))) addReason(reasons, 'VOUCHER_PENJUAL_TIDAK_VALID');
+  if (hasVoucherConflict) addReason(reasons, 'VOUCHER_PENJUAL_TIDAK_KONSISTEN');
   if (statuses.length > 1 && hasEligibleStatus && !allEligibleStatuses) addReason(reasons, 'STATUS_PESANAN_TIDAK_KONSISTEN');
 
   const itemMappings = [];
@@ -238,6 +251,7 @@ function createOrderResult(group, skuIndex, exceptionOrderNumbers) {
     'TANGGAL_PESANAN_TIDAK_VALID',
     'SUBTOTAL_PESANAN_TIDAK_VALID',
     'VOUCHER_PENJUAL_TIDAK_VALID',
+    'VOUCHER_PENJUAL_TIDAK_KONSISTEN',
     'STATUS_PESANAN_TIDAK_VALID',
     'STATUS_PESANAN_TIDAK_KONSISTEN',
     'QUANTITY_TIDAK_VALID',
@@ -263,6 +277,8 @@ function createOrderResult(group, skuIndex, exceptionOrderNumbers) {
     totalQuantity: quantityInvalid ? null : totalQuantity,
     sellerSubtotal,
     sellerVoucher,
+    voucherPhysicalTotal,
+    voucherDeduped,
     feeBase,
     standardFees,
     estimatedShopeeFees,
