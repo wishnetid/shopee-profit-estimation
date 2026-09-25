@@ -544,7 +544,7 @@ test('Completed full return with reconciled positive Shopee compensation gets Ca
   assert.equal(unsafe.orders[0].bucket, 'exception');
 });
 
-test('Profit Aktual reports a settled partial return as provisional cash profit when My Balance settlement remains intact', () => {
+test('Profit Aktual finalizes a cash-reconciled partial return under the returned-stock assumption without QC', () => {
   const input = {
     skuRows: [{ sku1: 'SOLD', sku2: '', harga: 52500 }, { sku1: 'RETURNED', sku2: '', harga: 50000 }],
     settlementRows: [{ no_pesanan: 'PARTIAL', signed_total: 64066, tanggal_dana_dilepaskan: '2026-09-04' }],
@@ -554,9 +554,13 @@ test('Profit Aktual reports a settled partial return as provisional cash profit 
       { no_pesanan: 'PARTIAL', status_pesanan: 'Selesai', nomor_referensi_sku: 'RETURNED', sku_induk: '', jumlah: 1, returned_quantity: 1, waktu_pesanan_selesai: '2026-09-04 19:00:00', waktu_pesanan_dibuat: '2026-09-01' },
     ],
   };
-  const report = buildProfitActualReport({ ...input, balanceRows: [{ no_pesanan: 'PARTIAL', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: 64066 }] });
+  const report = buildProfitActualReport({ ...input,
+    exceptionEvidenceRows: [{ no_pesanan: 'PARTIAL', source_type: 'return_refund', source_reference: 'RET-PARTIAL', source_status: 'Dana Dikembalikan ke Pembeli' }],
+    balanceRows: [{ no_pesanan: 'PARTIAL', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: 64066 }],
+  });
   assert.equal(report.summary.settledNormal, 0);
-  assert.equal(report.summary.partialReturnProvisional, 1);
+  assert.equal(report.summary.partialReturnFinalRestock, 1);
+  assert.equal(report.summary.partialReturnProvisional, 0);
   assert.equal(report.summary.partialReturnSettlement, 64066);
   assert.equal(report.summary.partialReturnHpp, 52500);
   assert.equal(report.summary.partialReturnProfit, 11566);
@@ -569,26 +573,15 @@ test('Profit Aktual reports a settled partial return as provisional cash profit 
   assert.equal(report.summary.settlementRecorded, 64066);
   assert.equal(report.summary.hppApplied, 52500);
   assert.equal(report.summary.profitComputable, 11566);
+  assert.equal(report.summary.profitFinalComputed, 11566);
   assert.equal(report.summary.unresolvedOrders, 0);
   assert.equal(report.summary.unresolvedPcs, 0);
-  assert.equal(report.orders[0].bucket, 'partial_return_provisional');
+  assert.equal(report.orders[0].bucket, 'partial_return_final_restock');
   assert.equal(report.orders[0].nonReturnedPcs, 1);
   assert.equal(report.orders[0].returnedPcs, 1);
-  assert.equal(report.orders[0].provisionalProfit, 11566);
-  assert.equal(report.summary.profitFinalComputed, 0);
-  const finalRestock = buildProfitActualReport({ ...input,
-    exceptionEvidenceRows: [{ no_pesanan: 'PARTIAL', source_type: 'return_refund', source_reference: 'RET-PARTIAL', source_status: 'Dana Dikembalikan ke Pembeli' }],
-    returnQcByReference: { 'RET-PARTIAL': 'restock_layak' },
-    balanceRows: [{ no_pesanan: 'PARTIAL', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: 64066 }],
-  });
-  assert.equal(finalRestock.orders[0].bucket, 'partial_return_final_restock');
-  assert.equal(finalRestock.orders[0].provisionalProfit, null);
-  assert.equal(finalRestock.orders[0].finalRestockProfit, 11566);
-  assert.equal(finalRestock.summary.partialReturnFinalRestock, 1);
-  assert.equal(finalRestock.summary.partialReturnFinalRestockProfit, 11566);
-  assert.equal(finalRestock.summary.partialReturnProvisional, 0);
-  assert.equal(finalRestock.summary.profitFinalComputed, 11566);
-  assert.equal(finalRestock.summary.profitComputable, 11566);
+  assert.equal(report.orders[0].provisionalProfit, null);
+  assert.equal(report.orders[0].finalRestockProfit, 11566);
+  assert.equal(report.orders[0].returnStockAssumption, 'stok_retur_diasumsikan');
   const corrected = buildProfitActualReport({ ...input, balanceRows: [{ no_pesanan: 'PARTIAL', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: 64066 }, { no_pesanan: 'PARTIAL', type_transaksi: 'Penghasilan dari Pesanan', jumlah_signed: -500 }] });
   assert.equal(corrected.orders[0].bucket, 'exception');
   assert.equal(corrected.summary.partialReturnProvisional, 0);
@@ -821,8 +814,9 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(panel, /Perlu Audit/);
   assert.match(panel, /partial_return_provisional/);
   assert.match(panel, /My Balance keluar/);
-  assert.match(panel, /QC restock belum lengkap/);
-  assert.match(panel, /seluruh return QC Restock layak/);
+  assert.match(panel, /Retur parsial belum memenuhi rekonsiliasi cash/);
+  assert.match(panel, /stok retur diasumsikan tetap persediaan/);
+  assert.match(panel, /pcs stok retur diasumsikan/);
   assert.match(panel, /Nilai minus adalah profit yang sudah terhitung/);
   assert.match(panel, /strip berarti belum aman dihitung/);
   assert.match(panel, /Cakupan Cohort/);
