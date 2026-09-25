@@ -342,6 +342,7 @@ export default function UploadPage() {
         sheetName: data.sheetName || data.sourceFormat || 'Source package',
         canImport: data.canImport,
         duplicateHash: data.duplicateHash,
+        canonicalMode: data.canonicalMode,
         sha256: data.sha256,
         reportPeriod: data.reportPeriod,
         reconciliation: data.reconciliation,
