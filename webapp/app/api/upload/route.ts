@@ -70,7 +70,7 @@ const {
   findExistingIncomeImport,
   importIncomePackage,
 } = require('../../../lib/income-raw-db.js') as {
-  buildIncomePreview: (parsed: any, existingImport: any) => any;
+  buildIncomePreview: (conn: Connection, parsed: any, storeId: number, existingImport: any) => Promise<any>;
   findExistingIncomeImport: (conn: Connection, storeId: number, sha256: string) => Promise<any>;
   importIncomePackage: (conn: Connection, parsed: any, storeId: number) => Promise<any>;
 };
@@ -801,7 +801,7 @@ export async function POST(request: NextRequest) {
       if (reportType === 'income') {
         const parsed = parseIncomePackage(workbook as XLSX.WorkBook, sourceSnapshotFile, sha256);
         const existingImport = await findExistingIncomeImport(conn, storeId, parsed.sha256);
-        const preview = buildIncomePreview(parsed, existingImport);
+        const preview = await buildIncomePreview(conn, parsed, storeId, existingImport);
         if (!preview.valid) return NextResponse.json({ error: 'Income package ditolak.', ...preview }, { status: 400 });
         const previewTicket = preview.canImport
           ? createPreviewTicket({ storeId, sha256, reportType }, previewTicketSecret())

@@ -13,7 +13,23 @@ function toDate(value) {
   return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : null;
 }
 
-function buildIncomePreview(parsed, existingImport) {
+function buildIncomePreview(conn, parsed, storeId, existingImport) {
+  // Keep the two-argument pure preview contract used by parser/unit tests. The
+  // upload route supplies all four arguments to obtain the DB-backed overlap count.
+  if (arguments.length <= 2) {
+    const legacyParsed = conn;
+    const legacyExistingImport = parsed;
+    const duplicateHash = Boolean(legacyExistingImport);
+    const sections = {
+      penghasilanOrder: { status: legacyParsed.sections.penghasilan.status, rows: legacyParsed.sections.penghasilan.orderRows.length },
+      penghasilanSku: { status: legacyParsed.sections.penghasilan.status, rows: legacyParsed.sections.penghasilan.skuRows.length },
+      adjustment: { status: legacyParsed.sections.adjustment.status, rows: legacyParsed.sections.adjustment.rows.length },
+      shippingFeeDiscrepancy: { status: legacyParsed.sections.shippingFeeDiscrepancy.status, rows: legacyParsed.sections.shippingFeeDiscrepancy.rows.length },
+    };
+    const totalRows = Object.values(sections).reduce((sum, section) => sum + section.rows, 0);
+    return { valid: legacyParsed.valid, canImport: legacyParsed.valid && !duplicateHash, duplicateHash, existingImportId: legacyExistingImport?.id ?? null, totalRows, newRows: duplicateHash ? 0 : totalRows, existingRows: 0, unchangedRows: duplicateHash ? totalRows : 0, safeUpdateRows: 0, protectedFieldCount: 0, staleSnapshotCount: 0, regressionCount: 0, updatedRows: [], sourceFile: legacyParsed.sourceFile, sha256: legacyParsed.sha256, reportPeriod: legacyParsed.reportPeriod, summary: legacyParsed.summary, reconciliation: legacyParsed.reconciliation, sections, warnings: legacyParsed.warnings, errors: legacyParsed.errors, headers: legacyParsed.sections.penghasilan.headers.map((header) => ({ key: header.key, label: header.label })), previewRows: legacyParsed.sections.penghasilan.orderRows.slice(0, 10) };
+  }
+  return (async () => {
   const duplicateHash = Boolean(existingImport);
   const sections = {
     penghasilanOrder: { status: parsed.sections.penghasilan.status, rows: parsed.sections.penghasilan.orderRows.length },
@@ -22,15 +38,34 @@ function buildIncomePreview(parsed, existingImport) {
     shippingFeeDiscrepancy: { status: parsed.sections.shippingFeeDiscrepancy.status, rows: parsed.sections.shippingFeeDiscrepancy.rows.length },
   };
   const totalRows = Object.values(sections).reduce((sum, section) => sum + section.rows, 0);
+  const orderRows = parsed.sections.penghasilan.orderRows;
+  // The operational identity deliberately excludes the amount. If a later Seller
+  // Centre snapshot corrects an amount for the same order/release date, it replaces
+  // the canonical value instead of becoming an extra settlement.
+  const orderKeys = orderRows.map((row) => [row.no_pesanan, toDate(row.tanggal_dana_dilepaskan)]);
+  let canonicalOverlap = 0;
+  if (!duplicateHash && orderKeys.length) {
+    const [rows] = await conn.query(
+      `SELECT p.no_pesanan,p.tanggal_dana_dilepaskan
+       FROM income_penghasilan_raw p
+       JOIN income_report_imports i ON i.id=p.income_report_import_id
+       JOIN (SELECT ? no_pesanan, ? tanggal_dana_dilepaskan${orderKeys.slice(1).map(() => ' UNION ALL SELECT ?,?').join('')}) incoming
+         ON incoming.no_pesanan=p.no_pesanan AND incoming.tanggal_dana_dilepaskan=p.tanggal_dana_dilepaskan
+       WHERE i.store_id=? AND p.lihat_berdasarkan='Order'`,
+      [...orderKeys.flat(), storeId],
+    );
+    canonicalOverlap = new Set(rows.map((row) => `${row.no_pesanan}|${toDate(row.tanggal_dana_dilepaskan)}`)).size;
+  }
+  const canonicalNewOrders = Math.max(0, orderRows.length - canonicalOverlap);
   return {
     valid: parsed.valid,
     canImport: parsed.valid && !duplicateHash,
     duplicateHash,
     existingImportId: existingImport?.id ?? null,
     totalRows,
-    newRows: duplicateHash ? 0 : totalRows,
-    existingRows: 0,
-    unchangedRows: duplicateHash ? totalRows : 0,
+    newRows: duplicateHash ? 0 : canonicalNewOrders,
+    existingRows: duplicateHash ? 0 : canonicalOverlap,
+    unchangedRows: duplicateHash ? totalRows : canonicalOverlap,
     safeUpdateRows: 0,
     protectedFieldCount: 0,
     staleSnapshotCount: 0,
@@ -47,6 +82,7 @@ function buildIncomePreview(parsed, existingImport) {
     headers: parsed.sections.penghasilan.headers.map((header) => ({ key: header.key, label: header.label })),
     previewRows: parsed.sections.penghasilan.orderRows.slice(0, 10),
   };
+  })();
 }
 
 async function findExistingIncomeImport(conn, storeId, sha256) {

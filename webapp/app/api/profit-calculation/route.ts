@@ -24,20 +24,41 @@ export async function GET(request: NextRequest) {
     const [skuRows] = await conn.query<RowDataPacket[]>('SELECT sku1,sku2,harga FROM sku_master_raw WHERE sku_report_import_id=(SELECT id FROM sku_report_imports ORDER BY imported_at DESC,id DESC LIMIT 1)');
     // Order.all stores Seller Centre local timestamp text as DATETIME. Keep its calendar unchanged.
     const [orderRows] = await conn.query<RowDataPacket[]>('SELECT no_pesanan,status_pesanan,alasan_pembatalan,no_resi,waktu_pengiriman_diatur,nomor_referensi_sku,sku_induk,nama_produk,nama_variasi,jumlah,returned_quantity,subtotal_pesanan,voucher_ditanggung_penjual,total_pembayaran,status_pembatalan_pengembalian,waktu_pesanan_selesai,DATE_FORMAT(waktu_pesanan_dibuat, \'%Y-%m-%d\') waktu_pesanan_dibuat FROM order_all WHERE store_id=? AND waktu_pesanan_dibuat >= CONCAT(?, \' 00:00:00\') AND waktu_pesanan_dibuat < DATE_ADD(CONCAT(?, \' 00:00:00\'), INTERVAL 1 DAY)', [storeId, from, to]);
-    const settlementSql = 'SELECT p.no_pesanan,p.signed_total,DATE_FORMAT(p.tanggal_dana_dilepaskan, \'%Y-%m-%d\') tanggal_dana_dilepaskan FROM income_penghasilan_raw p JOIN income_report_imports i ON i.id=p.income_report_import_id WHERE i.store_id=? AND p.lihat_berdasarkan=\'Order\'';
+    // RAW Income packages are immutable and may overlap. Canonical settlement is the
+    // newest provenance row for the same Order + release-date identity; never sum views
+    // across packages. Penghasilan / SKU remains separate audit evidence.
+    const settlementSql = `SELECT ranked.no_pesanan,ranked.signed_total,DATE_FORMAT(ranked.tanggal_dana_dilepaskan, '%Y-%m-%d') tanggal_dana_dilepaskan
+      FROM (
+        SELECT p.no_pesanan,p.signed_total,p.tanggal_dana_dilepaskan,
+          ROW_NUMBER() OVER (PARTITION BY p.no_pesanan,p.tanggal_dana_dilepaskan ORDER BY i.imported_at DESC,i.id DESC,p.id DESC) canonical_rank
+        FROM income_penghasilan_raw p
+        JOIN income_report_imports i ON i.id=p.income_report_import_id
+        WHERE i.store_id=? AND p.lihat_berdasarkan='Order'
+      ) ranked WHERE ranked.canonical_rank=1`;
     const [settlementExistenceRows] = await conn.query<RowDataPacket[]>(settlementSql, [storeId]);
     // Penghasilan / SKU is audit evidence for partial-return allocation only. Never add it to Penghasilan / Order.
-    const [skuAllocationRows] = await conn.query<RowDataPacket[]>(`SELECT p.no_pesanan,p.nama_produk,p.id_produk,p.signed_total,DATE_FORMAT(p.tanggal_dana_dilepaskan, '%Y-%m-%d') tanggal_dana_dilepaskan FROM income_penghasilan_raw p JOIN income_report_imports i ON i.id=p.income_report_import_id WHERE i.store_id=? AND p.lihat_berdasarkan='Sku'`, [storeId]);
+    const [skuAllocationRows] = await conn.query<RowDataPacket[]>(`SELECT ranked.no_pesanan,ranked.nama_produk,ranked.id_produk,ranked.signed_total,DATE_FORMAT(ranked.tanggal_dana_dilepaskan, '%Y-%m-%d') tanggal_dana_dilepaskan FROM (
+      SELECT p.no_pesanan,p.nama_produk,p.id_produk,p.signed_total,p.tanggal_dana_dilepaskan,
+        ROW_NUMBER() OVER (PARTITION BY p.no_pesanan,p.id_produk,p.tanggal_dana_dilepaskan ORDER BY i.imported_at DESC,i.id DESC,p.id DESC) canonical_rank
+      FROM income_penghasilan_raw p JOIN income_report_imports i ON i.id=p.income_report_import_id
+      WHERE i.store_id=? AND p.lihat_berdasarkan='Sku'
+    ) ranked WHERE ranked.canonical_rank=1`, [storeId]);
     const releaseConditions: string[] = [];
     const releaseParams: string[] = [String(storeId)];
-    if (releaseFrom) { releaseConditions.push('p.tanggal_dana_dilepaskan >= CONCAT(?, \' 00:00:00\')'); releaseParams.push(releaseFrom); }
-    if (releaseTo) { releaseConditions.push('p.tanggal_dana_dilepaskan < DATE_ADD(CONCAT(?, \' 00:00:00\'), INTERVAL 1 DAY)'); releaseParams.push(releaseTo); }
+    if (releaseFrom) { releaseConditions.push('ranked.tanggal_dana_dilepaskan >= CONCAT(?, \' 00:00:00\')'); releaseParams.push(releaseFrom); }
+    if (releaseTo) { releaseConditions.push('ranked.tanggal_dana_dilepaskan < DATE_ADD(CONCAT(?, \' 00:00:00\'), INTERVAL 1 DAY)'); releaseParams.push(releaseTo); }
     const [settlementRows] = await conn.query<RowDataPacket[]>(`${settlementSql}${releaseConditions.length ? ` AND ${releaseConditions.join(' AND ')}` : ''}`, releaseParams);
     const [exceptionRows] = await conn.query<RowDataPacket[]>(`SELECT DISTINCT no_pesanan FROM (SELECT r.no_pesanan FROM order_cancellation_raw r JOIN order_cancellation_report_imports i ON i.id=r.order_cancellation_report_import_id WHERE i.store_id=? UNION SELECT r.no_pesanan FROM order_failed_delivery_raw r JOIN order_failed_delivery_report_imports i ON i.id=r.order_failed_delivery_report_import_id WHERE i.store_id=? UNION SELECT r.no_pesanan FROM order_return_refund_raw r JOIN order_return_refund_report_imports i ON i.id=r.order_return_refund_report_import_id WHERE i.store_id=?) x WHERE no_pesanan IS NOT NULL`, [storeId, storeId, storeId]);
     const [returnRows] = await conn.query<RowDataPacket[]>(`SELECT r.no_pesanan, 'return_refund' source_type, r.no_pengembalian source_reference, r.status_pembatalan_pengembalian source_status, r.tipe_pengembalian return_type, r.variasi return_variant, r.alasan_pengembalian reason, r.jumlah_produk_dikembalikan quantity, r.total_pengembalian_dana amount, r.status_pengembalian_barang stock_status, i.source_file FROM order_return_refund_raw r JOIN order_return_refund_report_imports i ON i.id=r.order_return_refund_report_import_id WHERE i.store_id=?`, [storeId]);
     const [failedRows] = await conn.query<RowDataPacket[]>(`SELECT r.no_pesanan, 'failed_delivery' source_type, r.no_resi source_reference, r.status_klaim source_status, r.status_pengiriman_gagal reason, r.jumlah quantity, r.jumlah_kompensasi amount, NULL stock_status, i.source_file FROM order_failed_delivery_raw r JOIN order_failed_delivery_report_imports i ON i.id=r.order_failed_delivery_report_import_id WHERE i.store_id=?`, [storeId]);
     const [cancellationRows] = await conn.query<RowDataPacket[]>(`SELECT r.no_pesanan, 'cancellation' source_type, r.no_resi source_reference, r.status_pembatalan_pengembalian source_status, r.alasan_pembatalan reason, r.jumlah quantity, NULL amount, NULL stock_status, i.source_file FROM order_cancellation_raw r JOIN order_cancellation_report_imports i ON i.id=r.order_cancellation_report_import_id WHERE i.store_id=?`, [storeId]);
-    const [adjustmentRows] = await conn.query<RowDataPacket[]>(`SELECT r.no_pesanan_terhubung no_pesanan, 'adjustment' source_type, NULL source_reference, JSON_UNQUOTE(JSON_EXTRACT(r.raw_payload, '$.tipe_penyesuaian_deskripsi')) source_status, JSON_UNQUOTE(JSON_EXTRACT(r.raw_payload, '$.alasan_penyesuaian')) reason, NULL quantity, r.biaya_penyesuaian amount, NULL stock_status, i.source_file FROM income_adjustments_raw r JOIN income_report_imports i ON i.id=r.income_report_import_id WHERE i.store_id=?`, [storeId]);
+    const [adjustmentRows] = await conn.query<RowDataPacket[]>(`SELECT ranked.no_pesanan_terhubung no_pesanan, 'adjustment' source_type, NULL source_reference, ranked.source_status, ranked.reason, NULL quantity, ranked.biaya_penyesuaian amount, NULL stock_status, ranked.source_file FROM (
+      SELECT r.no_pesanan_terhubung,r.tanggal_penyesuaian_dibuat,r.tanggal_dana_dilepaskan,r.biaya_penyesuaian,
+        JSON_UNQUOTE(JSON_EXTRACT(r.raw_payload, '$.tipe_penyesuaian_deskripsi')) source_status,
+        JSON_UNQUOTE(JSON_EXTRACT(r.raw_payload, '$.alasan_penyesuaian')) reason,i.source_file,
+        ROW_NUMBER() OVER (PARTITION BY r.no_pesanan_terhubung,r.tanggal_penyesuaian_dibuat,r.tanggal_dana_dilepaskan,r.biaya_penyesuaian ORDER BY i.imported_at DESC,i.id DESC,r.id DESC) canonical_rank
+      FROM income_adjustments_raw r JOIN income_report_imports i ON i.id=r.income_report_import_id WHERE i.store_id=?
+    ) ranked WHERE ranked.canonical_rank=1`, [storeId]);
     const cohortOrderNumbers = Array.from(new Set(orderRows.map((row) => String(row.no_pesanan || '').trim()).filter(Boolean)));
     let balanceRows: RowDataPacket[] = [];
     if (cohortOrderNumbers.length) {

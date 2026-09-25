@@ -280,6 +280,32 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Test/deploy: koneksi canonical DB melalui Windows berhasil; tidak ada data DB yang diubah.
 - Next step: implementasi Fase 1 additive, tanpa migration/schema change: endpoint read-only + tab Profit Aktual dengan summary, bucket, dan detail order settled normal.
 
+### 2026-09-25 — Income overlap canonicalization untuk update berkala
+
+- Problem ditemukan dari comparison raw Seller Centre: package lama `1 Agu–24 Sep` dan update `1–25 Sep` punya 516 settlement `Penghasilan / Order` yang overlap; hanya 30 settlement order baru. Raw package harus tetap disimpan immutable untuk provenance, tetapi overlap tidak boleh dijumlah dalam Profit Aktual.
+- Contract canonical `Penghasilan / Order`: satu settlement per `No. Pesanan + Tanggal Dana Dilepaskan`; bila snapshot Seller Centre berikutnya membawa nilai koreksi pada identity sama, package/import terbaru menjadi canonical. Identity sengaja tidak memasukkan nominal agar koreksi menggantikan, bukan menambah settlement kedua.
+- Profit Aktual dan allocation audit `Penghasilan / SKU` sekarang memilih canonical row dengan `ROW_NUMBER()` per identity dan freshness `imported_at, import_id, row_id` terbaru. Penghasilan Order dan SKU tetap tidak pernah dijumlah. Adjustment memakai canonical identity sendiri agar overlap package tidak menggandakan evidence exception.
+- Preview Income sekarang menampilkan settlement Order canonical: pada fixture live update September, 546 Order rows terdiri dari 30 canonical baru dan 516 overlap existing; package tetap importable karena immutable raw provenance baru.
+- Baseline sebelum import update: canonical Income 1.120 Order row / Rp127.775.146; Profit Aktual September 1–25: financial final Rp7.420.957, pending estimate Rp4.033.634. Ini menjadi pembanding after-import.
+- Test/deploy: `npm test` 146 pass/2 skipped dan `npm run build` berhasil. Tidak ada schema migration; package raw lama tidak diubah/dihapus.
+
+### 2026-09-25 — Search universal dan Bulk Search lintas report
+
+- `Cari / Bulk Search` ditambahkan secara read-only ke report utama: Order All, Income beserta section RAW, My Balance, Return & Refund RAW, Ads RAW, SKU Master, Estimasi Kotor, Profit Pesanan, dan Retur & Refund.
+- Input menerima teks biasa atau daftar Excel satu identifier per baris; delimiter legacy `||` tetap diterima. Baris kosong dibuang, duplikat dinormalisasi, maksimum 500 term.
+- Pencarian tetap store-scoped serta mengikuti filter tanggal/status/cohort aktif. Query dipertahankan saat pagination dan sorting.
+- Cakupan bukti: No. Pesanan, No. Resi, No. Pengembalian bila ada, SKU/reference, produk/variasi, status, serta description/reference sesuai source. Profit Pesanan/Retur & Refund ikut mencari evidence exception terkait order.
+- Guardrail: tidak mengubah RAW, summary finansial, HPP, atau definisi Estimasi Kotor. Bulk search hanya filter audit/crosscheck.
+- Test/deploy: `npm test` 146 pass / 2 skipped; `npm run build` berhasil; production deploy dan smoke test Order All/Estimasi Kotor memakai `260814BQYKUWFW` dan `260901UY5MGHJX` berhasil. Commit `2b2acb5`.
+
+### 2026-09-25 — Control profit cohort dan basis Finance
+
+- Untuk audit Finance, basis harus selalu dipisahkan: cohort `Waktu Pesanan Dibuat` versus cash basis `Tanggal Dana Dilepaskan`. Intersection kedua filter pada Profit Pesanan bukan otomatis full cash-basis P&L.
+- Evaluasi cohort bulanan yang sudah lewat wajib membuka dana dilepas hingga coverage Income terbaru; jangan berhenti di akhir bulan cohort karena order bisa cair di bulan berikutnya.
+- Control cohort berjalan dapat menampilkan `Hasil Finansial Final sudah cair + Estimasi Profit Belum Selesai − Actual Ads`. Estimasi pending tetap proyeksi tanpa Ads dan bukan settlement final; `completed_unsettled` tidak dipaksakan sebagai pending estimate.
+- Profit bersih setelah Ads default: `Hasil Finansial Final sebelum Ads − actual Ads spend`. PPN wallet tampil sebagai pengurang opsional terpisah; gross top-up wallet bukan pengganti actual Ads spend.
+- Belum ada fitur Finance Reconciliation/write input. Saat Finance menyerahkan Excel, audit harus membandingkan cutoff, komponen settlement/HPP/return-adjustment, Ads per channel, dan PPN dengan RAW application sebelum menyimpulkan angka final.
+
 ### 2026-09-25 — Kompensasi Return Final: return penuh dengan cash positif
 
 - Return penuh dengan settlement negatif, My Balance keluar yang cocok, Income Adjustment positif order-linked yang cocok dengan My Balance masuk, dan evidence return/appeal selesai masuk `Kompensasi Return Final`.
@@ -294,7 +320,7 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Formula: `net cash final − Rp0 HPP`. Semua PCS return diasumsikan kembali persediaan untuk tujuan finansial. Ini bukan klaim kondisi fisik barang.
 - QC di tab Retur & Refund menjadi catatan internal opsional; tidak lagi mengubah routing profit/loss retur penuh maupun parsial.
 - `Loss/Biaya Retur Final` terpisah dari Profit Aktual Normal dan mengurangi `Hasil Finansial Final`.
-- `Hasil Finansial Final = Profit Aktual Normal + Profit Retur Parsial Final + Loss/Biaya Retur Final`.
+- `Hasil Finansial Final = Profit Aktual Normal + Profit Retur Parsial Final + Loss/Biaya Retur Final + Kompensasi Return Final`.
 - `Hasil Finansial Terhitung` menambahkan Profit Retur Parsial Sementara untuk monitoring, tetap diberi label terpisah.
 - Cash positive khusus/kompensasi, mismatch cash, return pending, atau missing Order.all tetap `Perlu Audit`; tidak dipaksa final.
 
