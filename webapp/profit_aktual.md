@@ -280,6 +280,15 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Test/deploy: koneksi canonical DB melalui Windows berhasil; tidak ada data DB yang diubah.
 - Next step: implementasi Fase 1 additive, tanpa migration/schema change: endpoint read-only + tab Profit Aktual dengan summary, bucket, dan detail order settled normal.
 
+### 2026-09-25 — Balance overlap canonicalization untuk update berkala
+
+- Balance RAW package tetap immutable. Untuk update `1–25 September` terhadap package lama `1 Agustus–24 September`, comparison event-level menunjukkan 655 raw event: 614 overlap identik dan 41 event baru (21 event lanjutan 24 September, 20 event 25 September).
+- Identity canonical event Balance: `transaction_at + type_transaksi + description + No. Pesanan direct/extracted + jenis_transaksi + jumlah_signed + status + saldo_akhir`. Satu identity yang muncul di beberapa package memilih provenance import terbaru; raw event lain tetap tersedia untuk audit package.
+- My Balance Analisis, Profit Aktual cash routing, dan Settlement↔My Balance Reconciliation menggunakan selector canonical yang sama. Balance RAW table tetap menampilkan physical source rows/package.
+- Preview Upload Balance membedakan `raw event disimpan`, `event canonical baru`, dan `event overlap raw yang tidak dihitung ganda`; tidak lagi menyamakan raw 655 dengan delta financial/cash canonical 41.
+- Guardrail: top-up wallet/PPN tetap cash funding terpisah; Balance tidak menggantikan Income settlement dan tidak otomatis mengubah Profit Aktual Normal; tidak ada schema migration maupun penghapusan package lama.
+- Test: fixture live preview menghasilkan tepat 41 baru/614 overlap; `npm test` 146 pass/2 skipped dan `npm run build` berhasil.
+
 ### 2026-09-25 — Income overlap canonicalization untuk update berkala
 
 - Problem ditemukan dari comparison raw Seller Centre: package lama `1 Agu–24 Sep` dan update `1–25 Sep` punya 516 settlement `Penghasilan / Order` yang overlap; hanya 30 settlement order baru. Raw package harus tetap disimpan immutable untuk provenance, tetapi overlap tidak boleh dijumlah dalam Profit Aktual.

@@ -18,12 +18,13 @@ export async function GET(request: NextRequest) {
     const connection = await getConnection();
     try {
       const [balanceRows] = await connection.query<RowDataPacket[]>(`
-        SELECT DATE_FORMAT(b.transaction_at, '%Y-%m-%d %H:%i:%s') transaction_at,b.type_transaksi,b.jenis_transaksi,b.status,b.description,
-          b.no_pesanan_direct,b.no_pesanan_extracted,b.jumlah_signed,b.saldo_akhir,
-          b.source_excel_row,i.source_file
-        FROM balance_transactions_raw b
-        INNER JOIN balance_report_imports i ON i.id=b.balance_report_import_id
-        WHERE i.store_id=? AND b.status='Transaksi Selesai'
+        SELECT transaction_at,type_transaksi,jenis_transaksi,status,description,no_pesanan_direct,no_pesanan_extracted,jumlah_signed,saldo_akhir,source_excel_row,source_file
+        FROM (
+          SELECT DATE_FORMAT(b.transaction_at, '%Y-%m-%d %H:%i:%s') transaction_at,b.type_transaksi,b.jenis_transaksi,b.status,b.description,b.no_pesanan_direct,b.no_pesanan_extracted,b.jumlah_signed,b.saldo_akhir,b.source_excel_row,i.source_file,
+            ROW_NUMBER() OVER (PARTITION BY b.transaction_at,b.type_transaksi,b.description,COALESCE(NULLIF(b.no_pesanan_direct,''),NULLIF(b.no_pesanan_extracted,'')),b.jenis_transaksi,b.jumlah_signed,b.status,b.saldo_akhir ORDER BY i.imported_at DESC,i.id DESC,b.id DESC) canonical_rank
+          FROM balance_transactions_raw b INNER JOIN balance_report_imports i ON i.id=b.balance_report_import_id
+          WHERE i.store_id=? AND b.status='Transaksi Selesai'
+        ) canonical WHERE canonical_rank=1
       `, [storeId]);
       const [adsRows] = await connection.query<RowDataPacket[]>(`
         SELECT a.ads_report_import_id,a.sequence_number,DATE_FORMAT(a.transaction_date, '%Y-%m-%d') transaction_date,a.description,a.jumlah_signed,a.note

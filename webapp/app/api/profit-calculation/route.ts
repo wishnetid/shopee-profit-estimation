@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
     let balanceRows: RowDataPacket[] = [];
     if (cohortOrderNumbers.length) {
       const balanceMarks = cohortOrderNumbers.map(() => '?').join(',');
-      const [rows] = await conn.query<RowDataPacket[]>(`SELECT COALESCE(NULLIF(b.no_pesanan_direct,''),NULLIF(b.no_pesanan_extracted,'')) no_pesanan,b.type_transaksi,b.jumlah_signed FROM balance_transactions_raw b JOIN balance_report_imports i ON i.id=b.balance_report_import_id WHERE i.store_id=? AND COALESCE(NULLIF(b.no_pesanan_direct,''),NULLIF(b.no_pesanan_extracted,'')) IN (${balanceMarks})`, [storeId, ...cohortOrderNumbers]);
+      const [rows] = await conn.query<RowDataPacket[]>(`SELECT no_pesanan,type_transaksi,jumlah_signed FROM (SELECT COALESCE(NULLIF(b.no_pesanan_direct,''),NULLIF(b.no_pesanan_extracted,'')) no_pesanan,b.type_transaksi,b.jumlah_signed,ROW_NUMBER() OVER (PARTITION BY b.transaction_at,b.type_transaksi,b.description,COALESCE(NULLIF(b.no_pesanan_direct,''),NULLIF(b.no_pesanan_extracted,'')),b.jenis_transaksi,b.jumlah_signed,b.status,b.saldo_akhir ORDER BY i.imported_at DESC,i.id DESC,b.id DESC) canonical_rank FROM balance_transactions_raw b JOIN balance_report_imports i ON i.id=b.balance_report_import_id WHERE i.store_id=? AND COALESCE(NULLIF(b.no_pesanan_direct,''),NULLIF(b.no_pesanan_extracted,'')) IN (${balanceMarks})) canonical WHERE canonical_rank=1`, [storeId, ...cohortOrderNumbers]);
       balanceRows = rows;
     }
     const [qcRows] = await conn.query<RowDataPacket[]>('SELECT no_pengembalian, qc_status, qc_note, DATE_FORMAT(updated_at, \'%Y-%m-%d %H:%i\') updated_at FROM return_qc_decisions WHERE store_id=?', [storeId]);

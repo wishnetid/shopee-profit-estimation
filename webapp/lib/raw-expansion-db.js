@@ -49,6 +49,21 @@ function buildRawPreview(parsed, reportType, existing) {
   const previewColumns = (PREVIEW_COLUMNS[reportType] || []).map(([key, label]) => ({ key, label }));
   return { valid: parsed.valid, canImport: parsed.valid && !duplicateHash, duplicateHash, existingImportId: existing?.id ?? null, totalRows: rows.length, newRows: duplicateHash ? 0 : rows.length, existingRows: 0, unchangedRows: duplicateHash ? rows.length : 0, safeUpdateRows: 0, protectedFieldCount: 0, staleSnapshotCount: 0, regressionCount: 0, updatedRows: [], sourceFile: parsed.sourceFile, sha256: parsed.sha256, reportPeriod: parsed.reportPeriod, headers: parsed.headers, previewColumns, previewRows: rows.slice(0, 10), warnings: parsed.warnings, errors: parsed.errors, summary: parsed.summary || parsed.metadata || null, reconciliation: parsed.reconciliation || null, ledgerContinuity: parsed.ledgerContinuity || null, sections: { transactions: { status: parsed.valid ? 'ready' : 'blocked', rows: rows.length } } };
 }
+
+async function buildRawPreviewWithCanonical(conn, parsed, reportType, storeId, existing) {
+  const preview = buildRawPreview(parsed, reportType, existing);
+  if (reportType !== 'balance' || preview.duplicateHash || !parsed.valid) return preview;
+  const keyValue = (field, value) => ['jumlah_signed', 'saldo_akhir'].includes(field) && value != null ? String(Number(value)) : String(value ?? '').trim();
+  const keyOf = (row) => ['transaction_at', 'type_transaksi', 'description', 'order', 'jenis_transaksi', 'jumlah_signed', 'status', 'saldo_akhir'].map((field) => keyValue(field, field === 'order' ? (row.no_pesanan_direct || row.no_pesanan_extracted || '') : row[field])).join('\u001f');
+  const incoming = new Set(parsed.transactions.map(keyOf));
+  const [rows] = await conn.query(`SELECT DATE_FORMAT(b.transaction_at, '%Y-%m-%d %H:%i:%s') transaction_at,b.type_transaksi,b.description,b.no_pesanan_direct,b.no_pesanan_extracted,b.jenis_transaksi,b.jumlah_signed,b.status,b.saldo_akhir FROM balance_transactions_raw b JOIN balance_report_imports i ON i.id=b.balance_report_import_id WHERE i.store_id=?`, [storeId]);
+  let overlap = 0;
+  for (const row of rows) if (incoming.has(keyOf(row))) overlap += 1;
+  preview.newRows = parsed.transactions.length - overlap;
+  preview.unchangedRows = overlap;
+  preview.canonicalMode = 'balance_event';
+  return preview;
+}
 async function insertRows(conn, table, columns, rows) { if (!rows.length) return 0; const groups = rows.map(() => `(${columns.map(() => '?').join(',')})`).join(','); const [result] = await conn.query(`INSERT INTO ${table} (${columns.join(',')}) VALUES ${groups}`, rows.flat()); return Number(result.affectedRows || 0); }
 async function importRawPackage(conn, parsed, reportType, storeId) { const config = configFor(reportType); if (!parsed.valid) throw new Error('RAW package belum valid dan tidak boleh di-import.'); await conn.beginTransaction(); try { const existing = await findExistingRawImport(conn, reportType, storeId, parsed.sha256); if (existing) { await conn.rollback(); return { duplicate: true, importId: existing.id, inserted: 0 }; } const columns = parentColumns(config); const [parent] = await conn.query(`INSERT INTO ${config.parent} (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`, parentValues(config, parsed, storeId)); const importId = parent.insertId; const inserted = await insertRows(conn, config.child, config.childColumns, config.rows(parsed).map((row) => config.childValues(importId, row))); await conn.commit(); return { duplicate: false, importId, inserted }; } catch (error) { await conn.rollback(); throw error; } }
-module.exports = { CONFIG, buildRawPreview, findExistingRawImport, importRawPackage };
+module.exports = { CONFIG, buildRawPreview, buildRawPreviewWithCanonical, findExistingRawImport, importRawPackage };

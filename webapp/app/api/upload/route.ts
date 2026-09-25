@@ -99,8 +99,9 @@ const { parseAdsPackage } = require('../../../lib/ads-raw-import.js') as { parse
 
 const { detectRawExpansionReportType } = require('../../../lib/raw-expansion-classifier.js') as { detectRawExpansionReportType: (input: { workbook?: XLSX.WorkBook; csvBuffer?: Buffer }) => string | null };
 
-const { buildRawPreview, findExistingRawImport, importRawPackage } = require('../../../lib/raw-expansion-db.js') as {
+const { buildRawPreview, buildRawPreviewWithCanonical, findExistingRawImport, importRawPackage } = require('../../../lib/raw-expansion-db.js') as {
   buildRawPreview: (parsed: any, reportType: string, existing: any) => any;
+  buildRawPreviewWithCanonical: (conn: Connection, parsed: any, reportType: string, storeId: number, existing: any) => Promise<any>;
   findExistingRawImport: (conn: Connection, reportType: string, storeId: number, sha256: string) => Promise<any>;
   importRawPackage: (conn: Connection, parsed: any, reportType: string, storeId: number) => Promise<any>;
 };
@@ -825,7 +826,7 @@ export async function POST(request: NextRequest) {
             ? parseAdsPackage(buffer, sourceSnapshotFile, sha256)
             : parseExceptionPackage(workbook as XLSX.WorkBook, sourceSnapshotFile, sha256);
         const existingImport = await findExistingRawImport(conn, reportType, storeId, sha256);
-        const preview = buildRawPreview(parsed, reportType, existingImport);
+        const preview = await buildRawPreviewWithCanonical(conn, parsed, reportType, storeId, existingImport);
         if (!preview.valid) return NextResponse.json({ error: 'RAW package ditolak.', ...preview }, { status: 400 });
         const previewTicket = preview.canImport
           ? createPreviewTicket({ storeId, sha256, reportType }, previewTicketSecret())
