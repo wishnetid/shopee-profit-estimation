@@ -287,6 +287,7 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Profit Aktual dan allocation audit `Penghasilan / SKU` sekarang memilih canonical row dengan `ROW_NUMBER()` per identity dan freshness `imported_at, import_id, row_id` terbaru. Penghasilan Order dan SKU tetap tidak pernah dijumlah. Adjustment memakai canonical identity sendiri agar overlap package tidak menggandakan evidence exception.
 - Preview Income sekarang menampilkan settlement Order canonical: pada fixture live update September, 546 Order rows terdiri dari 30 canonical baru dan 516 overlap existing; package tetap importable karena immutable raw provenance baru.
 - Baseline sebelum import update: canonical Income 1.120 Order row / Rp127.775.146; Profit Aktual September 1–25: financial final Rp7.420.957, pending estimate Rp4.033.634. Ini menjadi pembanding after-import.
+- UI Upload Income menjelaskan eksplisit sebelum import: seluruh raw row disimpan sebagai package provenance baru; angka canonical baru adalah yang memengaruhi Profit Aktual; overlap tetap evidence raw tetapi tidak dihitung ganda.
 - Test/deploy: `npm test` 146 pass/2 skipped dan `npm run build` berhasil. Tidak ada schema migration; package raw lama tidak diubah/dihapus.
 
 ### 2026-09-25 — Search universal dan Bulk Search lintas report
