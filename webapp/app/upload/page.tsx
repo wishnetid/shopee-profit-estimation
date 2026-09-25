@@ -55,7 +55,7 @@ interface PreviewData {
   sheetName: string;
   canImport?: boolean;
   duplicateHash?: boolean;
-  canonicalMode?: 'balance_event';
+  canonicalMode?: 'balance_event' | 'ads_event';
   sha256?: string;
   reportPeriod?: { from: string | null; to: string | null };
   reconciliation?: { status: string; summaryTotal: number | null; orderSignedTotal: number | null; difference: number | null };
@@ -705,7 +705,15 @@ export default function UploadPage() {
                 </div>
               )}
 
-              {preview.newRows > 0 && !isIncomePreview && preview.canonicalMode !== 'balance_event' && (
+              {preview.newRows > 0 && preview.canonicalMode === 'ads_event' && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 text-xs text-green-700">
+                  <div><b>{preview.totalRows.toLocaleString()} raw event</b> akan disimpan sebagai package Ads baru untuk provenance.</div>
+                  <div className="mt-1"><b>{preview.newRows.toLocaleString()} event canonical baru/koreksi</b> akan memengaruhi Actual Ads.</div>
+                  {preview.unchangedRows > 0 && <div className="mt-1"><b>{preview.unchangedRows.toLocaleString()} event overlap</b> tetap tersimpan sebagai raw evidence, tetapi tidak dihitung ganda.</div>}
+                </div>
+              )}
+
+              {preview.newRows > 0 && !isIncomePreview && !['balance_event', 'ads_event'].includes(preview.canonicalMode || '') && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 text-xs text-green-700">
                   {preview.newRows} baris baru akan di-insert.
                   {preview.safeUpdateRows > 0 && ` ${preview.safeUpdateRows} baris akan di-update aman.`}

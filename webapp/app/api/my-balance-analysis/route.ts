@@ -27,10 +27,17 @@ export async function GET(request: NextRequest) {
         ) canonical WHERE canonical_rank=1
       `, [storeId]);
       const [adsRows] = await connection.query<RowDataPacket[]>(`
-        SELECT a.ads_report_import_id,a.sequence_number,DATE_FORMAT(a.transaction_date, '%Y-%m-%d') transaction_date,a.description,a.jumlah_signed,a.note
-        FROM ads_transactions_raw a
-        INNER JOIN ads_report_imports i ON i.id=a.ads_report_import_id
-        WHERE i.store_id=?
+        SELECT ads_report_import_id,sequence_number,transaction_date,description,jumlah_signed,note
+        FROM (
+          SELECT snapshot.*, ROW_NUMBER() OVER (PARTITION BY transaction_date,description,jumlah_signed,COALESCE(note,''), occurrence_rank ORDER BY imported_at DESC,ads_report_import_id DESC,id DESC) canonical_rank
+          FROM (
+            SELECT a.ads_report_import_id,a.sequence_number,DATE_FORMAT(a.transaction_date, '%Y-%m-%d') transaction_date,a.description,a.jumlah_signed,a.note,a.id,i.imported_at,
+              ROW_NUMBER() OVER (PARTITION BY a.ads_report_import_id,a.transaction_date,a.description,a.jumlah_signed,COALESCE(a.note,'') ORDER BY a.source_csv_row ASC,a.id ASC) occurrence_rank
+            FROM ads_transactions_raw a
+            INNER JOIN ads_report_imports i ON i.id=a.ads_report_import_id
+            WHERE i.store_id=?
+          ) snapshot
+        ) canonical WHERE canonical_rank=1
       `, [storeId]);
       const report = buildMyBalanceAnalysis({ balanceRows, adsRows, dateFrom, dateTo }) as Record<string, unknown>;
       return NextResponse.json({ success: true, storeId, ...report });

@@ -52,7 +52,20 @@ function buildRawPreview(parsed, reportType, existing) {
 
 async function buildRawPreviewWithCanonical(conn, parsed, reportType, storeId, existing) {
   const preview = buildRawPreview(parsed, reportType, existing);
-  if (reportType !== 'balance' || preview.duplicateHash || !parsed.valid) return preview;
+  if (!['balance', 'ads_ledger'].includes(reportType) || preview.duplicateHash || !parsed.valid) return preview;
+  if (reportType === 'ads_ledger') {
+    const keyOf = (row) => [row.transaction_date, row.description, row.jumlah_signed == null ? '' : String(Number(row.jumlah_signed)), row.note].map((value) => String(value ?? '').trim()).join('\u001f');
+    const [rows] = await conn.query(`SELECT DATE_FORMAT(a.transaction_date, '%Y-%m-%d') transaction_date,a.description,a.jumlah_signed,a.note FROM ads_transactions_raw a JOIN ads_report_imports i ON i.id=a.ads_report_import_id WHERE i.store_id=?`, [storeId]);
+    const countByKey = (items) => items.reduce((counts, row) => { const key = keyOf(row); counts.set(key, (counts.get(key) || 0) + 1); return counts; }, new Map());
+    const incomingCounts = countByKey(parsed.rows);
+    const existingCounts = countByKey(rows);
+    let overlap = 0;
+    for (const [key, count] of incomingCounts) overlap += Math.min(count, existingCounts.get(key) || 0);
+    preview.newRows = parsed.rows.length - overlap;
+    preview.unchangedRows = overlap;
+    preview.canonicalMode = 'ads_event';
+    return preview;
+  }
   const keyValue = (field, value) => ['jumlah_signed', 'saldo_akhir'].includes(field) && value != null ? String(Number(value)) : String(value ?? '').trim();
   const keyOf = (row) => ['transaction_at', 'type_transaksi', 'description', 'order', 'jenis_transaksi', 'jumlah_signed', 'status', 'saldo_akhir'].map((field) => keyValue(field, field === 'order' ? (row.no_pesanan_direct || row.no_pesanan_extracted || '') : row[field])).join('\u001f');
   const incoming = new Set(parsed.transactions.map(keyOf));

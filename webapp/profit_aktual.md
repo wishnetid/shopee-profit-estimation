@@ -280,6 +280,14 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Test/deploy: koneksi canonical DB melalui Windows berhasil; tidak ada data DB yang diubah.
 - Next step: implementasi Fase 1 additive, tanpa migration/schema change: endpoint read-only + tab Profit Aktual dengan summary, bucket, dan detail order settled normal.
 
+### 2026-09-25 — Ads RAW overlap canonicalization untuk update berkala
+
+- Ads CSV RAW package tetap immutable. Canonical Ads memakai business fingerprint tanpa `Urutan`, karena sequence export berubah antar snapshot: `transaction_date + description + jumlah_signed + note + occurrence_rank`.
+- `occurrence_rank` menjaga repeated physical event valid pada hari yang sama (contoh tiga `Isi Saldo` Rp100.000 pada 25 September); snapshot baru hanya menggantikan occurrence yang sama, bukan meruntuhkan tiga event menjadi satu.
+- Preview update `tacticalized_adwords_bill_2026-09-25.csv` dibanding Ads package lama: 153 raw event, 144 overlap event, 9 event canonical baru/koreksi. Delta itu mencakup 4 deduction Ads pada 24–25 September dan 3 top-up Rp100.000 pada 25 September; preview/raw counts tidak disamakan dengan Actual Ads spend.
+- My Balance Analysis dan Profit Estimation memakai selector canonical Ads yang sama. Balance top-up tetap dipisahkan dari actual deduction Ads; raw Ads table tetap physical/provenance.
+- Test: preview live fixture menghasilkan 9 baru/144 overlap; `npm test` 146 pass/2 skipped dan `npm run build` berhasil. Tidak ada schema migration atau package RAW dihapus.
+
 ### 2026-09-25 — Balance overlap canonicalization untuk update berkala
 
 - Balance RAW package tetap immutable. Untuk update `1–25 September` terhadap package lama `1 Agustus–24 September`, comparison event-level menunjukkan 655 raw event: 614 overlap identik dan 41 event baru (21 event lanjutan 24 September, 20 event 25 September).
