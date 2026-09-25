@@ -627,7 +627,7 @@ Tambahkan entri baru di bawah ini setiap ada langkah bermakna:
 - Aturan Forecast baru: satu nominal voucher positif yang identik (termasuk bila sibling line bernilai Rp0) dipakai satu kali per `No. Pesanan`. Total physical line tetap dikembalikan sebagai metadata audit. Jika terdapat dua atau lebih nominal positif berbeda, order masuk `Review` dan tidak diestimasi otomatis.
 - Validasi canonical TACTICALITY, cohort dibuat 1–25 September 2026: 342 order settled comparable. Forecast fee lama Rp8.650.456 versus komponen fee Income Rp8.663.812 (selisih -Rp13.356); setelah resolusi voucher order-level Forecast Rp8.663.780 (selisih -Rp32). Income hanya evidence validasi, bukan input Forecast.
 - Dampak full Forecast TACTICALITY 1–25 September: Estimasi Potongan Standar Rp11.979.991 → Rp11.998.792; Forecast Profit sebelum Ads Rp9.726.683 → Rp9.810.882. Terdapat 64 order voucher berulang pada scope tersebut, tanpa nominal voucher konflik.
-- UI: kolom Voucher Seller menandai `Dedupe per order` dan menunjukkan total `RAW line` bila repetisi sumber dibuang.
+- UI: kolom Voucher Seller menandai badge ringkas `Dedupe · RAW <nominal>` bila repetisi sumber dibuang; hover badge menjelaskan bahwa voucher dibaca sekali per No. Pesanan.
 - Test/deploy: unit regression mencakup voucher identik berulang, voucher positif + sibling Rp0, serta nominal positif konflik fail-closed. Full suite `148 pass / 2 skipped`, `npm run build` berhasil, dan production Forecast API tervalidasi. Commit code `9c5c5ee`; Vercel production alias aktif di `/profit`.
 
 ### 2026-09-24 — My Balance Analisis read-only

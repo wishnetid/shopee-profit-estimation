@@ -26,8 +26,8 @@ test('Profit page keeps Forecast Profit & Used Ads separate from the default Pro
   assert.match(source, /Estimasi Potongan Standar Shopee/);
   assert.match(source, /Rincian Estimasi Potongan Standar Shopee/);
   assert.match(source, /Tidak termasuk AMS, Ads, PPN, retur, atau adjustment/);
-  assert.match(source, /Dedupe per order/);
-  assert.match(source, /RAW line:/);
+  assert.match(source, /Dedupe · RAW/);
+  assert.match(source, /Voucher penjual dibaca sekali untuk No\. Pesanan ini/);
   assert.match(source, /VOUCHER_PENJUAL_TIDAK_KONSISTEN/);
   assert.match(source, /Filter order parsial aktif/);
   assert.match(source, /colSpan=\{11\}/);
