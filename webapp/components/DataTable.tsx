@@ -12,9 +12,9 @@ interface DataTableProps {
   columns: Column[];
   data: Record<string, unknown>[];
   totalRows: number;
-  onPageChange: (page: number, limit: number) => void;
+  onPageChange: (page: number, limit: number, queries: string[]) => void;
   onSearch: (queries: string[]) => void;
-  onSort: (column: string, direction: 'asc' | 'desc') => void;
+  onSort: (column: string, direction: 'asc' | 'desc', queries: string[]) => void;
   boundedScroll?: boolean;
 }
 
@@ -30,6 +30,7 @@ export default function DataTable({
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(50);
   const [searchText, setSearchText] = useState('');
+  const [activeQueries, setActiveQueries] = useState<string[]>([]);
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
@@ -37,15 +38,24 @@ export default function DataTable({
 
   const handlePageChange = (newPage: number) => {
     setPage(newPage);
-    onPageChange(newPage, limit);
+    onPageChange(newPage, limit, activeQueries);
   };
 
   const handleSearch = () => {
-    const queries = searchText
-      .split('\n')
+    const queries = [...new Set(searchText
+      .split(/\r?\n|\|\|/)
       .map(q => q.trim())
-      .filter(q => q.length > 0);
+      .filter(Boolean))].slice(0, 500);
+    setActiveQueries(queries);
+    setPage(1);
     onSearch(queries);
+  };
+
+  const clearSearch = () => {
+    setSearchText('');
+    setActiveQueries([]);
+    setPage(1);
+    onSearch([]);
   };
 
   const handleSort = (column: string) => {
@@ -53,7 +63,7 @@ export default function DataTable({
       sortColumn === column && sortDirection === 'asc' ? 'desc' : 'asc';
     setSortColumn(column);
     setSortDirection(newDirection);
-    onSort(column, newDirection);
+    onSort(column, newDirection, activeQueries);
   };
 
   return (
@@ -63,26 +73,10 @@ export default function DataTable({
         <div className="flex flex-col gap-3">
           {/* Search */}
           <div className="flex-1">
-            <label className="block text-xs lg:text-sm font-medium text-slate-700 mb-1.5">
-              Search
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                placeholder="Cari no pesanan, produk..."
-                className="flex-1 min-w-0 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button
-                onClick={handleSearch}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 flex-shrink-0"
-              >
-                <Search className="w-4 h-4" />
-                <span className="hidden sm:inline">Search</span>
-              </button>
-            </div>
+            <label className="block text-xs lg:text-sm font-medium text-slate-700 mb-1.5">Cari / Bulk Search</label>
+            <textarea value={searchText} onChange={(e) => setSearchText(e.target.value)} onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleSearch(); }} rows={3} placeholder="Satu baris satu ID: No. Pesanan, Resi, Pengembalian, SKU, produk…" className="block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <div className="mt-2 flex flex-wrap items-center gap-2"><button onClick={handleSearch} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5"><Search className="w-4 h-4" /><span>Cari</span></button>{activeQueries.length > 0 && <button onClick={clearSearch} className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700">Reset</button>}<span className="text-xs text-slate-500">Paste hingga 500 baris · Ctrl/Cmd + Enter untuk cari</span></div>
+            {activeQueries.length > 0 && <p className="mt-2 text-xs font-medium text-slate-600">{activeQueries.length} query aktif · {totalRows} baris cocok pada scope/filter aktif.</p>}
           </div>
 
           <div className="text-right text-xs text-slate-500">

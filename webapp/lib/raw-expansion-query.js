@@ -31,8 +31,8 @@ const SECTION_CONFIG = {
     sort: { transaction_date: 'r.transaction_date', source_file: 'i.source_file', jumlah_signed: 'r.jumlah_signed', source_csv_row: 'r.source_csv_row', imported_at: 'i.imported_at' },
   },
 };
-const MAX_SEARCH_LENGTH = 500;
-const MAX_SEARCH_TERMS = 10;
+const MAX_SEARCH_LENGTH = 50000;
+const MAX_SEARCH_TERMS = 500;
 const MAX_SEARCH_TERM_LENGTH = 100;
 
 function buildRawExpansionQueryPlan({ section, storeId, search = '', sort = 'imported_at', direction = 'desc', ...filterValues } = {}) {

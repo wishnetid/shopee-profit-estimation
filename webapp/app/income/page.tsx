@@ -155,9 +155,9 @@ export default function IncomePage() {
           columns={columns as unknown as { key: string; label: string }[]}
           data={rows}
           totalRows={payload?.total || 0}
-          onPageChange={(page, limit) => load(section, view, page, limit)}
+          onPageChange={(page, limit, queries) => load(section, view, page, limit, queries.join('||'))}
           onSearch={(queries) => load(section, view, 1, 50, queries.join('||'))}
-          onSort={(column, direction) => load(section, view, 1, 50, '', SORT_MAP[column] || 'report_period_from', direction)}
+          onSort={(column, direction, queries) => load(section, view, 1, 50, queries.join('||'), SORT_MAP[column] || 'report_period_from', direction)}
         />
       )}
     </div>

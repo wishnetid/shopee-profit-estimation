@@ -78,6 +78,7 @@ test('buildRawExpansionQueryPlan applies Ads description filters and rejects inv
   assert.throws(() => buildRawExpansionQueryPlan({ section: 'ads', storeId: 0 }), /storeId is invalid/);
   assert.throws(() => buildRawExpansionQueryPlan({ section: 'ads', storeId: 1, sort: 'source_file; DROP TABLE ads_transactions_raw' }), /Invalid RAW expansion sort/);
   assert.throws(() => buildRawExpansionQueryPlan({ section: 'ads', storeId: 1, direction: 'sideways' }), /Invalid RAW expansion direction/);
-  assert.throws(() => buildRawExpansionQueryPlan({ section: 'ads', storeId: 1, search: Array(12).fill('term').join('||') }), /terlalu banyak/);
-  assert.throws(() => buildRawExpansionQueryPlan({ section: 'ads', storeId: 1, search: 'x'.repeat(501) }), /terlalu panjang/);
+  assert.doesNotThrow(() => buildRawExpansionQueryPlan({ section: 'ads', storeId: 1, search: Array(500).fill('term').join('||') }));
+  assert.throws(() => buildRawExpansionQueryPlan({ section: 'ads', storeId: 1, search: Array(501).fill('term').join('||') }), /terlalu banyak/);
+  assert.throws(() => buildRawExpansionQueryPlan({ section: 'ads', storeId: 1, search: 'x'.repeat(50001) }), /terlalu panjang/);
 });

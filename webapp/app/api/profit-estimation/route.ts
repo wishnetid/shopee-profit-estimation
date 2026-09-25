@@ -104,6 +104,16 @@ export async function GET(request: NextRequest) {
     scopedOrderParams.push(...selectedStatuses);
   }
 
+  const searchText = sp.get('search') || '';
+  if (searchText.length > 50000) return NextResponse.json({ error: 'Bulk search terlalu panjang.' }, { status: 400 });
+  const searchTerms = Array.from(new Set(searchText.split(/\r?\n|\|\|/).map((value) => value.trim()).filter(Boolean)));
+  if (searchTerms.length > 500 || searchTerms.some((value) => value.length > 100)) return NextResponse.json({ error: 'Bulk search maksimal 500 baris dan 100 karakter per baris.' }, { status: 400 });
+  if (searchTerms.length) {
+    const columns = ['scoped.no_pesanan', 'scoped.no_resi', 'scoped.nomor_referensi_sku', 'scoped.sku_induk', 'scoped.nama_produk', 'scoped.nama_variasi', 'scoped.status_pesanan'];
+    scopedOrderFilters.push(`(${searchTerms.map(() => `(${columns.map((column) => `${column} LIKE ?`).join(' OR ')})`).join(' OR ')})`);
+    for (const term of searchTerms) scopedOrderParams.push(...columns.map(() => `%${term}%`));
+  }
+
   const resiFilter = sp.get('resiFilter');
   if (resiFilter !== null && resiFilter !== 'all' && resiFilter !== 'with' && resiFilter !== 'without') {
     return NextResponse.json({ error: 'Filter No. Resi tidak valid.' }, { status: 400 });

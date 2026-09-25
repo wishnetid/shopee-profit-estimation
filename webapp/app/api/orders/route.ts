@@ -52,11 +52,14 @@ export async function GET(request: NextRequest) {
     let whereClause = 'WHERE store_id = ?';
 
     if (search) {
-      const queries = search.split('||').map(q => q.trim()).filter(Boolean);
+      if (search.length > 50000) return NextResponse.json({ error: 'Bulk search terlalu panjang.' }, { status: 400 });
+      const queries = Array.from(new Set(search.split(/\r?\n|\|\|/).map(q => q.trim()).filter(Boolean)));
+      if (queries.length > 500 || queries.some((query) => query.length > 100)) return NextResponse.json({ error: 'Bulk search maksimal 500 baris dan 100 karakter per baris.' }, { status: 400 });
       if (queries.length > 0) {
-        const conditions = queries.map(() => `(no_pesanan LIKE ? OR nama_produk LIKE ? OR nomor_referensi_sku LIKE ? OR sku_induk LIKE ? OR username_pembeli LIKE ? OR status_pesanan LIKE ?)`).join(' OR ');
+        const columns = ['no_pesanan', 'no_resi', 'nama_produk', 'nomor_referensi_sku', 'sku_induk', 'nama_variasi', 'username_pembeli', 'nama_penerima', 'no_telepon', 'status_pesanan'];
+        const conditions = queries.map(() => `(${columns.map((column) => `${column} LIKE ?`).join(' OR ')})`).join(' OR ');
         whereClause += ` AND (${conditions})`;
-        for (const query of queries) { const term = `%${query}%`; params.push(term, term, term, term, term, term); }
+        for (const query of queries) { const term = `%${query}%`; params.push(...columns.map(() => term)); }
       }
     }
     for (const column of DATE_FILTER_COLUMNS) {

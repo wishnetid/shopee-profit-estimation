@@ -331,6 +331,9 @@ test('Order All exposes the complete business RAW contract, including buyer deli
   const dataTable = fs.readFileSync(path.resolve(process.cwd(), 'components/DataTable.tsx'), 'utf8');
   assert.match(dataTable, /max-h-\[437px\] overflow-auto/);
   assert.match(dataTable, /sticky top-0 z-10/);
+  assert.match(dataTable, /Cari \/ Bulk Search/);
+  assert.match(dataTable, /Paste hingga 500 baris/);
+  assert.match(dataTable, /activeQueries/);
   assert.match(ordersPage, /Filter Tanggal/);
   assert.match(ordersPage, /completedOnly/);
   for (const field of ['pesanan_harus_dikirim_sebelum', 'waktu_pengiriman_diatur', 'waktu_pesanan_dibuat', 'waktu_pembayaran_dilakukan', 'waktu_pesanan_selesai']) {

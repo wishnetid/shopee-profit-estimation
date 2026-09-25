@@ -115,9 +115,9 @@ export default function SKUPage() {
           columns={SKU_COLUMNS}
           data={rows}
           totalRows={payload.total || 0}
-          onPageChange={(page, limit) => load(page, limit)}
+          onPageChange={(page, limit, queries) => load(page, limit, queries)}
           onSearch={(queries) => load(1, 50, queries)}
-          onSort={(column, direction) => load(1, 50, [], column, direction)}
+          onSort={(column, direction, queries) => load(1, 50, queries, column, direction)}
         />
       )}
     </div>

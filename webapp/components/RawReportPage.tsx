@@ -145,9 +145,9 @@ export default function RawReportPage({
             columns={columns}
             data={data.data || []}
             totalRows={data.total || 0}
-            onPageChange={(page, limit) => void load(page, limit)}
+            onPageChange={(page, limit, queries) => void load(page, limit, queries.join('||'))}
             onSearch={(queries) => void load(1, 50, queries.join('||'))}
-            onSort={(column, direction) => void load(1, 50, '', column, direction)}
+            onSort={(column, direction, queries) => void load(1, 50, queries.join('||'), column, direction)}
           />
         ) : (
           <DataTable
