@@ -280,6 +280,14 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 - Test/deploy: koneksi canonical DB melalui Windows berhasil; tidak ada data DB yang diubah.
 - Next step: implementasi Fase 1 additive, tanpa migration/schema change: endpoint read-only + tab Profit Aktual dengan summary, bucket, dan detail order settled normal.
 
+### 2026-09-25 — Kompensasi Return Final: return penuh dengan cash positif
+
+- Return penuh dengan settlement negatif, My Balance keluar yang cocok, Income Adjustment positif order-linked yang cocok dengan My Balance masuk, dan evidence return/appeal selesai masuk `Kompensasi Return Final`.
+- Formula: `net My Balance final − Rp0 HPP`.
+- Masuk `Hasil Finansial Final`, terpisah dari Profit Aktual Normal dan Loss/Biaya Retur Final.
+- Contoh tervalidasi: `260814BQYKUWFW` menghasilkan kompensasi net `Rp4.041`.
+- Mismatch, cash event tambahan yang belum dijelaskan, atau evidence return tidak lengkap tetap `Perlu Audit`.
+
 ### 2026-09-25 — Loss/Biaya Retur Final: return penuh tanpa ketergantungan QC
 
 - Berdasarkan audit RAW `Order.all`, `Return/Refund`, `Income / Penghasilan / Order`, dan `My Balance`, return penuh otomatis menjadi `Loss/Biaya Retur Final` bila: seluruh PCS return; status return `Dana Dikembalikan ke Pembeli`; settlement Income negatif; My Balance net dan mutasi `Penghasilan dari Pesanan` keluar cocok persis; tidak ada event cash tambahan; seluruh exception adalah Return/Refund.

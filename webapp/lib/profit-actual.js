@@ -164,6 +164,7 @@ function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlemen
     const provisionalProfit = bucket === 'partial_return_provisional' ? partialReturnProfit : null;
     const finalRestockProfit = bucket === 'partial_return_final_restock' ? partialReturnProfit : null;
     const returnFinalCost = bucket === 'full_return_cash_final_negative' ? settlement : null;
+    const returnFinalCompensation = bucket === 'full_return_cash_final_positive' ? balance.net : null;
     const pendingEstimate = bucket === 'pending' ? buildPendingEstimate(group.rows, skuIndex) : null;
     if (balance.outgoing < 0) { summary.balanceOutgoingOrders++; summary.balanceOutgoingTotal += balance.outgoing; summary.balanceOrderIncomeOutgoing += balance.orderIncomeOutgoing; summary.balanceAdjustmentOutgoing += balance.adjustmentOutgoing; summary.balanceOtherOutgoing += balance.otherOutgoing; }
     if (bucket === 'settled_normal') { summary.settledNormal++; summary.settledNormalPcs += orderedPcs; if (profitActual < 0) summary.settledNormalLoss++; summary.settlement += settlement; summary.hpp += totalHpp; summary.profit += profitActual; }
@@ -194,8 +195,9 @@ function buildProfitActualReport({ orderRows, skuRows, settlementRows, settlemen
   summary.hppApplied = computable.reduce((total, order) => total + (partialBuckets.has(order.bucket) ? order.nonReturnedHpp : order.totalHpp), 0);
   summary.profitFinalComputed = finalComputable.reduce((total, order) => total + (order.bucket === 'partial_return_final_restock' ? (order.finalRestockProfit || 0) : (order.profitActual || 0)), 0);
   summary.returnFinalCost = orders.filter((order) => order.bucket === 'full_return_cash_final_negative').reduce((total, order) => total + (order.settlement || 0), 0);
-  summary.financialFinalOutcome = summary.profitFinalComputed + summary.returnFinalCost;
-  summary.profitComputable = computable.reduce((total, order) => total + (partialBuckets.has(order.bucket) ? (order.provisionalProfit || order.finalRestockProfit || 0) : (order.profitActual || 0)), 0) + summary.returnFinalCost;
+  summary.returnFinalCompensation = orders.filter((order) => order.bucket === 'full_return_cash_final_positive').reduce((total, order) => total + (order.balanceNet || 0), 0);
+  summary.financialFinalOutcome = summary.profitFinalComputed + summary.returnFinalCost + summary.returnFinalCompensation;
+  summary.profitComputable = computable.reduce((total, order) => total + (partialBuckets.has(order.bucket) ? (order.provisionalProfit || order.finalRestockProfit || 0) : (order.profitActual || 0)), 0) + summary.returnFinalCost + summary.returnFinalCompensation;
   summary.unresolvedOrders = orders.filter((order) => !resolvedBuckets.has(order.bucket)).length;
   return { summary, orders };
 }

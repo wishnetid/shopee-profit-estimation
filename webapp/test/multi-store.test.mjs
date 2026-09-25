@@ -502,7 +502,7 @@ test('Full-return final cost does not depend on physical QC state', () => {
   }
 });
 
-test('Completed full return with reconciled positive Shopee compensation gets Cash Final Positif', () => {
+test('Completed full return with reconciled positive Shopee compensation becomes Kompensasi Return Final', () => {
   const report = buildProfitActualReport({
     skuRows: [{ sku1: 'FULL-POSITIVE', sku2: '', harga: 62500 }],
     settlementRows: [{ no_pesanan: 'FULL-POSITIVE-ORDER', signed_total: -959, tanggal_dana_dilepaskan: '2026-09-07' }],
@@ -529,9 +529,11 @@ test('Completed full return with reconciled positive Shopee compensation gets Ca
   assert.equal(report.summary.fullReturnCashFinalPositive, 1);
   assert.equal(report.summary.fullReturnCashFinalPositivePcs, 2);
   assert.equal(report.summary.fullReturnCashFinalPositiveOutcome, 4041);
+  assert.equal(report.summary.returnFinalCompensation, 4041);
+  assert.equal(report.summary.financialFinalOutcome, 4041);
   assert.equal(report.summary.exception, 0);
   assert.equal(report.summary.cashCoveredOrders, 0);
-  assert.equal(report.summary.profitComputable, 0);
+  assert.equal(report.summary.profitComputable, 4041);
   assert.equal(report.summary.hppApplied, 0);
   assert.equal(report.summary.unresolvedOrders, 0);
   assert.equal(report.summary.unresolvedPcs, 0);
@@ -787,7 +789,7 @@ test('Profit page exposes an additive Profit Aktual panel while Estimasi Kotor s
   assert.match(panel, /Loss\/Biaya Retur Final/);
   assert.match(panel, /returnFinalCost/);
   assert.match(panel, /financialFinalOutcome/);
-  assert.match(panel, /Cash Final Positif/);
+  assert.match(panel, /Kompensasi Return Final/);
   assert.match(panel, /fullReturnCashFinalNegativeOutcome/);
   assert.match(panel, /fullReturnCashFinalPositiveOutcome/);
   assert.match(panel, /Batal Sebelum Pengiriman/);
