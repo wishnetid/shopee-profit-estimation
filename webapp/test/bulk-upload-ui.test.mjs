@@ -26,6 +26,14 @@ test('bulk upload UI previews before selected import and preserves per-file prev
   assert.match(source, /Import Selected/);
 });
 
+test('bulk upload queue does not treat provenance-only Order.all snapshot changes as importable', () => {
+  const source = fs.readFileSync(path.resolve(process.cwd(), 'app/api/upload/route.ts'), 'utf8');
+  assert.match(source, /materialUpdateRows/);
+  assert.match(source, /reportType === 'order_all'[\s\S]*newRows[\s\S]*materialUpdateRows/);
+  assert.match(source, /ORDER_ALL_PREVIEW_STALE_NOOP/);
+  assert.match(source, /preview tickets prove the file was reviewed/i);
+});
+
 test('bulk upload UI resets its queue when the active store changes', () => {
   const source = fs.readFileSync(pagePath, 'utf8');
   assert.match(source, /setBulkQueue\(\[\]\)/);

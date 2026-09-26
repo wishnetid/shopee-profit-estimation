@@ -365,7 +365,11 @@ async function previewOrderAll(
 
   let newCount = 0;
   let existingCount = 0;
+  // `safeUpdateCount` includes provenance-only snapshot timestamp writes for
+  // audit visibility. Only `materialUpdateCount` represents a business-field
+  // change that warrants a new Order.all import.
   let safeUpdateCount = 0;
+  let materialUpdateCount = 0;
   let protectedFieldCount = 0;
   let staleSnapshotCount = 0;
   const updatedRows: any[] = [];
@@ -415,6 +419,7 @@ async function previewOrderAll(
     const effectiveChanged = ORDER_COLS.some((dbCol) => !sameImportValue(resolution.row[dbCol], dbRow[dbCol]));
     const writesProvenance = shouldWriteSnapshotProvenance(dbRow, sourceSnapshotAt, resolution);
     if (effectiveChanged || writesProvenance) safeUpdateCount++;
+    if (effectiveChanged) materialUpdateCount++;
     protectedFieldCount += resolution.protectedColumns.length;
     if (resolution.staleSnapshot) staleSnapshotCount++;
 
@@ -446,6 +451,7 @@ async function previewOrderAll(
     existingRows: existingCount,
     updatedRows,
     safeUpdateRows: safeUpdateCount,
+    materialUpdateRows: materialUpdateCount,
     protectedFieldCount,
     staleSnapshotCount,
     regressionCount: updatedRows.filter(row => row.regressions.length > 0).length,
@@ -845,7 +851,12 @@ export async function POST(request: NextRequest) {
       }
       const preview = await handlePreview(workbook as XLSX.WorkBook, reportType, conn, storeId, sourceSnapshotAt, sourceSnapshotFile);
       if (!preview) return NextResponse.json({ error: 'Cannot parse file for preview.' }, { status: 400 });
-      const canImport = (preview as any).canImport ?? Boolean((preview as any).newRows > 0 || (preview as any).safeUpdateRows > 0);
+      // Order.all provenance timestamps are not a user-visible import delta.
+      // A re-preview of unchanged business rows must be no-op even if the
+      // browser supplied a later export timestamp.
+      const canImport = reportType === 'order_all'
+        ? Boolean((preview as any).newRows > 0 || (preview as any).materialUpdateRows > 0)
+        : ((preview as any).canImport ?? Boolean((preview as any).newRows > 0 || (preview as any).safeUpdateRows > 0));
       const previewTicket = canImport
         ? createPreviewTicket({ storeId, sha256, reportType }, previewTicketSecret())
         : null;
@@ -879,9 +890,35 @@ export async function POST(request: NextRequest) {
     let result: any;
 
     switch (reportType) {
-      case 'order_all':
+      case 'order_all': {
+        // Preview tickets prove the file was reviewed, not that DB state stayed
+        // unchanged while another import finished. Re-read the current state so
+        // a stale Bulk Queue cannot write provenance-only retries.
+        const currentPreview = await previewOrderAll(
+          workbook as XLSX.WorkBook,
+          conn,
+          storeId,
+          sourceSnapshotAt!,
+          sourceSnapshotFile,
+        );
+        if (!currentPreview) throw new Error('Order.all tidak dapat dipreview ulang sebelum import.');
+        const hasMaterialDelta = currentPreview.newRows > 0 || currentPreview.materialUpdateRows > 0;
+        if (!hasMaterialDelta) {
+          return NextResponse.json({
+            error: 'Order.all tidak memiliki perubahan data material sejak preview. Jalankan Bulk Preview ulang; file ini adalah no-op.',
+            code: 'ORDER_ALL_PREVIEW_STALE_NOOP',
+            preview: {
+              totalRows: currentPreview.totalRows,
+              newRows: currentPreview.newRows,
+              existingRows: currentPreview.existingRows,
+              materialUpdateRows: currentPreview.materialUpdateRows,
+              staleSnapshotCount: currentPreview.staleSnapshotCount,
+            },
+          }, { status: 409 });
+        }
         result = await importOrderAll(workbook as XLSX.WorkBook, conn, storeId, sourceSnapshotAt!, sourceSnapshotFile);
         break;
+      }
       case 'income':
         result = await importIncomePackage(conn, parseIncomePackage(workbook as XLSX.WorkBook, sourceSnapshotFile, sha256), storeId);
         break;
