@@ -12,7 +12,9 @@ const mysql = require('mysql2/promise');
 const TABLE = 'order_all';
 const COLUMN = 'status_pesanan';
 const TARGET_LENGTH = 255;
-const TARGET_DEFINITION = `VARCHAR(${TARGET_LENGTH}) NOT NULL`;
+// Preserve current NULL semantics: an absent source status must not become an
+// empty string merely because this migration widens its maximum length.
+const TARGET_DEFINITION = `VARCHAR(${TARGET_LENGTH}) DEFAULT NULL`;
 
 function isApplyConfirmed(argv = process.argv.slice(2)) {
   return argv.includes('--apply') && argv.includes('--confirm-ddl');
@@ -50,7 +52,6 @@ function needsWidening(state) {
 
 function assertReady(state) {
   if (!state.exists) throw new Error(`Migration stopped: ${TABLE}.${COLUMN} is missing.`);
-  if (state.isNullable) throw new Error(`Migration stopped: ${TABLE}.${COLUMN} must remain NOT NULL.`);
   if (state.varcharLength === null || state.varcharLength < TARGET_LENGTH) {
     throw new Error(`Migration verification failed: ${TABLE}.${COLUMN} must be VARCHAR(${TARGET_LENGTH}) or wider.`);
   }
@@ -87,7 +88,6 @@ async function main(argv = process.argv.slice(2)) {
   try {
     const before = await inspect(conn);
     if (!before.exists) throw new Error(`Migration stopped: ${TABLE}.${COLUMN} is missing.`);
-    if (before.isNullable) throw new Error(`Migration stopped: ${TABLE}.${COLUMN} is nullable; refusing to alter implicit semantics.`);
     if (!apply) {
       console.log(JSON.stringify({
         mode: 'dry-run',

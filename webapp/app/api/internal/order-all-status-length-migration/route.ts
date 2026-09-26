@@ -11,7 +11,8 @@ export const dynamic = 'force-dynamic';
 const TABLE = 'order_all';
 const COLUMN = 'status_pesanan';
 const TARGET_LENGTH = 255;
-const TARGET_DEFINITION = `VARCHAR(${TARGET_LENGTH}) NOT NULL`;
+// Preserve the existing nullable semantics while widening source capacity.
+const TARGET_DEFINITION = `VARCHAR(${TARGET_LENGTH}) DEFAULT NULL`;
 
 function parseVarcharLength(columnType: unknown) {
   const match = String(columnType || '').match(/^varchar\((\d+)\)$/i);
@@ -66,7 +67,6 @@ export async function POST(request: NextRequest) {
     conn = await connection();
     const before = await inspect(conn);
     if (!before.exists) throw new Error(`${TABLE}.${COLUMN} is missing.`);
-    if (before.isNullable) throw new Error(`${TABLE}.${COLUMN} is nullable; refusing to alter implicit semantics.`);
 
     const applied: string[] = [];
     if (needsWidening(before)) {
@@ -75,8 +75,8 @@ export async function POST(request: NextRequest) {
     }
 
     const after = await inspect(conn);
-    if (!after.exists || after.isNullable || after.varcharLength === null || after.varcharLength < TARGET_LENGTH) {
-      throw new Error(`Migration verification failed: ${TABLE}.${COLUMN} must be VARCHAR(${TARGET_LENGTH}) NOT NULL or wider.`);
+    if (!after.exists || after.varcharLength === null || after.varcharLength < TARGET_LENGTH) {
+      throw new Error(`Migration verification failed: ${TABLE}.${COLUMN} must be VARCHAR(${TARGET_LENGTH}) or wider.`);
     }
     return NextResponse.json({ success: true, applied, before, after });
   } catch (error: any) {
