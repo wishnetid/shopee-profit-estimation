@@ -11,6 +11,7 @@ const {
   getOrderAllCompositeKeyFromStoredRow,
   getOrderAllIdentityValues,
   parseIdr,
+  resolveEffectiveSkuIdentity,
   parseSnapshotAt,
   resolveOrderSnapshot,
   validateOrderAllCompositeKeys,
@@ -21,6 +22,7 @@ const {
   getOrderAllCompositeKeyFromStoredRow: (row: Record<string, unknown>) => string | null;
   getOrderAllIdentityValues: (row: Record<string, unknown>) => [string, string, string, number, number] | null;
   parseIdr: (value: unknown) => number | null;
+  resolveEffectiveSkuIdentity: (input: { nomorReferensiSku: unknown; skuInduk: unknown }) => string | null;
   parseSnapshotAt: (value: unknown) => string | null;
   resolveOrderSnapshot: (
     existingRow: Record<string, unknown>,
@@ -236,7 +238,7 @@ function validateOrderAllWorkbook(workbook: XLSX.WorkBook) {
   if (!keyValidation.valid) {
     return {
       valid: false,
-      error: `Order.all ditolak: composite key wajib lengkap (contoh row Excel: ${keyValidation.missingSamples.join(', ')}).`,
+      error: `Order.all ditolak: composite key wajib lengkap; isi No. Pesanan, Nomor Referensi SKU atau SKU Induk, Nama Variasi, dan Harga Setelah Diskon (contoh row Excel: ${keyValidation.missingSamples.join(', ')}).`,
     };
   }
 
@@ -276,7 +278,10 @@ function extractOrderKeys(workbook: XLSX.WorkBook): Array<[string, string, strin
   return assignOrderAllLineOrdinals(data)
     .map(({ row, lineOrdinal }) => getOrderAllIdentityValues({
       no_pesanan: sanitize(row['No. Pesanan']),
-      nomor_referensi_sku: sanitize(row['Nomor Referensi SKU']),
+      nomor_referensi_sku: resolveEffectiveSkuIdentity({
+        nomorReferensiSku: sanitize(row['Nomor Referensi SKU']),
+        skuInduk: sanitize(row['SKU Induk']),
+      }),
       nama_variasi: sanitize(row['Nama Variasi']),
       harga_setelah_diskon: sanitizeDecimal(row['Harga Setelah Diskon']),
       line_ordinal: lineOrdinal,
@@ -575,7 +580,12 @@ const ORDER_FIELDS_MAP: Record<string, (row: any) => any> = {
   'metode_pembayaran': r => sanitize(r['Metode Pembayaran']),
   'sku_induk': r => sanitize(r['SKU Induk']),
   'nama_produk': r => sanitize(r['Nama Produk']),
-  'nomor_referensi_sku': r => sanitize(r['Nomor Referensi SKU']),
+  // `nomor_referensi_sku` is the normalized physical identity persisted in the
+  // existing schema. Source SKU Induk remains separately immutable in sku_induk.
+  'nomor_referensi_sku': r => resolveEffectiveSkuIdentity({
+    nomorReferensiSku: sanitize(r['Nomor Referensi SKU']),
+    skuInduk: sanitize(r['SKU Induk']),
+  }),
   'nama_variasi': r => sanitize(r['Nama Variasi']),
   'harga_awal': r => sanitizeDecimal(r['Harga Awal']),
   'harga_setelah_diskon': r => sanitizeDecimal(r['Harga Setelah Diskon']),

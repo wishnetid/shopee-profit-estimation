@@ -1,11 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+
+const require = createRequire(import.meta.url);
+const XLSX = require('xlsx');
 
 import orderAllImport from '../lib/order-all-import.js';
 
 const {
+  getOrderAllCompositeKeyFromExcelRow,
   parseIdr,
   parseSnapshotAt,
+  resolveEffectiveSkuIdentity,
   resolveOrderSnapshot,
   validateOrderAllCompositeKeys,
   validateOrderAllHeaders,
@@ -100,6 +107,52 @@ test('validateOrderAllCompositeKeys accepts repeated physical lines within one S
 
   assert.equal(result.valid, true);
   assert.equal(result.missingCount, 0);
+});
+
+test('Order.all identity uses SKU Induk only when Nomor Referensi SKU is blank', () => {
+  const fallbackOnly = {
+    'No. Pesanan': 'ORDER-FALLBACK',
+    'SKU Induk': 'MTAC PENDEK',
+    'Nomor Referensi SKU': '',
+    'Nama Variasi': 'Hitam,XL',
+    'Harga Setelah Diskon': '82.500',
+  };
+  const referencePreferred = {
+    ...fallbackOnly,
+    'Nomor Referensi SKU': 'SKU-REFERENCE',
+  };
+
+  assert.equal(resolveEffectiveSkuIdentity({ nomorReferensiSku: '', skuInduk: 'MTAC PENDEK' }), 'MTAC PENDEK');
+  assert.equal(resolveEffectiveSkuIdentity({ nomorReferensiSku: 'SKU-REFERENCE', skuInduk: 'MTAC PENDEK' }), 'SKU-REFERENCE');
+  assert.equal(resolveEffectiveSkuIdentity({ nomorReferensiSku: '', skuInduk: '' }), null);
+  assert.equal(validateOrderAllCompositeKeys([fallbackOnly]).valid, true);
+  assert.match(getOrderAllCompositeKeyFromExcelRow(fallbackOnly), /MTAC PENDEK/);
+  assert.match(getOrderAllCompositeKeyFromExcelRow(referencePreferred), /SKU-REFERENCE/);
+});
+
+test('Order.all local TACTICALIST and TACTICALUXE samples validate with SKU Induk fallback', () => {
+  const base = path.resolve(process.cwd(), 'sampling_for_profit_aktual/new_sampling_26-09-2026');
+  for (const store of ['tacticalist', 'tacticaluxe']) {
+    for (const month of ['20260601_20260630', '20260701_20260731', '20260801_20260831', '20260901_20260927']) {
+      const workbook = XLSX.readFile(path.join(base, store, `Order.all.${month}.xlsx`));
+      const rows = XLSX.utils.sheet_to_json(workbook.Sheets.orders, { defval: null });
+      const result = validateOrderAllCompositeKeys(rows);
+      assert.equal(result.valid, true, `${store}/${month}: ${result.missingSamples.join(', ')}`);
+    }
+  }
+});
+
+test('Order.all rejects a row when both SKU identity columns are blank', () => {
+  const row = {
+    'No. Pesanan': 'ORDER-MISSING-SKU',
+    'SKU Induk': '',
+    'Nomor Referensi SKU': '',
+    'Nama Variasi': 'Hitam,XL',
+    'Harga Setelah Diskon': '82.500',
+  };
+  const result = validateOrderAllCompositeKeys([row]);
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.missingSamples, [2]);
 });
 
 test('parseSnapshotAt rejects impossible calendar timestamps', () => {

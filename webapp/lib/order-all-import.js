@@ -173,10 +173,20 @@ function parseOrderAllDiscountedPrice(value) {
   return Number.isFinite(databaseAmount) && databaseAmount >= 0 ? databaseAmount : null;
 }
 
+// Seller Centre exports can place the seller SKU in either column. Preserve
+// the reference SKU when present; otherwise use SKU Induk as the compatible
+// physical-line identity. A missing value in both fields fails closed.
+function resolveEffectiveSkuIdentity({ nomorReferensiSku, skuInduk }) {
+  return normalizeEmpty(nomorReferensiSku) || normalizeEmpty(skuInduk);
+}
+
 function getOrderAllBaseIdentityValues(row) {
   const values = [
     normalizeEmpty(row.no_pesanan),
-    normalizeEmpty(row.nomor_referensi_sku),
+    resolveEffectiveSkuIdentity({
+      nomorReferensiSku: row.nomor_referensi_sku,
+      skuInduk: row.sku_induk,
+    }),
     normalizeEmpty(row.nama_variasi),
     parseOrderAllDiscountedPrice(row.harga_setelah_diskon),
   ];
@@ -210,6 +220,7 @@ function getOrderAllBaseCompositeKeyFromExcelRow(row) {
   return getOrderAllBaseCompositeKeyFromStoredRow({
     no_pesanan: row['No. Pesanan'],
     nomor_referensi_sku: row['Nomor Referensi SKU'],
+    sku_induk: row['SKU Induk'],
     nama_variasi: row['Nama Variasi'],
     harga_setelah_diskon: row['Harga Setelah Diskon'],
   });
@@ -366,6 +377,7 @@ module.exports = {
   getOrderAllIdentityValues,
   parseIdr,
   parseOrderAllDiscountedPrice,
+  resolveEffectiveSkuIdentity,
   parseSnapshotAt,
   resolveOrderSnapshot,
   shouldAllowImport,

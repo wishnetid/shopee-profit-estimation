@@ -620,6 +620,14 @@ Tambahkan entri baru di bawah ini setiap ada langkah bermakna:
 - Live audit cohort Agustus: 3 order lolos — `260831R7HC9RHK` Rp132.002 settlement/Rp27.002 profit; `26082232XMXD1C` Rp156.322/Rp31.322; `260804E8J5Q3UR` Rp151.620/Rp26.620. Total tambahan Profit Aktual Rp84.944.
 - Hasil cohort setelah promosi: Profit Aktual Normal 599 order/1.059 pcs/Rp13.732.472; Cakupan Cash 601 order/1.061 pcs; backlog `Belum Ada Jawaban` 6 order/24 pcs.
 
+### 2026-09-27 — Kompatibilitas Identity Order.all: Nomor Referensi SKU / SKU Induk
+
+- Keputusan: physical identity Order.all memakai `Nomor Referensi SKU` bila terisi; bila kosong, memakai `SKU Induk`; bila keduanya kosong, import ditolak fail-closed.
+- Alasan: sample real TACTICALIST dan TACTICALUXE memiliki schema Shopee 50 kolom valid, namun `Nomor Referensi SKU` kosong seluruhnya sementara `SKU Induk` terisi seluruhnya.
+- Persistensi: `nomor_referensi_sku` tetap menjadi effective SKU identity agar compatible dengan unique index existing; `sku_induk` menyimpan nilai source asli.
+- Scope: validasi composite key, ordinal physical line, preview lookup, dan upsert Order.all. Tidak mengubah schema, Profit Aktual, formula Forecast, data toko aktif, atau exception RAW.
+- Guardrail: reference SKU tetap prioritas bila dua kolom terisi; duplicate physical line tetap memakai `line_ordinal`; test sample lokal TACTICALIST/TACTICALUXE wajib lulus.
+
 ### 2026-09-25 — Kalibrasi Voucher Seller pada Forecast Profit & Used Ads
 
 - Scope: hanya `Forecast Profit & Used Ads`; tidak ada perubahan ke Profit Aktual, Income settlement canonical, My Balance, HPP, retur/refund, Ads, import, schema, maupun migration.
