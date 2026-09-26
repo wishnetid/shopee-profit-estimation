@@ -128,6 +128,18 @@ test('price identity migration plans and verifies NOT NULL identity columns', ()
   assert.throws(() => migration.assertFinalIdentityState(state), /nomor_referensi_sku must be NOT NULL/);
 });
 
+test('status-length migration widens Order.all status only with explicit DDL confirmation', () => {
+  const migration = awaitableRequire('../scripts/migrate-order-all-status-length.js');
+  assert.equal(migration.isApplyConfirmed(['--apply', '--confirm-ddl']), true);
+  assert.equal(migration.isApplyConfirmed(['--apply']), false);
+  assert.equal(migration.parseVarcharLength('varchar(50)'), 50);
+  assert.equal(migration.parseVarcharLength('VARCHAR(255)'), 255);
+  assert.equal(migration.needsWidening({ exists: true, varcharLength: 50 }), true);
+  assert.equal(migration.needsWidening({ exists: true, varcharLength: 255 }), false);
+  assert.throws(() => migration.assertReady({ exists: true, isNullable: false, varcharLength: 100 }), /VARCHAR\(255\) or wider/);
+  assert.doesNotThrow(() => migration.assertReady({ exists: true, isNullable: false, varcharLength: 255 }));
+});
+
 test('upload route uses the shared price-aware Order.all identity for preview lookup and batch import', () => {
   const source = fs.readFileSync(path.resolve(process.cwd(), 'app/api/upload/route.ts'), 'utf8');
   assert.match(source, /ORDER_ALL_IDENTITY_COLUMNS,/);
