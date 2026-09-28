@@ -725,7 +725,16 @@ export default function UploadPage() {
                 </div>
               )}
 
-              {preview.newRows > 0 && !isIncomePreview && !['balance_event', 'ads_event'].includes(preview.canonicalMode || '') && (
+              {preview.canonicalMode === 'exception_current' && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 text-xs text-green-700">
+                  <b>{(preview.rawRowsToPersist ?? preview.totalRows).toLocaleString()} RAW row</b> akan di-insert sebagai package immutable.
+                  {(preview.canonicalNewRows || 0) > 0 && <> <b>{preview.canonicalNewRows?.toLocaleString()} canonical baru</b> akan menambah evidence analitis.</>}
+                  {(preview.correctionRows || 0) > 0 && <> <b>{preview.correctionRows?.toLocaleString()} correction/update</b> akan menjadi state exception terbaru untuk analisis.</>}
+                  {(preview.overlapRows || 0) > 0 && <> <b>{preview.overlapRows?.toLocaleString()} overlap</b> tidak menambah hitungan analitis.</>}
+                </div>
+              )}
+
+              {preview.newRows > 0 && !isIncomePreview && !['balance_event', 'ads_event', 'exception_current'].includes(preview.canonicalMode || '') && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 text-xs text-green-700">
                   {preview.newRows} baris baru akan di-insert.
                   {preview.safeUpdateRows > 0 && ` ${preview.safeUpdateRows} baris akan di-update aman.`}
