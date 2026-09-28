@@ -249,6 +249,23 @@ Coding Fase 1 hanya dimulai setelah user menyetujui hasil reconciliation dan rul
 
 ---
 
+## 7.1 Canonical overlap — RAW Cancellation, Failed Delivery, Return/Refund
+
+**Decision approved 28 September 2026.** Seller Centre exception exports are overlapping snapshots. Each new valid SHA remains an immutable RAW package; exact SHA remains no-op. Analytical use must not treat every physical row in a newer snapshot as a new exception.
+
+- Preview must separate `RAW akan disimpan`, `Canonical baru`, `Correction/status update`, and `Overlap evidence`.
+- Canonical identities retain valid item/variation rows:
+  - Cancellation: order + SKU reference + variation + quantity + cancellation reason.
+  - Failed Delivery: order + SKU reference + variation + quantity + failed-delivery status.
+  - Return/Refund: return ID + order + variation code + returned quantity + return type.
+- A same identity/state is overlap. Same identity with materially different state is a correction; newest imported provenance wins for analytical reads while prior RAW remains auditable.
+- Profit Actual and exception evidence paths must read canonical-current exception state. No financial policy, HPP rule, or RAW table schema changes are implied.
+- Initial real validation fixtures: TACTICALIZED `Update-28-09-2026` Cancellation (161 physical rows), Failed Delivery (27), Return/Refund (16).
+- Implemented 28 September 2026: `lib/exception-canonical.js`; Upload Preview now labels raw persistence separately from canonical new/correction/overlap; Profit Aktual reads the newest state per exception identity. No schema migration and no data write occurred during implementation.
+- Real-file preview against live TACTICALIZED data: Cancellation `161 RAW / 4 new / 157 correction / 0 overlap`; Failed Delivery `27 / 3 / 24 / 0`; Return/Refund `16 / 2 / 14 / 0`. `npm test` passed 154 tests (2 live-DB tests skipped by their existing environment guard); focused RAW suite 17/17 passed; production build passed.
+
+---
+
 ## 8. Progress Log
 
 ### 2026-09-23 — Planning dibuat

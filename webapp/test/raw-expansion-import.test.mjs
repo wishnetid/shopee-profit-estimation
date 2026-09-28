@@ -167,6 +167,22 @@ test('buildRawPreview exposes preview keys that exist directly on preview rows',
   assert.equal(preview.previewRows[0].jumlah_signed, -50);
 });
 
+test('classifyExceptionRows keeps immutable snapshot rows while separating new, correction, and overlap evidence', () => {
+  const { classifyExceptionRows } = require('../lib/exception-canonical.js');
+  const existing = [{
+    id: 1, import_id: 5, imported_at: '2026-09-26 10:00:00', no_pesanan: '260901ORDER1', nomor_referensi_sku: 'W-TAC Pendek', nama_variasi: 'Hitam,L', jumlah: 1,
+    alasan_pembatalan: 'Dibatalkan pembeli', status_pesanan: 'Batal', status_pembatalan_pengembalian: '', no_resi: '', subtotal_pesanan: 82500, total_pembayaran: 0, waktu_pesanan_dibuat: '2026-09-01 10:00:00', waktu_pesanan_selesai: null,
+  }];
+  const overlap = { ...existing[0] };
+  const correction = { ...existing[0], total_pembayaran: 1000 };
+  const newRow = { ...existing[0], no_pesanan: '260902ORDER2' };
+  const result = classifyExceptionRows('order_cancellation', [overlap, correction, newRow], existing);
+  assert.equal(result.rawRows, 3);
+  assert.equal(result.canonicalNewRows, 1);
+  assert.equal(result.correctionRows, 1);
+  assert.equal(result.overlapRows, 1);
+});
+
 test('preview ticket is store, hash, report-type bound and expires', () => {
   const { createPreviewTicket, verifyPreviewTicket } = require('../lib/upload-preview-ticket.js');
   const secret = 'test-secret';

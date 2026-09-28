@@ -1,4 +1,5 @@
 const { toIsoDate } = require('./balance-raw-import.js');
+const { classifyExceptionRows } = require('./exception-canonical.js');
 
 const CONFIG = {
   balance: {
@@ -52,7 +53,23 @@ function buildRawPreview(parsed, reportType, existing) {
 
 async function buildRawPreviewWithCanonical(conn, parsed, reportType, storeId, existing) {
   const preview = buildRawPreview(parsed, reportType, existing);
-  if (!['balance', 'ads_ledger'].includes(reportType) || preview.duplicateHash || !parsed.valid) return preview;
+  if (preview.duplicateHash || !parsed.valid) return preview;
+  if (['order_cancellation', 'order_failed_delivery', 'order_return_refund'].includes(reportType)) {
+    const config = configFor(reportType);
+    const [existingRows] = await conn.query(`SELECT r.*,i.imported_at,i.id import_id FROM ${config.child} r JOIN ${config.parent} i ON i.id=r.${config.fk} WHERE i.store_id=?`, [storeId]);
+    const canonical = classifyExceptionRows(reportType, parsed.rows, existingRows);
+    preview.rawRowsToPersist = canonical.rawRows;
+    preview.canonicalNewRows = canonical.canonicalNewRows;
+    preview.correctionRows = canonical.correctionRows;
+    preview.overlapRows = canonical.overlapRows;
+    preview.newRows = canonical.rawRows;
+    preview.unchangedRows = canonical.overlapRows;
+    preview.safeUpdateRows = canonical.correctionRows;
+    preview.canonicalMode = 'exception_current';
+    preview.canonicalNotice = 'Semua row source valid akan disimpan sebagai RAW immutable package. Hanya Canonical Baru dan Correction/status update menambah atau memperbarui evidence analitis; overlap tetap tersimpan untuk audit.';
+    return preview;
+  }
+  if (!['balance', 'ads_ledger'].includes(reportType)) return preview;
   if (reportType === 'ads_ledger') {
     const keyOf = (row) => [row.transaction_date, row.description, row.jumlah_signed == null ? '' : String(Number(row.jumlah_signed)), row.note].map((value) => String(value ?? '').trim()).join('\u001f');
     const [rows] = await conn.query(`SELECT DATE_FORMAT(a.transaction_date, '%Y-%m-%d') transaction_date,a.description,a.jumlah_signed,a.note FROM ads_transactions_raw a JOIN ads_report_imports i ON i.id=a.ads_report_import_id WHERE i.store_id=?`, [storeId]);
