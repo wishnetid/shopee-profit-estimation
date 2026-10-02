@@ -1,6 +1,6 @@
 # NEXTAGENTS — Shopee Profit Estimation
 
-**Last updated:** 2026-08-13 WIB
+**Last updated:** 2026-10-03 WIB
 
 **Production:** https://webapp-umber-five.vercel.app
 
@@ -8,11 +8,13 @@
 
 **Branch:** `master`
 
-**Code release:** pending current estimation-logic release
+**Current local release:** `9209aa3` — `feat(profit): add monthly cash cohort control`
 
-**Last code verification deployment:** pending current estimation-logic release
+**Last production deployment:** `https://webapp-frxa5cne8-wishnet-s-projects.vercel.app` — `Ready`, Production; canonical alias tetap URL Production di atas.
 
-> Mulai dengan membaca `README.md` penuh, lalu file ini. RAW Order.all, Income, Balance, order exceptions, Ads, dan Master SKU shared sudah live. **Estimasi Kotor** sudah live di `/profit`; Profit Aktual tetap disengaja terkunci. Jangan migration, import, clear, reset, atau hapus store tanpa diskusi/approval.
+> Mulai dengan membaca `README.md` penuh, lalu file ini. RAW Order.all, Income, Balance, order exceptions, Ads, dan Master SKU shared sudah live. `/profit` sudah memuat Estimasi Kotor, Profit Aktual read-only, Retur & Refund, Rekonsiliasi Settlement/Balance, My Balance Analisis, dan Kontrol Kas Cohort per toko. Jangan migration, import, clear, reset, atau hapus store tanpa diskusi/approval.
+>
+> **Aturan membaca dokumen lama:** catatan Agustus tentang `PROFIT_NOT_READY`, Profit Aktual terkunci, atau rencana Potongan Estimasi adalah histori keputusan pada waktunya, bukan state aplikasi saat ini. Untuk state live, gunakan production API read-only/DB dan bagian release 3 Oktober di bawah.
 
 ---
 
@@ -45,15 +47,14 @@ Master SKU
 - `clear_shared_sku` mereset Master SKU global dengan confirmation eksplisit.
 - `DELETE /api/stores` menghapus store kosong dengan confirmation eksplisit.
 - Basic Auth berlaku untuk page dan API.
-- `/profit` live sebagai **Profit & Estimasi**: tab **Estimasi Kotor** manual-load dan tab **Profit Aktual** terkunci.
-- `GET /api/profit-estimation` live, read-only, store-scoped. Ia menampilkan summary, daily aggregate, serta detail order paginated untuk monitoring Ads Spend.
-- Scope Estimasi Kotor bukan migration DB, bukan import, dan bukan perubahan RAW source.
-- Formula Estimasi Kotor: satu `Total Pembayaran` order dikurangi Σ(HPP × quantity). Bukan Profit Bersih.
-- Ads Spend hanya `Deduction for Product Ad` dengan nominal signed negatif.
-- Estimasi PPN Iklan = 11% Ads Spend per hari, dibulatkan ke rupiah penuh per hari; summary adalah jumlah seluruh PPN harian agar cocok dengan Ringkasan Harian.
-- Sisa Estimasi Setelah Ads & PPN = Estimasi Kotor − Ads Spend − Estimasi PPN. PPN ini alokasi estimasi, bukan row pajak aktual Ads RAW dan bukan biaya yang dialokasikan ke per order/item.
-- Legacy `/api/profit-calculation` dan `/api/profit-calculation/summary` tetap `503 PROFIT_NOT_READY`; itu adalah boundary Profit Aktual.
-- GitHub `master` memuat release `1a8ea47`; canonical production deployment `dpl_Frw4Geu2zEawcpRqCooadBhXQSmX` sudah Ready dan smoke test production lulus.
+- `/profit` live sebagai **Profit & Estimasi**: Estimasi Kotor, Profit Aktual, Retur & Refund, Rekonsiliasi Settlement/Balance, My Balance Analisis, dan Kontrol Kas Cohort per toko.
+- `GET /api/profit-estimation` live, read-only, store-scoped untuk Forecast/Used Ads; `GET /api/profit-calculation` live untuk Profit Aktual cohort; `GET /api/my-balance-analysis` live untuk ledger My Balance/Ads; `GET /api/cash-cohort-control` live untuk cash-control bulanan per toko.
+- Scope seluruh panel finansial ini read-only: bukan migration DB, bukan import, dan bukan perubahan RAW source.
+- Kontrol Kas Cohort: `Cash Siap Tarik = Hasil Finansial Final − Gross Top-up Pembayaran dengan Saldo Penjual − Outflow order-linked cohort lama`; top-up gross sudah termasuk PPN. `Running Potential = Cash Siap Tarik + Estimasi Belum Cair`.
+- Actual Used Ads + simulasi PPN 11% adalah layer Forecast/economics harian terpisah; tidak boleh dikurangi kedua kali pada cash-control. `Penarikan Dana` bukan biaya.
+- Output Kontrol Kas adalah `Running`, bukan closing final, bila pending/completed-unsettled/unresolved/unmapped outflow atau coverage Income/My Balance/Cancellation/Failed Delivery/Return-Refund belum closed.
+- Formula Estimasi Kotor tetap terpisah: basis seller dikurangi potongan standar Shopee dan HPP; Ads Spend hanya `Deduction for Product Ad` signed negatif.
+- GitHub local `master` memuat release `9209aa3`; deployment Production `https://webapp-frxa5cne8-wishnet-s-projects.vercel.app` Ready dan alias canonical aktif.
 - Master SKU tetap shared/global. State Order/Income/RAW terbaru wajib dicek dari database read-only atau API production karena data operasional dapat berubah.
 
 ### Belum selesai
@@ -228,11 +229,11 @@ Kerugian Cash Settlement Retur
 - Exclude packaging, tenaga kerja, dan ads sampai ada kontrak alokasi.
 - `Seller Fee` tetap audit-only; tidak ditambahkan ke `Penghasilan`.
 
-### 4A. Estimasi Kotor — production release
+### 4A. Estimasi Kotor — historical production release (superseded as current state)
 
-**Keputusan user:** gunakan satu menu existing `/profit`, dengan label navigasi **Profit & Estimasi**. Tidak ada menu global baru karena navigasi mobile sudah padat dan domain finansial tidak boleh terpecah.
+**Keputusan saat itu:** gunakan satu menu existing `/profit`, dengan label navigasi **Profit & Estimasi**. Tidak ada menu global baru karena navigasi mobile sudah padat dan domain finansial tidak boleh terpecah.
 
-**Status release:** source `c41c890` sudah dipush ke GitHub `master`; deployment Production `dpl_8pfdd8wtTBsjxsPAgn2DG3Z4cFBa` sudah `Ready`. Smoke authenticated `/profit` dan `/api/profit-estimation` lulus. Hanya Profit Aktual yang tetap mengembalikan `503 PROFIT_NOT_READY` melalui route legacy.
+**Status historis Agustus:** source `c41c890` dan deployment yang disebut di bawah adalah evidence release Estimasi Kotor pada waktunya. Jangan gunakan pernyataan `PROFIT_NOT_READY` atau struktur UI lama di section ini sebagai state aktif. State aktif: Profit Aktual read-only dan Kontrol Kas Cohort per toko sudah live; lihat header serta section UI/API di atas.
 
 **Struktur UI yang live:**
 
@@ -418,12 +419,16 @@ Setiap aksi memakai confirmation kedua. Jangan panggil endpoint mutasi untuk smo
 ### Halaman
 
 ```text
-/upload    Preview/import Order.all, Income, Master SKU
+/upload    Preview/import Order.all, Income, Master SKU, Balance, exception, dan Ads RAW
 /orders    Order.all store aktif
 /income    Income RAW store aktif
+/balance   My Balance RAW store aktif
+/exceptions Cancellation, Failed Delivery, Return / Refund RAW store aktif
+/ads       Ads RAW store aktif
 /sku       Master SKU shared
 /settings  Database management + destructive controls terjaga
-/profit    Profit & Estimasi: Estimasi Kotor manual-load; Profit Aktual tetap terkunci
+/profit    Profit & Estimasi: Estimasi Kotor, Profit Aktual, Retur & Refund,
+           Rekonsiliasi Settlement/Balance, My Balance Analisis, Kontrol Kas Cohort
 ```
 
 ### Race/stale guard
@@ -446,6 +451,10 @@ POST   /api/stores
 DELETE /api/stores
 GET    /api/orders?storeId=<id>
 GET    /api/profit-estimation?storeId=<id>&dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD&page=<n>&limit=<n>
+GET    /api/profit-calculation?storeId=<id>&dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD
+GET    /api/my-balance-analysis?storeId=<id>&dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD
+GET    /api/cash-cohort-control?storeId=<id>&month=YYYY-MM
+GET    /api/settlement-balance-reconciliation?storeId=<id>&dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD
 GET    /api/income?storeId=<id>
 GET    /api/sku
 POST   /api/upload
@@ -509,11 +518,11 @@ Master SKU                                   tetap shared setelah clear/hapus st
 
 ---
 
-## 9. Next Scope — Estimation Layer (Rencana, Belum Implementasi)
+## 9. Historical Plan — Estimation Layer (bukan Next Scope aktif)
 
-> **Status:** Rencana hasil diskusi. Belum ada tabel baru, migration, route, UI, import, atau perubahan database yang dilakukan.
+> **Status:** Rencana diskusi Agustus, sebagian besar telah disusul implementasi Estimasi Kotor dan Profit Aktual read-only. Jangan jadikan section ini backlog aktif atau bukti bahwa Profit Aktual belum ada.
 >
-> **Tujuan fase ini:** membuat estimasi seller yang bisa diperbarui berdasarkan potongan yang terlihat pada detail pesanan Shopee. Fase ini **bukan** implementasi Profit Bersih, Profit Aktual, settlement final, atau accounting lengkap.
+> **Konteks historis:** tujuan awalnya adalah membuat estimasi seller berdasarkan potongan detail pesanan. Ia bukan kontrak state aplikasi Oktober 2026; untuk state aktif gunakan header, bagian UI/API, dan `webapp/profit_aktual.md`.
 
 ### 9.1 Boundary database yang wajib dipertahankan
 
@@ -674,7 +683,7 @@ Layer baru disimpan dan dilihat melalui halaman existing:
 └── Profit & Estimasi
     ├── Estimasi Kotor
     ├── Potongan Estimasi
-    └── Profit Aktual — tetap terkunci
+    └── Profit Aktual — historical planned locked state (superseded)
 ```
 
 Tidak membuat menu global baru di bottom navigation, tidak menaruh data ini di Settings, dan tidak mencampurnya dengan halaman Income/Ads RAW.

@@ -1,6 +1,6 @@
 # Shopee Profit Estimation
 
-**Last updated:** 2026-08-13 WIB
+**Last updated:** 2026-10-03 WIB
 
 **Production:** https://webapp-umber-five.vercel.app
 
@@ -8,11 +8,11 @@
 
 **Branch:** `master`
 
-**Latest code release:** `1a8ea47` — `feat(profit): estimate ads PPN in daily summary`
+**Latest local code release:** `9209aa3` — `feat(profit): add monthly cash cohort control`
 
-**Last code verification deployment:** `dpl_Frw4Geu2zEawcpRqCooadBhXQSmX` — `Ready`, Production
+**Last production deployment:** `https://webapp-frxa5cne8-wishnet-s-projects.vercel.app` — `Ready`, Production; alias aktif di URL Production.
 
-> Baca file ini penuh sebelum menyentuh project. App production mengelola RAW **Order.all**, **Income**, **Balance**, **order exceptions**, **Ads**, **Master SKU shared**, dan **multi-toko**. `/profit` live sebagai **Profit & Estimasi** dengan tab **Estimasi Kotor** read-only; Profit Aktual tetap sengaja terkunci sampai kontrak settlement/return/QC disetujui.
+> Baca file ini penuh sebelum menyentuh project. App production mengelola RAW **Order.all**, **Income**, **Balance**, **order exceptions**, **Ads**, **Master SKU shared**, dan **multi-toko**. `/profit` live sebagai **Profit & Estimasi**: Estimasi Kotor, Profit Aktual read-only, Rekonsiliasi Settlement/Balance, My Balance Analisis, dan Kontrol Kas Cohort Bulanan per toko. Jangan migration, import, clear, reset, atau hapus store tanpa diskusi/approval.
 
 ---
 
@@ -55,25 +55,26 @@
    - DDL tabel RAW sudah dibuat dari backup tervalidasi. Data operasional TACTICALIZED sudah diimport; package/count terbaru wajib dicek dari API production atau database read-only.
 
 7. **Profit & Estimasi — read-only**
-   - `/profit` memuat tab **Estimasi Kotor** secara manual; ia tidak melakukan import, mutation, atau perubahan RAW.
-   - `GET /api/profit-estimation` mengembalikan summary, Ringkasan Harian, dan detail order store-scoped. Filter `status` dapat diulang untuk multi-select Status Shopee; scope filter berlaku ke kalkulasi order sementara Ads Spend/PPN tetap agregat toko per tanggal.
-   - Estimasi tidak memakai Income, settlement `Penghasilan / Order`, atau cohort historis. Order eligible tetap mendapat angka bila Subtotal Pesanan, voucher seller, quantity, dan HPP valid.
-   - Basis per order adalah `Σ(Subtotal Pesanan item) − Σ(Voucher Ditanggung Penjual item)`, lalu dikurangi potongan standar Shopee dan HPP item.
-   - Ads Spend hanya berasal dari `Deduction for Product Ad` dengan nominal signed negatif.
-   - `Estimasi PPN Iklan (11%)` adalah alokasi dari Ads Spend harian, dibulatkan ke rupiah penuh per hari; ia bukan row pajak aktual dari Ads RAW.
-   - Summary PPN menjumlahkan alokasi harian agar selalu cocok dengan Ringkasan Harian. `Sisa Setelah Ads & PPN` mengurangi Ads Spend dan PPN tepat satu kali.
+   - `/profit` memuat Estimasi Kotor, Profit Aktual, Retur & Refund, Rekonsiliasi Settlement/Balance, My Balance Analisis, serta Kontrol Kas Cohort. Seluruh panel ini read-only terhadap data finansial/source.
+   - `GET /api/profit-estimation` mengembalikan summary, Ringkasan Harian, dan detail order store-scoped untuk Forecast/Used Ads.
+   - `GET /api/profit-calculation` membentuk Profit Aktual cohort dari settlement `Penghasilan / Order`, HPP, exception canonical, dan rekonsiliasi My Balance.
+   - `GET /api/my-balance-analysis` membedakan cash top-up wallet, penarikan, order-linked correction, dan Used Ads canonical.
+   - `GET /api/cash-cohort-control?storeId=<id>&month=YYYY-MM` mengembalikan kontrol kas per toko berdasarkan cohort `Waktu Pesanan Dibuat`.
+   - Formula Cash Siap Tarik = Hasil Finansial Final − Gross Top-up `Pembayaran dengan Saldo Penjual` − outflow order-linked cohort lama. Gross top-up sudah termasuk PPN; Used Ads tidak dikurangkan kedua kali.
+   - Running Potential = Cash Siap Tarik + Estimasi Profit Belum Selesai. Pending tidak boleh disebut cash tersedia.
+   - Hasil berlabel `Running` bila masih ada pending, completed-unsettled, unresolved financial order, mapped-outflow yang belum aman, atau coverage exception belum mencapai akhir bulan.
+   - Estimasi Kotor tetap terpisah: basis per order adalah `Σ(Subtotal Pesanan item) − Σ(Voucher Ditanggung Penjual item)`, lalu dikurangi potongan standar Shopee dan HPP item. Ads Spend/PPN Forecast tidak dialokasikan ke order/item.
 
 ### Belum tersedia — jangan diasumsikan valid
 
-- Profit Aktual per order/per hari dari settlement `Penghasilan / Order`; legacy endpoint Profit Aktual tetap guard `503 PROFIT_NOT_READY`.
-- Ads cashflow/accounting lengkap dan alokasi biaya iklan aktual ke order/item. Estimasi PPN harian bukan pengganti transaksi cash top-up.
+- Agregasi Kontrol Kas Cohort multi-toko pada UI/API. Hitung per toko dahulu; gabungkan hanya bila scope, cutoff, dan definisi bucket identik.
+- Alokasi Actual Used Ads ke order/item/SKU. Estimasi PPN harian bukan pengganti cash top-up My Balance.
 - Biaya eksternal per order: packaging tambahan, tenaga kerja, dan biaya operasional lain.
-- Keputusan QC persediaan retur: layak restock, rusak, atau hilang.
 - Multi-user ownership authorization per store.
 
-### Kelayakan financial per-order — sudah dibuktikan read-only
+### Kelayakan financial per-order — sudah diimplementasikan read-only
 
-Data RAW aktif sudah cukup untuk menghitung hasil per order dengan batas yang jelas. Ini adalah **kontrak analitis yang tervalidasi**, belum berarti UI Profit atau API kalkulasi sudah diimplementasikan.
+Data RAW aktif sudah cukup dan runtime Profit Aktual telah mengimplementasikan hasil final per order/cohort dengan batas yang jelas. Tetap baca coverage, exception, dan status finality; output `Running` bukan closing settlement final.
 
 ```text
 Order selesai normal / multi-item
@@ -121,18 +122,12 @@ Report yang dapat dihasilkan dari RAW sekarang:
 
 ### Snapshot runtime saat dokumentasi diperbarui
 
-- Store aktif: `TACTICALIZED` (`id=1`).
-- Order.all, Income RAW, Balance, order exceptions, Ads, dan Master SKU sudah memiliki data operasional hasil import.
-- Nilai row/package bersifat dinamis. Query database read-only atau canonical production API sebelum membuat klaim count, package, atau periode terbaru.
-- Dokumentasi financial per-order di atas berasal dari probe database read-only terhadap data yang sudah tersimpan; tidak ada data ditulis atau diubah selama probe.
-
-Route legacy Profit Aktual sengaja mengembalikan:
-
-```text
-503 PROFIT_NOT_READY
-```
-
-Itu adalah product guard, bukan masalah deployment. Halaman `/profit` sendiri adalah **Profit & Estimasi**; tab Estimasi Kotor tetap read-only dan bukan pengganti Profit Aktual.
+- Store aktif adalah pilihan workspace/session, bukan konstanta dokumentasi. Jangan mengasumsikan `TACTICALIZED` atau numeric `store_id` tertentu tanpa query scope live.
+- Order.all, Income RAW, Balance, order exceptions, Ads, dan Master SKU telah mendukung data operasional store-scoped; coverage/package/count bersifat dinamis.
+- Query database read-only atau canonical production API sebelum membuat klaim count, package, periode terbaru, atau finality.
+- Profit Aktual aktif sebagai route read-only `/api/profit-calculation`; ia bukan pengganti Forecast, dan bisa berstatus `Running` bila settlement/exception/coverage belum closed.
+- Kontrol kas bulanan aktif di `/api/cash-cohort-control`; ia menggunakan cohort order dibuat dan cash top-up gross My Balance, bukan Used Ads.
+- Dokumentasi financial di atas bersifat kontrak evidence-first. Tidak ada data ditulis atau diubah saat query/validasi read-only.
 
 ---
 
@@ -473,31 +468,28 @@ DASHBOARD_AUTH_ENABLED
 
 ## 9. Verifikasi Release Terkini
 
-Code release Estimasi PPN Iklan:
+Release Kontrol Kas Cohort Bulanan per toko:
 
 ```text
-Commit                                      1a8ea47
-Deploy code verification                    dpl_Frw4Geu2zEawcpRqCooadBhXQSmX (Ready, Production)
-npm test                                    PASS
-TypeScript                                  PASS
-npm run lint                                PASS
+Commit                                      9209aa3
+Deploy production                           webapp-frxa5cne8-wishnet-s-projects.vercel.app (Ready)
+Alias production                            webapp-umber-five.vercel.app
+npm test                                    162 pass, 2 skipped
 npm run build                               PASS
 git diff --check                            PASS
-Independent read-only review                PASS
+Vercel dry-run                              credential/fixture/sample lokal tidak ikut upload
 ```
 
-Smoke production authenticated:
+Smoke production read-only dengan auth resmi:
 
 ```text
-/profit                                     200
-/api/profit-estimation                      200
-PPN summary + Ringkasan Harian fields       present dan rekonsiliasi
-Tanggal kalender tidak valid                400
-Profit Aktual legacy                        503 PROFIT_NOT_READY
-Tanpa Basic Auth ke /profit                 401
+/api/cash-cohort-control TACTICALIZED Sep   200; cash Rp2.080.698; status Running
+/api/cash-cohort-control TACTICALITY Sep    200; cash Rp2.088.638; status Running
+/api/my-balance-analysis                    200; gross top-up terpisah dari PPN detail
+/profit                                     terlindungi login
 ```
 
-Tidak ada import, mutation, migration, atau perubahan RAW saat release Estimasi PPN. Semua validasi runtime memakai `GET` read-only.
+Tidak ada import, mutation, migration, atau perubahan RAW saat release ini. Semua validasi runtime memakai `GET` read-only. Catatan release Estimasi PPN Agustus tetap histori dan tidak menggambarkan state Profit Aktual saat ini.
 
 ---
 
