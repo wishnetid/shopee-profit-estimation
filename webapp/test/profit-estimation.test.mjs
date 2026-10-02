@@ -262,6 +262,16 @@ test('aggregateAdsSpend only counts negative Product Ad deductions and deduplica
   assert.equal(result.duplicateEventCount, 1);
 });
 
+test('aggregateAdsSpend receives a latest-covering snapshot without merging shifted ledger sequences', () => {
+  // The route resolves the daily package first. Its final snapshot can renumber
+  // an older event when a newer transaction is inserted above it.
+  const result = aggregateAdsSpend([
+    { ads_report_import_id: 44, transaction_date: '2026-10-02', sequence_number: 2, description: 'Deduction for Product Ad (Auto Bidding - GMV Max)', jumlah_signed: '-429658.00', note: null },
+  ]);
+  assert.equal(result.total, 429658);
+  assert.equal(result.duplicateEventCount, 0);
+});
+
 test('validateDateRange rejects impossible and reverse calendar ranges before querying', () => {
   assert.deepEqual(validateDateRange(null, null), { dateFrom: null, dateTo: null });
   assert.throws(() => validateDateRange('2026-02-30', null), /dateFrom/);

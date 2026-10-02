@@ -204,17 +204,26 @@ export async function GET(request: NextRequest) {
         r.description,
         r.jumlah_signed,
         r.note
-      FROM (
-        SELECT snapshot.*, ROW_NUMBER() OVER (PARTITION BY transaction_date,description,jumlah_signed,COALESCE(note,''),occurrence_rank ORDER BY imported_at DESC,ads_report_import_id DESC,id DESC) canonical_rank
+      FROM ads_transactions_raw r
+      INNER JOIN ads_report_imports i ON i.id = r.ads_report_import_id
+      INNER JOIN (
+        SELECT transaction_date, ads_report_import_id
         FROM (
-          SELECT r.ads_report_import_id,r.transaction_date,r.sequence_number,r.description,r.jumlah_signed,r.note,r.id,i.imported_at,
-            ROW_NUMBER() OVER (PARTITION BY r.ads_report_import_id,r.transaction_date,r.description,r.jumlah_signed,COALESCE(r.note,'') ORDER BY r.source_csv_row ASC,r.id ASC) occurrence_rank
+          SELECT DISTINCT r.transaction_date, i.id AS ads_report_import_id,
+            ROW_NUMBER() OVER (
+              PARTITION BY r.transaction_date
+              ORDER BY i.imported_at DESC, i.id DESC
+            ) AS package_rank
           FROM ads_transactions_raw r
           INNER JOIN ads_report_imports i ON i.id = r.ads_report_import_id
           WHERE ${adsFilters.join(' AND ')}
-        ) snapshot
-      ) r
-      WHERE r.canonical_rank=1
+            AND i.report_period_from <= r.transaction_date
+            AND i.report_period_to >= r.transaction_date
+        ) packages
+        WHERE package_rank = 1
+      ) canonical_package
+        ON canonical_package.transaction_date = r.transaction_date
+        AND canonical_package.ads_report_import_id = r.ads_report_import_id
       ORDER BY r.transaction_date DESC, r.sequence_number DESC, r.id DESC
     `, adsParams);
 

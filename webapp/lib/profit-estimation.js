@@ -307,7 +307,13 @@ function aggregateAdsSpend(adsRows = [], dateRange = { dateFrom: null, dateTo: n
     const sequence = normalizeText(row.sequence_number);
     const packageId = normalizeText(row.ads_report_import_id);
     if (sequence && packageId) {
-      const fingerprint = [date, sequence, description.toLowerCase(), formatNumberKey(amount), normalizeText(row.note) || ''].join('\u001f');
+      // A sequenced ledger row is a snapshot event identity. Newer overlapping
+      // adwords_bill packages may correct its amount, so amount is deliberately
+      // excluded when sequence exists. Unsequenced rows retain amount as fallback
+      // identity to avoid collapsing unrelated same-description transactions.
+      const fingerprint = sequence
+        ? [date, sequence, description.toLowerCase(), normalizeText(row.note) || ''].join('\u001f')
+        : [date, description.toLowerCase(), formatNumberKey(amount), normalizeText(row.note) || ''].join('\u001f');
       const sourcePackages = packagesBySequencedEvent.get(fingerprint) || new Set();
       if (sourcePackages.size > 0 && !sourcePackages.has(packageId)) {
         sourcePackages.add(packageId);

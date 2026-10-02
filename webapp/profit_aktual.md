@@ -25,6 +25,14 @@ Profit Aktual **bukan** penggantian atau modifikasi Estimasi Kotor. Implementasi
 
 Tidak boleh migration, import, clear data, reset master SKU, atau perubahan schema sebelum source report dianalisis dan scope disetujui user.
 
+### 1.1 Kontrak canonical Ads ledger snapshot (2 Oktober 2026)
+
+`ads_transactions_raw` bersifat immutable append-only: setiap CSV `adwords_bill` dengan SHA baru tetap disimpan sebagai paket RAW/provenance, termasuk snapshot yang overlap atau mengoreksi nominal event sebelumnya.
+
+Untuk pembacaan operational **Actual Ads Spend**, canonical layer memilih **satu package snapshot terbaru yang mencakup setiap tanggal transaksi** (`report_period_from ≤ transaction_date ≤ report_period_to`), berdasarkan `imported_at`, lalu `id`. Semua baris ledger fisik pada tanggal itu dibaca dari package terpilih dan dijumlah sesuai tipe transaksi. `sequence_number`, nominal (`jumlah_signed`), dan posisi row tidak boleh menjadi identity lintas package karena Seller Centre menambah transaksi terbaru di atas ledger sehingga Urutan bergeser antar-snapshot.
+
+Kasus pemicu: TACTICALIST 2 Oktober 2026: package lama menyimpan biaya pada sequence `1` Rp185.130 lalu snapshot berikutnya sequence `1` Rp426.886, sedangkan snapshot final 3 Oktober menaruh event tanggal 2 Oktober pada sequence `2` Rp429.658. Canonical spend harus memilih package final yang mencakup 2 Oktober dan membaca Rp429.658 saja. Tidak ada perubahan RAW ataupun schema.
+
 ---
 
 ## 2. Definisi Profit Aktual Fase 1
@@ -667,6 +675,56 @@ Tambahkan entri baru di bawah ini setiap ada langkah bermakna:
 - Next step: audit detail harian Ads sebagai biaya store/day; setiap kebijakan alokasi profit/order harus disetujui terpisah.
 
 ---
+
+### 2026-10-03 — Kontrak implementasi Kontrol Kas Cohort Bulanan
+
+- Persetujuan user: implementasi read-only **Kontrol Kas Cohort Bulanan** per toko pada halaman `Profit & Estimasi`; agregasi multi-store ditunda ke tahap terpisah.
+- Scope cohort: satu bulan WIB berdasarkan `Order.all.waktu_pesanan_dibuat`, bukan `Tanggal Dana Dilepaskan`.
+- Formula disetujui:
+  ```text
+  Cash siap tarik
+  = Hasil Finansial Final cohort
+  − gross My Balance Pembayaran dengan Saldo Penjual pada bulan cohort
+  − outflow My Balance order-linked pada bulan cohort untuk order dibuat sebelum awal bulan
+
+  Running potential
+  = Cash siap tarik + Estimasi Profit Belum Selesai
+  ```
+- Gross top-up `Pembayaran dengan Saldo Penjual` sudah termasuk PPN. PPN tidak ditambah lagi dan actual Used Ads tidak dikurangkan lagi pada rumus cash-basis ini. `Penarikan Dana` bukan biaya.
+- Hasil Finansial Final wajib memakai runtime Profit Aktual yang sama: profit settled normal, retur parsial final restock, loss retur penuh cash-final, dan kompensasi return final; pending, completed-unsettled, batal, serta unresolved tetap dipisahkan.
+- Outflow cohort lama harus memakai mutasi My Balance canonical, status selesai, memiliki No. Pesanan, dan order-created date sebelum awal bulan. Rincian per tipe mutasi harus tetap auditabel; link order yang tidak dapat dipetakan fail-closed dan tidak mengurangi cash siap tarik.
+- UI harus menampilkan komponen formula, cash siap tarik, pending terpisah, running potential, bucket cohort, dan coverage/finality. Bila ada pending/completed-unsettled/unresolved, label hasil sebagai `Running`, bukan closing final.
+- Tidak ada perubahan schema, RAW, import, HPP, atau alokasi Ads ke SKU/order. Endpoint dan UI read-only serta store-scoped.
+- Regression My Balance Analisis ditemukan saat audit: query canonical Ads memakai kolom `ads_report_import_id` ambigu setelah join. Perbaikan query dan regression test termasuk scope ini karena Kontrol Kas memakai evidence Balance yang sama.
+
+### 2026-10-03 — Implementasi Kontrol Kas Cohort Bulanan per Toko
+
+- Status: **implemented and production deployed**. Tidak ada schema, migration, import, RAW, HPP, atau mutasi data operasional.
+- UI: tab additive `Kontrol Kas Cohort` pada `Profit & Estimasi`, tetap memakai toko aktif workspace dan pemilih bulan cohort order dibuat. Tab Profit Pesanan, Forecast, Retur, Rekonsiliasi, dan My Balance Analisis tidak diubah/hilang.
+- Endpoint read-only store-scoped: `GET /api/cash-cohort-control?storeId=<id>&month=YYYY-MM`.
+- Builder memakai `financialFinalOutcome` dan `pendingEstimatedProfit` dari runtime Profit Aktual yang sama. Data My Balance dibaca canonical pada bulan cohort, status `Transaksi Selesai`.
+- Formula runtime:
+  ```text
+  Cash Siap Tarik
+  = Hasil Finansial Final
+  − Gross Top-up Ads+PPN
+  − Outflow order-linked cohort lama
+
+  Running Potential
+  = Cash Siap Tarik + Estimasi Belum Cair
+  ```
+- `Pembayaran dengan Saldo Penjual` negatif dibaca sebagai gross top-up dan dikurangkan tepat sekali. PPN sudah ada di nominal gross dan tidak ditambah lagi. Actual Used Ads + PPN 11% tetap eksklusif di kontrol economics harian/Forecast; tidak masuk rumus cash basis maupun coverage closing Kontrol Kas.
+- Outflow cohort lama hanya negatif, order-linked, memiliki `No. Pesanan`, dan order-created date sebelum awal bulan. `Penarikan Dana` dikecualikan. Link order yang tidak dapat dipetakan ditampilkan untuk audit tetapi tidak dikurangkan (`fail-closed`).
+- Status hasil menjadi `Running` bila ada pending, completed-unsettled, unresolved financial order, link outflow tidak terpetakan, atau coverage Income/My Balance/Cancellation/Failed Delivery/Return-Refund belum mencapai akhir bulan. Used Ads bukan prasyarat closing cash cohort.
+- Perbaikan terkait: query canonical Ads My Balance Analisis sekarang memilih satu package terbaru yang coverage-nya mencakup tanggal transaksi dan memakai kolom ber-qualifier; mencegah error ambiguity serta snapshot Ads overlap/sequence shift terbaca ganda.
+- Verifikasi 3 Oktober 2026:
+  - `npm test`: 162 pass, 2 skipped (test live DB memang skip bila DB tidak tersedia).
+  - `npm run build`: lulus; route dynamic `/api/cash-cohort-control` terdaftar.
+  - Vercel production: `https://webapp-umber-five.vercel.app/profit` aktif dari deployment `https://webapp-frxa5cne8-wishnet-s-projects.vercel.app`.
+  - Endpoint production September TACTICALIZED: final Rp11.626.936 − top-up gross Rp9.435.000 − outflow lama Rp111.238 = Cash Siap Tarik Rp2.080.698; pending Rp3.148.049; Running Potential Rp5.228.747; status `Running` karena coverage/bucket belum closed.
+  - Endpoint production September TACTICALITY: final Rp8.775.593 − top-up gross Rp6.660.000 − outflow lama Rp26.955 = Cash Siap Tarik Rp2.088.638; pending Rp1.761.287; Running Potential Rp3.849.925; status `Running`.
+- Deploy guardrail: root `.vercelignore` mengecualikan credential lokal, fixture/operator sample, recovery material, build artifacts, dan `tsbuildinfo`; dry-run Vercel membuktikan path tersebut tidak ikut paket upload.
+- Next: evaluasi kebutuhan agregasi lintas toko hanya bila definisi bucket/cutoff identik; jangan menggabungkan store otomatis.
 
 ## 9. Larangan / Guardrail
 

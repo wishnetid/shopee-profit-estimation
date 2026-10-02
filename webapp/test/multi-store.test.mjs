@@ -350,29 +350,32 @@ test('Order All exposes the complete business RAW contract, including buyer deli
 
 test('Profit Aktual route is read-only, store-scoped, uses the approved RAW sources, and preserves WIB cohort boundaries', () => {
   const route = fs.readFileSync(path.resolve(process.cwd(), 'app/api/profit-calculation/route.ts'), 'utf8');
+  const loader = fs.readFileSync(path.resolve(process.cwd(), 'lib/profit-actual-data.ts'), 'utf8');
   assert.match(route, /requireStoreId/);
-  assert.match(route, /income_penghasilan_raw/);
-  assert.match(route, /lihat_berdasarkan=.*Order/);
-  assert.match(route, /lihat_berdasarkan='Sku'/);
+  assert.match(route, /loadProfitActualData/);
+  assert.match(loader, /income_penghasilan_raw/);
+  assert.match(loader, /lihat_berdasarkan=.*Order/);
+  assert.match(loader, /lihat_berdasarkan='Sku'/);
   assert.match(route, /skuAllocations/);
-  assert.match(route, /order_cancellation_raw/);
-  assert.match(route, /order_failed_delivery_raw/);
-  assert.match(route, /order_return_refund_raw/);
-  assert.match(route, /income_adjustments_raw/);
-  assert.match(route, /alasan_pembatalan,no_resi,waktu_pengiriman_diatur/);
-  assert.match(route, /reason: row.reason/);
+  assert.match(loader, /order_cancellation_raw/);
+  assert.match(loader, /order_failed_delivery_raw/);
+  assert.match(loader, /order_return_refund_raw/);
+  assert.match(loader, /income_adjustments_raw/);
+  assert.match(loader, /alasan_pembatalan,no_resi,waktu_pengiriman_diatur/);
+  assert.match(loader, /reason: row.reason/);
   assert.match(route, /exceptionDetails/);
-  assert.match(route, /return_qc_decisions/);
-  assert.match(route, /source_reference/);
-  assert.match(route, /returnQcByReference/);
-  assert.match(route, /Seller Centre local timestamp text as DATETIME/);
-  assert.match(route, /waktu_pesanan_dibuat >= CONCAT\(\?, \\' 00:00:00\\'\)/);
+  assert.match(loader, /return_qc_decisions/);
+  assert.match(loader, /source_reference/);
+  assert.match(loader, /returnQcByReference/);
+  assert.match(loader, /Seller Centre local timestamp text as DATETIME/);
+  assert.match(loader, /waktu_pesanan_dibuat >= CONCAT\(\?, ' 00:00:00'\)/);
   assert.match(route, /releaseDateFrom/);
   assert.match(route, /releaseDateTo/);
-  assert.match(route, /tanggal_dana_dilepaskan >= CONCAT\(\?, \\' 00:00:00\\'\)/);
-  assert.match(route, /tanggal_dana_dilepaskan < DATE_ADD\(CONCAT\(\?, \\' 00:00:00\\'\), INTERVAL 1 DAY\)/);
-  assert.doesNotMatch(route, /INTERVAL 7 HOUR/);
+  assert.match(loader, /tanggal_dana_dilepaskan >= CONCAT\(\?, ' 00:00:00'\)/);
+  assert.match(loader, /tanggal_dana_dilepaskan < DATE_ADD\(CONCAT\(\?, ' 00:00:00'\), INTERVAL 1 DAY\)/);
+  assert.doesNotMatch(loader, /INTERVAL 7 HOUR/);
   assert.doesNotMatch(route, /INSERT INTO|UPDATE |DELETE FROM/);
+  assert.doesNotMatch(loader, /INSERT INTO|UPDATE |DELETE FROM/);
 });
 
 test('Pending-order estimate stays separate from settlement and uses one Total Pembayaran per order', () => {

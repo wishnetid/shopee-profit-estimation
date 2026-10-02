@@ -6,6 +6,7 @@ import { useStore } from '@/components/StoreContext';
 import ProfitActualPanel from '@/components/ProfitActualPanel';
 import SettlementBalanceReconciliationPanel from '@/components/SettlementBalanceReconciliationPanel';
 import MyBalanceAnalysisPanel from '@/components/MyBalanceAnalysisPanel';
+import CashCohortControlPanel from '@/components/CashCohortControlPanel';
 
 type EstimationStatus = 'estimable' | 'hpp_incomplete' | 'needs_review' | 'not_eligible';
 
@@ -175,7 +176,7 @@ export default function ProfitPage() {
 }
 
 function ProfitEstimationContent({ storeId, activeStoreName }: { storeId: string; activeStoreName: string }) {
-  const [tab, setTab] = useState<'estimate' | 'orders' | 'returns' | 'reconciliation' | 'balanceAnalysis'>('orders');
+  const [tab, setTab] = useState<'estimate' | 'orders' | 'returns' | 'reconciliation' | 'balanceAnalysis' | 'cashControl'>('orders');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
@@ -243,8 +244,9 @@ function ProfitEstimationContent({ storeId, activeStoreName }: { storeId: string
         <button type="button" onClick={() => setTab('returns')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'returns' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Retur & Refund</button>
         <button type="button" onClick={() => setTab('reconciliation')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'reconciliation' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Rekonsiliasi My Balance</button>
         <button type="button" onClick={() => setTab('balanceAnalysis')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'balanceAnalysis' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>My Balance Analisis</button>
+        <button type="button" onClick={() => setTab('cashControl')} className={`border-b-2 px-3 py-2 text-sm font-semibold ${tab === 'cashControl' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Kontrol Kas Cohort</button>
       </div>
-      {tab === 'orders' ? <ProfitActualPanel storeId={storeId} view="orders" /> : tab === 'returns' ? <ProfitActualPanel storeId={storeId} view="returns" /> : tab === 'reconciliation' ? <SettlementBalanceReconciliationPanel storeId={storeId} /> : tab === 'balanceAnalysis' ? <MyBalanceAnalysisPanel storeId={storeId} /> : <>
+      {tab === 'orders' ? <ProfitActualPanel storeId={storeId} view="orders" /> : tab === 'returns' ? <ProfitActualPanel storeId={storeId} view="returns" /> : tab === 'reconciliation' ? <SettlementBalanceReconciliationPanel storeId={storeId} /> : tab === 'balanceAnalysis' ? <MyBalanceAnalysisPanel storeId={storeId} /> : tab === 'cashControl' ? <CashCohortControlPanel storeId={storeId} /> : <>
         <section className="mb-5 rounded-xl border border-purple-200 bg-purple-50 p-4 lg:p-5"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-purple-700" /><div className="text-sm leading-6 text-purple-950"><h2 className="font-semibold">Forecast Profit Pesanan &amp; Used Ads</h2><p>Forecast order memakai Subtotal seller, voucher seller, potongan standar Shopee, dan HPP. Used Ads Cost memakai deduction Product Ad dari Ads RAW canonical pada tanggal sama. Ini alat kontrol ekonomi harian, bukan Profit Aktual atau dana cair. Top-up wallet dipantau terpisah pada cashflow/My Balance.</p></div></div></section>
         <section className="mb-5 rounded-xl border border-slate-200 bg-white p-4 lg:p-5"><div className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
           <label className="text-sm font-medium text-slate-700">Dari tanggal <span className="font-normal text-slate-400">(opsional)</span><input type="date" value={dateFrom} onChange={(event) => updateDate('from', event.target.value)} className="mt-1.5 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-100" /></label>

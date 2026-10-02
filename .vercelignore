@@ -1,0 +1,28 @@
+# Never upload local credentials, operator fixtures, customer exports, or recovery material.
+.env*
+data_sample/
+sampling_for_profit_aktual/
+Archive/
+backups/
+*.backup-*
+
+# Project-root local artifacts.
+webapp/.env*
+webapp/data_sample/
+webapp/sampling_for_profit_aktual/
+webapp/backups/
+webapp/Archive/
+webapp/.next/
+webapp/out/
+webapp/coverage/
+webapp/*.tsbuildinfo
+webapp/node_modules/
+webapp/.vercel/
+
+# Non-source local artifacts.
+*.sqlite
+*.db
+*.pem
+*.log
+.DS_Store
+Thumbs.db
